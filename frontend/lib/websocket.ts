@@ -45,9 +45,16 @@ export class WebSocketClient {
   constructor(baseUrl?: string) {
     // Use provided URL, or environment variable, or default
     const finalUrl = baseUrl || WS_URL;
-    const apiProtocol = finalUrl?.startsWith('https') ? 'wss' : 'ws';
-    const apiHost = finalUrl?.replace(/^https?:\/\//, '') || 'localhost:8000';
-    this.url = `${apiProtocol}://${apiHost}`;
+    
+    // Handle URL parsing: if already starts with ws:// or wss://, use as-is
+    // If starts with http:// or https://, convert to ws:// or wss://
+    if (finalUrl?.startsWith('ws://') || finalUrl?.startsWith('wss://')) {
+      this.url = finalUrl;
+    } else if (finalUrl?.startsWith('https://')) {
+      this.url = `wss://${finalUrl.replace(/^https:\/\//, '')}`;
+    } else {
+      this.url = `ws://${finalUrl?.replace(/^http:\/\//, '') || 'localhost:8000'}`;
+    }
   }
 
   /**
