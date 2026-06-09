@@ -131,6 +131,27 @@ LOG_FORMAT="json"
 
 ---
 
+### Step 4b: Configure Vercel Frontend Environment Variables
+
+**After deploying backend to Render, configure your Vercel frontend:**
+
+1. Go to your Vercel dashboard → Select your frontend project
+2. Navigate to **Settings** → **Environment Variables**
+3. Add these variables:
+
+```env
+# Backend API URL (HTTPS - for REST API calls)
+NEXT_PUBLIC_API_URL=https://jasper-backend-<RANDOM_ID>.onrender.com
+
+# WebSocket URL (WSS - for real-time price updates)
+# IMPORTANT: Use 'wss://' (secure WebSocket) for production
+NEXT_PUBLIC_WS_URL=wss://jasper-backend-<RANDOM_ID>.onrender.com
+```
+
+4. Click **Save** and **Redeploy** the frontend
+
+---
+
 ### Step 5: Generate Secret Keys
 
 **For `SECRET_KEY`:**

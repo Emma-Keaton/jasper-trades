@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Use 'standalone' for Node.js server or 'export' for static HTML
+  // For Render deployment with backend serving frontend, use 'standalone'
   output: 'standalone',
   transpilePackages: ['motion'],
   webpack: (config, {dev}) => {
@@ -24,6 +26,11 @@ const nextConfig: NextConfig = {
       };
     }
     return config;
+  },
+  // Ensure environment variables are available at build time
+  env: {
+    NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || '',
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || '',
   },
 };
 

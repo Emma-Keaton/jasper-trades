@@ -29,6 +29,9 @@ const logger = {
   error: (msg: string, ...args: any[]) => console.error(`[ERROR] ${msg}`, ...args),
 };
 
+// Get WebSocket URL from environment variable
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
+
 export class WebSocketClient {
   private ws: WebSocket | null = null;
   private url: string;
@@ -40,8 +43,10 @@ export class WebSocketClient {
   private shouldReconnect = true;
 
   constructor(baseUrl?: string) {
-    const apiProtocol = baseUrl?.startsWith('https') ? 'wss' : 'ws';
-    const apiHost = baseUrl?.replace(/^https?:\/\//, '') || 'localhost:8000';
+    // Use provided URL, or environment variable, or default
+    const finalUrl = baseUrl || WS_URL;
+    const apiProtocol = finalUrl?.startsWith('https') ? 'wss' : 'ws';
+    const apiHost = finalUrl?.replace(/^https?:\/\//, '') || 'localhost:8000';
     this.url = `${apiProtocol}://${apiHost}`;
   }
 
@@ -162,6 +167,11 @@ export class WebSocketClient {
     const handlers = this.handlers.get(room);
     if (!handlers) return;
 
+    // Auto-respond to ping with pong to keep connection alive
+    if (message.type === 'ping') {
+      this.sendPong(room);
+    }
+
     handlers.forEach(handler => {
       try {
         handler(message);
@@ -169,6 +179,19 @@ export class WebSocketClient {
         console.error(`[WebSocket] Handler error in ${room}:`, e);
       }
     });
+  }
+
+  /**
+   * Send pong response to keep connection alive
+   */
+  private sendPong(room: WebSocketRoom): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'pong',
+        timestamp: new Date().toISOString(),
+        room,
+      }));
+    }
   }
 }
 

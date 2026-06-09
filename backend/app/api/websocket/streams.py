@@ -135,20 +135,56 @@ async def trade_publisher():
 async def websocket_prices(websocket: WebSocket):
     """WebSocket endpoint for real-time price updates"""
     await manager.connect(websocket, "prices")
+    
+    # Start heartbeat to keep connection alive
+    heartbeat_interval = 25  # seconds - must be less than typical firewall timeout (30-60s)
+    
+    async def send_heartbeat():
+        """Send periodic ping to client"""
+        ping_count = 0
+        while True:
+            await asyncio.sleep(heartbeat_interval)
+            ping_count += 1
+            try:
+                await manager.send_personal(websocket, {"type": "ping", "timestamp": datetime.utcnow().isoformat()})
+                logger.info(f"Heartbeat ping #{ping_count} sent")
+            except Exception as e:
+                logger.warning(f"Heartbeat failed: {e}")
+                break
+    
+    # Start heartbeat task
+    heartbeat_task = asyncio.create_task(send_heartbeat())
+    
     try:
         while True:
-            data = await websocket.receive_text()
-            # Handle subscription changes
             try:
-                message = json.loads(data)
-                if message.get("action") == "subscribe":
-                    symbols = message.get("symbols", [])
-                    logger.info(f"Client subscribed to: {symbols}")
-            except json.JSONDecodeError:
-                pass
+                # Use wait_for to allow heartbeat to continue even if no messages
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=heartbeat_interval * 2)
+                
+                # Handle subscription changes
+                try:
+                    message = json.loads(data)
+                    if message.get("action") == "subscribe":
+                        symbols = message.get("symbols", [])
+                        logger.info(f"Client subscribed to: {symbols}")
+                    # Handle pong response
+                    elif message.get("type") == "pong":
+                        logger.debug("Received pong from client")
+                except json.JSONDecodeError:
+                    pass
+            except asyncio.TimeoutError:
+                # No message received, but connection is still alive
+                # Heartbeat is still running, just continue waiting
+                continue
     except WebSocketDisconnect:
+        heartbeat_task.cancel()
         manager.disconnect(websocket, "prices")
         logger.info("Price WebSocket client disconnected")
+    except Exception as e:
+        heartbeat_task.cancel()
+        manager.disconnect(websocket, "prices")
+        logger.error(f"Price WebSocket error: {e}")
+        raise
 
 
 @router.websocket("/ws/signals")
