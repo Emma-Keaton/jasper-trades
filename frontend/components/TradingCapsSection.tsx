@@ -17,7 +17,7 @@ interface TradingCaps {
 }
 
 interface TradingCapsSectionProps {
-  portfolioId: number;
+  portfolioId: number | null;
   triggerToast: (type: Toast['type'], title: string, message: string) => void;
 }
 
@@ -26,7 +26,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export default function TradingCapsSection({ portfolioId, triggerToast }: TradingCapsSectionProps) {
   const [caps, setCaps] = useState<TradingCaps>({
     configured: false,
-    portfolio_id: portfolioId,
+    portfolio_id: portfolioId || 1,
     max_position_amount: undefined,
     max_position_percentage: undefined,
     daily_loss_limit: undefined,
@@ -46,13 +46,13 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
   const fetchCaps = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/v1/trading-caps?portfolio_id=${portfolioId}`);
+      const res = await fetch(`${API_URL}/api/v1/trading-caps?portfolio_id=${portfolioId || 1}`);
       const data = await res.json();
 
       if (data.configured) {
         setCaps({
           configured: true,
-          portfolio_id: portfolioId,
+          portfolio_id: portfolioId || 1,
           max_position_amount: data.max_position_amount,
           max_position_percentage: data.max_position_percentage,
           daily_loss_limit: data.daily_loss_limit,
@@ -82,7 +82,7 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          portfolio_id: portfolioId,
+          portfolio_id: portfolioId || 1,
           max_position_amount: caps.max_position_amount,
           max_position_percentage: caps.max_position_percentage,
           daily_loss_limit: caps.daily_loss_limit,

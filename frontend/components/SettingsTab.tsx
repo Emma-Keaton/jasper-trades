@@ -15,7 +15,7 @@ interface ApiSettings {
   nvidia_api_key: string;
   alpaca_api_key: string;
   alpaca_api_secret: string;
-  albaca_paper: boolean;
+  alpaca_paper: boolean;
   binance_api_key: string;
   binance_api_secret: string;
   colab_kronos_url: string;

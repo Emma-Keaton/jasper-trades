@@ -25,7 +25,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
   const [showModal, setShowModal] = useState(false);
   const [showingToken, setShowingToken] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testMessage, setTestMessage] = useState('');
+  const [testMessageText, setTestMessageText] = useState('');
 
   const saveDiscordSettings = async () => {
     try {
@@ -94,7 +94,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
           'Content-Type': 'application/json',
           'X-Device-ID': deviceId,
         },
-        body: JSON.stringify({ message: testMessage || 'Test message from Jasper Trades' }),
+        body: JSON.stringify({ message: testMessageText || 'Test message from Jasper Trades' }),
       });
 
       if (res.ok) {
@@ -240,8 +240,8 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
             <div className="flex gap-2">
               <input
                 type="text"
-                value={testMessage}
-                onChange={(e) => setTestMessage(e.target.value)}
+                value={testMessageText}
+                onChange={(e) => setTestMessageText(e.target.value)}
                 placeholder="Hello from Jasper!"
                 className="flex-1 bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
               />

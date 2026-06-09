@@ -22,7 +22,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export default function EmailServiceSection({ email, setEmail, triggerToast }: EmailServiceSectionProps) {
   const [showModal, setShowModal] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testEmail, setTestEmail] = useState('');
+  const [testEmailAddress, setTestEmailAddress] = useState('');
 
   const saveSendGridSettings = async () => {
     try {
@@ -47,7 +47,7 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
   };
 
   const testEmail = async () => {
-    if (!testEmail || !email.enabled) {
+    if (!testEmailAddress || !email.enabled) {
       triggerToast('warning', 'Not Configured', 'Enable SendGrid and enter a test email');
       return;
     }
@@ -61,11 +61,11 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
           'Content-Type': 'application/json',
           'X-Device-ID': deviceId,
         },
-        body: JSON.stringify({ to: testEmail, channel: 'email' }),
+        body: JSON.stringify({ to: testEmailAddress, channel: 'email' }),
       });
 
       if (res.ok) {
-        triggerToast('success', 'Test Email Sent', `Check ${testEmail} for the test message`);
+        triggerToast('success', 'Test Email Sent', `Check ${testEmailAddress} for the test message`);
       } else {
         triggerToast('error', 'Test Failed', 'Could not send test email');
       }
@@ -146,14 +146,14 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
             <div className="flex gap-2">
               <input
                 type="email"
-                value={testEmail}
-                onChange={(e) => setTestEmail(e.target.value)}
+                value={testEmailAddress}
+                onChange={(e) => setTestEmailAddress(e.target.value)}
                 placeholder="test@example.com"
                 className="flex-1 bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
               />
               <button
                 onClick={testEmail}
-                disabled={testing || !testEmail}
+                disabled={testing || !testEmailAddress}
                 className="px-4 py-2 bg-[#0EA5E9] hover:bg-[#0284C7] disabled:opacity-50 text-white rounded-md text-sm flex items-center gap-2"
               >
                 {testing ? 'Sending...' : (

@@ -95,16 +95,30 @@ async def _colab_predict(
 
 ### 3. Colab Notebook (`kronos_colab.ipynb`)
 
-**Cell 1 - Install dependencies:**
+**Cell 1 - Install dependencies (with Kronos model module):**
 ```python
-!pip install torch transformers accelerate fastapi uvicorn nest-asyncio yfinance pandas numpy git+https://github.com/amazon-science/chronos-forecasting.git
+# Install dependencies
+!pip install torch transformers accelerate fastapi uvicorn nest-asyncio yfinance pandas numpy pyqlib
+
+# Clone Kronos repo to get the model module (required for NeoQuasar models)
+!git clone --depth 1 https://github.com/shiyu-coder/Kronos.git /content/Kronos
+!cp -r /content/Kronos/model /content/
+
+print("✅ Dependencies installed and Kronos model module copied")
 ```
+
+**Important:** The `model` module containing `Kronos`, `KronosTokenizer`, and `KronosPredictor` is NOT available via pip. It must be cloned from the official repo and copied into Colab's working directory before importing.
 
 **Cell 2 - Load all 3 models:**
 ```python
+import torch
 from model import Kronos, KronosTokenizer, KronosPredictor
+import warnings
+warnings.filterwarnings('ignore')
 
-# Load tokenizers
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Load tokenizers first
 tokenizer_base = KronosTokenizer.from_pretrained("NeoQuasar/Kronos-Tokenizer-base")
 tokenizer_2k = KronosTokenizer.from_pretrained("NeoQuasar/Kronos-Tokenizer-2k")
 
@@ -113,17 +127,116 @@ model_mini = Kronos.from_pretrained("NeoQuasar/Kronos-mini")
 model_small = Kronos.from_pretrained("NeoQuasar/Kronos-small")
 model_base = Kronos.from_pretrained("NeoQuasar/Kronos-base")
 
-# Create predictors
+# Create predictors with correct context lengths
 predictor_mini = KronosPredictor(model_mini, tokenizer_2k, device=device, max_context=2048)
 predictor_small = KronosPredictor(model_small, tokenizer_base, device=device, max_context=512)
 predictor_base = KronosPredictor(model_base, tokenizer_base, device=device, max_context=512)
 ```
 
+**Model-Tokenizer pairing:**
+| Model | Tokenizer | Max Context |
+|-------|-----------|-------------|
+| Kronos-mini | Kronos-Tokenizer-2k | 2048 |
+| Kronos-small | Kronos-Tokenizer-base | 512 |
+| Kronos-base | Kronos-Tokenizer-base | 512 |
+
 **Cell 3 - Implement strategies:**
 
-- `predict_cascade()`: Run mini first, filter weak signals, escalate to small then base
-- `predict_context_routed()`: Use mini if len(data) > 512, else base
-- `predict_ensemble()`: Weighted average with weights (0.2, 0.3, 0.5)
+The Kronos `predictor.predict()` method expects OHLCV DataFrames with timestamps, not raw return arrays:
+
+```python
+import yfinance as yf
+import pandas as pd
+from datetime import datetime, timedelta
+
+def fetch_price_data(symbol: str, days: int = 30) -> pd.DataFrame:
+    """Fetch OHLCV data from Yahoo Finance"""
+    df = yf.download(symbol, period=f"{days}d", interval="1d", progress=False)
+    df = df.reset_index()
+    if 'timestamps' not in df.columns and 'Date' in df.columns:
+        df['timestamps'] = pd.to_datetime(df['Date'])
+    return df
+
+def prepare_kronos_input(df: pd.DataFrame, lookback: int):
+    """Prepare OHLCV DataFrame with timestamps for Kronos"""
+    df = df.tail(lookback).reset_index(drop=True)
+    x_df = df[['open', 'high', 'low', 'close']]
+    x_timestamp = df['timestamps']
+    # Create future timestamp for prediction
+    last_ts = x_timestamp.iloc[-1]
+    y_timestamp = pd.Series([last_ts + timedelta(days=1)])
+    return x_df, x_timestamp, y_timestamp
+
+# Strategy 1: Cascade Filtering
+def predict_cascade(symbol: str, lookback_days: int = 30):
+    df = fetch_price_data(symbol, lookback_days)
+    
+    # Step 1: Mini model as screener
+    x_df, x_ts, y_ts = prepare_kronos_input(df, lookback=100)
+    mini_result = predictor_mini.predict(df=x_df, x_timestamp=x_ts, y_timestamp=y_ts, pred_len=1, T=1.0, top_p=0.9, sample_count=1)
+    mini_pred = mini_result['close'].iloc[-1]
+    
+    # Filter weak signals early
+    if abs(mini_pred) < 0.001:
+        return {"direction": "NEUTRAL", "confidence": 0.3, "strategy": "cascade_filtered_at_mini"}
+    
+    # Step 2: Small model for moderate confidence
+    x_df, x_ts, y_ts = prepare_kronos_input(df, lookback=50)
+    small_result = predictor_small.predict(df=x_df, x_timestamp=x_ts, y_timestamp=y_ts, pred_len=1)
+    small_pred = small_result['close'].iloc[-1]
+    
+    if abs(small_pred) < 0.002:
+        return {"direction": "NEUTRAL", "confidence": 0.4, "strategy": "cascade_filtered_at_small"}
+    
+    # Step 3: Base model for final prediction
+    base_result = predictor_base.predict(df=x_df, x_timestamp=x_ts, y_timestamp=y_ts, pred_len=1)
+    base_pred = base_result['close'].iloc[-1]
+    
+    direction = "UP" if base_pred > 0 else "DOWN"
+    return {"direction": direction, "confidence": min(abs(base_pred) * 100, 0.95), "predicted_change": base_pred}
+
+# Strategy 2: Context-Length Routing
+def predict_context_routed(symbol: str, lookback_days: int = 60):
+    df = fetch_price_data(symbol, lookback_days)
+    data_length = len(df)
+    
+    if data_length > 512:
+        # Long context → mini (2048 ctx)
+        x_df, x_ts, y_ts = prepare_kronos_input(df, lookback=min(2000, data_length))
+        result = predictor_mini.predict(df=x_df, x_timestamp=x_ts, y_timestamp=y_ts, pred_len=1)
+        strategy = "context_routed_mini"
+    else:
+        # Short context → base (best accuracy)
+        x_df, x_ts, y_ts = prepare_kronos_input(df, lookback=50)
+        result = predictor_base.predict(df=x_df, x_timestamp=x_ts, y_timestamp=y_ts, pred_len=1)
+        strategy = "context_routed_base"
+    
+    pred = result['close'].iloc[-1]
+    return {"direction": "UP" if pred > 0 else "DOWN", "predicted_change": pred, "strategy": strategy}
+
+# Strategy 3: Model Ensembling
+def predict_ensemble(symbol: str, weights=(0.2, 0.3, 0.5)):
+    df = fetch_price_data(symbol, lookback_days=30)
+    
+    predictions = []
+    
+    # Mini
+    x_df, x_ts, y_ts = prepare_kronos_input(df, lookback=200)
+    mini_result = predictor_mini.predict(df=x_df, x_timestamp=x_ts, y_timestamp=y_ts, pred_len=1)
+    predictions.append(mini_result['close'].iloc[-1] * weights[0])
+    
+    # Small
+    x_df, x_ts, y_ts = prepare_kronos_input(df, lookback=50)
+    small_result = predictor_small.predict(df=x_df, x_timestamp=x_ts, y_timestamp=y_ts, pred_len=1)
+    predictions.append(small_result['close'].iloc[-1] * weights[1])
+    
+    # Base
+    base_result = predictor_base.predict(df=x_df, x_timestamp=x_ts, y_timestamp=y_ts, pred_len=1)
+    predictions.append(base_result['close'].iloc[-1] * weights[2])
+    
+    ensemble_pred = sum(predictions)
+    return {"direction": "UP" if ensemble_pred > 0 else "DOWN", "predicted_change": ensemble_pred}
+```
 
 **Cell 4 - API server with strategy routing:**
 ```python
