@@ -18,6 +18,7 @@ Features:
 """
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 import asyncio
 
