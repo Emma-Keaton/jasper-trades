@@ -55,15 +55,15 @@ RUN cd backend && npm init -y && npm install @open-wa/wa-automate --ignore-scrip
 # Create data directories
 RUN mkdir -p /app/backend/data/sqlite /app/backend/data/logs /app/backend/data/models
 
-# Expose port
-EXPOSE 8000
+# Expose port (use PORT env variable from Render)
+EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD wget --spider -q http://localhost:8000/api/v1/health || exit 1
+    CMD wget --spider -q http://localhost:8080/api/v1/health || exit 1
 
 # Set working directory to backend
 WORKDIR /app/backend
 
-# Run application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run application on port from environment variable (defaults to 8080)
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
