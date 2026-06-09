@@ -33,13 +33,19 @@ git push origin main
 3. **Configure Service:**
    - **Name:** `jasper-backend` (or your choice)
    - **Region:** Choose closest to you (e.g., Oregon, Frankfurt)
-   - **Root Directory:** `backend`
+   - **Root Directory:** `.` (root of repo)
    - **Runtime:** `Python 3`
+   - **Build Command:**
+     ```bash
+     sh render-build.sh
+     ```
    - **Start Command:**
      ```bash
-     python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+     python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
      ```
    - **Instance Type:** **Free** (512MB RAM, 0.5 CPU)
+
+**Note:** The build script compiles both backend (Python) and frontend (Next.js), then serves the frontend from the backend.
 
 ---
 

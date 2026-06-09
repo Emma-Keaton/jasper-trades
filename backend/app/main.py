@@ -283,5 +283,62 @@ async def get_system_tasks():
     return scheduler.get_status()
 
 
-# For serving frontend in production (optional)
-# app.mount("/", StaticFiles(directory="../frontend/dist", html=True), name="static")
+# Serve frontend static files in production (Render monorepo deployment)
+# This serves the Next.js built files from backend/static
+import os
+from fastapi.responses import FileResponse, HTMLResponse
+from pathlib import Path
+
+static_dir = Path(__file__).parent.parent / "static"
+if static_dir.exists() and (static_dir / ".next").exists():
+    logger.info("Frontend build detected - serving static files")
+    
+    # Serve Next.js static assets
+    app.mount("/_next/static", StaticFiles(directory=str(static_dir / ".next" / "static")), name="next_static")
+    
+    # Serve public assets
+    public_dir = static_dir / "public"
+    if public_dir.exists():
+        app.mount("/public", StaticFiles(directory=str(public_dir)), name="public")
+    
+    # Catch-all route for Next.js pages (SPA routing)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str):
+        """Serve Next.js frontend with proper routing support"""
+        # Don't serve API routes through frontend
+        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
+            raise HTTPException(status_code=404)
+        
+        # Try to serve from .next/static first
+        if full_path.startswith("_next/static/"):
+            file_path = static_dir / ".next" / "static" / full_path.replace("_next/static/", "")
+            if file_path.exists():
+                return FileResponse(str(file_path))
+        
+        # Try public assets
+        public_file = public_dir / full_path
+        if public_file.exists():
+            return FileResponse(str(public_file))
+        
+        # Serve index.html for all other routes (Next.js client-side routing)
+        index_file = static_dir / ".next" / "standalone" / "public" / "index.html"
+        if not index_file.exists():
+            index_file = static_dir / "index.html"
+        if not index_file.exists():
+            # Try standalone output
+            index_file = Path(__file__).parent.parent.parent / "frontend" / ".next" / "standalone" / "public" / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file), media_type="text/html")
+        
+        return HTMLResponse(content="Frontend not built. Run: npm run build in frontend/", status_code=404)
+else:
+    logger.info("No frontend build detected - API-only mode")
+    @app.get("/app")
+    async def app_root():
+        """Root endpoint when frontend not available"""
+        return {
+            "name": settings.APP_NAME,
+            "version": settings.APP_VERSION,
+            "status": "API-only mode (frontend not built)",
+            "docs": "/docs",
+        }
