@@ -290,11 +290,11 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pathlib import Path
 
 static_dir = Path(__file__).parent.parent / "static"
-if static_dir.exists() and (static_dir / ".next").exists():
+if static_dir.exists() and (static_dir / "index.html").exists():
     logger.info("Frontend build detected - serving static files")
     
-    # Serve Next.js static assets
-    app.mount("/_next/static", StaticFiles(directory=str(static_dir / ".next" / "static")), name="next_static")
+    # Serve static assets
+    app.mount("/_next/static", StaticFiles(directory=str(static_dir / "_next" / "static")), name="next_static")
     
     # Serve public assets
     public_dir = static_dir / "public"
@@ -309,9 +309,9 @@ if static_dir.exists() and (static_dir / ".next").exists():
         if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
             raise HTTPException(status_code=404)
         
-        # Try to serve from .next/static first
+        # Try to serve from _next/static first
         if full_path.startswith("_next/static/"):
-            file_path = static_dir / ".next" / "static" / full_path.replace("_next/static/", "")
+            file_path = static_dir / "_next" / "static" / full_path.replace("_next/static/", "")
             if file_path.exists():
                 return FileResponse(str(file_path))
         
@@ -321,12 +321,7 @@ if static_dir.exists() and (static_dir / ".next").exists():
             return FileResponse(str(public_file))
         
         # Serve index.html for all other routes (Next.js client-side routing)
-        index_file = static_dir / ".next" / "standalone" / "public" / "index.html"
-        if not index_file.exists():
-            index_file = static_dir / "index.html"
-        if not index_file.exists():
-            # Try standalone output
-            index_file = Path(__file__).parent.parent.parent / "frontend" / ".next" / "standalone" / "public" / "index.html"
+        index_file = static_dir / "index.html"
         if index_file.exists():
             return FileResponse(str(index_file), media_type="text/html")
         
