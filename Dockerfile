@@ -3,40 +3,43 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies (Python + Node.js for OpenWA)
+# Install system dependencies (Python + Node.js + Chromium for OpenWA)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     wget \
     curl \
-    chromium \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
+    gnupg \
+    ca-certificates \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
+    # Chromium dependencies for OpenWA
+    && apt-get install -y \
+        chromium \
+        libnss3 \
+        libatk-bridge2.0-0 \
+        libdrm2 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libgbm1 \
+        libasound2 \
+        libpango-1.0-0 \
+        libcairo2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && chromium --version
 
 # Install Python dependencies
 COPY backend/requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Node.js dependencies for frontend and OpenWA
-COPY frontend/package.json frontend/package-lock.json* /app/frontend/
-RUN cd frontend && npm ci
-
-# Install OpenWA for WhatsApp
-RUN npm install -g @open-wa/wa-automate
-
 # Copy application code
 COPY . .
+
+# Install Node.js dependencies for frontend
+RUN cd frontend && npm ci
 
 # Build frontend with static export
 RUN cd frontend && NEXT_TELEMETRY_DISABLED=1 npm run build
@@ -45,6 +48,9 @@ RUN cd frontend && NEXT_TELEMETRY_DISABLED=1 npm run build
 RUN mkdir -p /app/backend/static && \
     cp -r /app/frontend/out/* /app/backend/static/ && \
     echo "Frontend static files copied to backend/static"
+
+# Install OpenWA for WhatsApp (skip post-install scripts that fail)
+RUN cd backend && npm init -y && npm install @open-wa/wa-automate --ignore-scripts || npm install @open-wa/wa-automate
 
 # Create data directories
 RUN mkdir -p /app/backend/data/sqlite /app/backend/data/logs /app/backend/data/models
