@@ -1,0 +1,6 @@
+{
+  "name": "Jasper Trades",
+  "description": "High-fidelity, responsive frontend dashboard and interface for Jasper Trades AI-powered trading. Powered by NVIDIA NIM API for low-latency AI inference.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["AI_TRADING_AGENTS", "REAL_TIME_MARKET_DATA", "AUTONOMOUS_EXECUTION"]
+}

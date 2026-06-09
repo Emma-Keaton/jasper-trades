@@ -1,0 +1,155 @@
+version: '3.8'
+
+# Jasper Trades - Full Stack Deployment with WhatsApp Notifications
+# All API keys configured via Settings page (not environment variables)
+# Includes: Backend (FastAPI), Frontend (Next.js), WhatsApp (OpenWA), Kronos (Colab)
+
+services:
+  # ===========================================
+  # WhatsApp Service (OpenWA)
+  # ===========================================
+  whatsapp:
+    image: ghcr.io/rmyndhar/openwa:latest
+    container_name: jasper-whatsapp
+    restart: unless-stopped
+    ports:
+      - "2785:2785"  # WhatsApp API port
+    environment:
+      - PORT=2785
+      - NODE_ENV=production
+      - DATABASE_TYPE=sqlite
+      - DATABASE_NAME=/app/data/openwa.sqlite
+      - ENGINE_TYPE=whatsapp-web.js
+      - SESSION_DATA_PATH=/app/data/sessions
+      - PUPPETEER_HEADLESS=true
+      - PUPPETEER_ARGS=--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/data/media
+      - REDIS_ENABLED=false
+      - QUEUE_ENABLED=false
+      - CACHE_ENABLED=false
+    volumes:
+      - whatsapp_data:/app/data
+    networks:
+      - jasper-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2785/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ===========================================
+  # Backend (FastAPI - Jasper Trades)
+  # ===========================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: jasper-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # App configuration
+      - APP_NAME=Jasper Trades (Docker)
+      - APP_VERSION=1.0.0-docker
+      - DEBUG=false
+      - HOST=0.0.0.0
+      - PORT=8000
+      
+      # Database
+      - DATABASE_URL=sqlite+aiosqlite:///./data/sqlite/jasper_trades.db
+      - DATA_DIR=/app/data
+      
+      # NVIDIA NIM API - configure via Settings page
+      - NVIDIA_API_KEY=
+      - NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+      
+      # Model Routing (optimized for free tier)
+      - MODEL_FAST=meta/llama-3.2-3b-instruct
+      - MODEL_BALANCED=meta/llama-3.1-8b-instruct
+      - MODEL_SMART=meta/llama-3.3-70b-instruct
+      - MODEL_DEEP=nvidia/nemotron-3-super-120b-a12b
+      
+      # Alpaca Trading - configure via Settings page
+      - ALPACA_API_KEY=
+      - ALPACA_API_SECRET=
+      - ALPACA_PAPER=true
+      
+      # Binance - configure via Settings page (optional)
+      - BINANCE_API_KEY=
+      - BINANCE_API_SECRET=
+      
+      # WhatsApp Integration
+      - WHATSAPP_SERVICE_URL=http://whatsapp:2785
+      
+      # Security - generate these for production
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+      - API_AUTH_KEY=${API_AUTH_KEY:-jasper-auth-key-change-me}
+      
+      # CORS - update with your production domain
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000,https://jasper-trades.vercel.app
+      
+      # Logging
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      
+      # Kronos (4GB RAM optimized)
+      - KRONOS_MODEL=kronos-mini
+      - KRONOS_FORECAST_HORIZON=50
+      - KRONOS_BATCH_SIZE=3
+      - KRONOS_MEMORY_THRESHOLD=85.0
+      - KRONOS_USE_CLOUD=false
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      whatsapp:
+        condition: service_healthy
+    networks:
+      - jasper-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ===========================================
+  # Frontend (Next.js - Jasper Trades)
+  # ===========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+        - NEXT_PUBLIC_WHATSAPP_URL=http://localhost:2785
+    container_name: jasper-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WHATSAPP_URL=http://localhost:2785
+    depends_on:
+      - backend
+    networks:
+      - jasper-network
+
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  jasper-network:
+    driver: bridge
+
+# ===========================================
+# Volumes
+# ===========================================
+volumes:
+  whatsapp_data:
+    driver: local
+  backend_data:
+    driver: local
