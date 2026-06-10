@@ -21,3 +21,44 @@
   background: #475569;
 }
 
+/* Onboarding Tour Styles */
+.tour-highlight {
+  transition: all 0.3s ease;
+  filter: brightness(1.2);
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px #3B82F6,
+              0 0 20px rgba(59, 130, 246, 0.5);
+  position: relative;
+  z-index: 10001;
+}
+
+.tour-highlight::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 2px solid #3B82F6;
+  pointer-events: none;
+  animation: pulse-blue 2s infinite;
+}
+
+@keyframes pulse-blue {
+  0%, 100% {
+    box-shadow: 0 0 0 2px #3B82F6,
+                0 0 10px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 4px #3B82F6,
+                0 0 20px rgba(59, 130, 246, 0.6);
+  }
+}
+
+/* Disable interactions during tour step (optional) */
+.tour-active {
+  pointer-events: none;
+}
+
+.tour-active .tour-highlight {
+  pointer-events: auto;
+}
+

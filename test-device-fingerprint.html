@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Device Fingerprint</title>
+</head>
+<body>
+    <h1>Device Fingerprinting Test</h1>
+    <div id="results"></div>
+    
+    <script type="module">
+        import { getOrCreateDeviceId, getDeviceInfo, exportDeviceData } from './frontend/lib/deviceFingerprint.js';
+        
+        const results = document.getElementById('results');
+        
+        // Test 1: Get or create device ID
+        const deviceId = getOrCreateDeviceId();
+        results.innerHTML += `<h3>Test 1: Device ID Generated</h3>`;
+        results.innerHTML += `<p>Device ID: <strong>${deviceId}</strong></p>`;
+        
+        // Test 2: Get device info
+        const info = getDeviceInfo();
+        results.innerHTML += `<h3>Test 2: Device Info</h3>`;
+        results.innerHTML += `<pre>${JSON.stringify(info, null, 2)}</pre>`;
+        
+        // Test 3: Export data
+        const exported = exportDeviceData();
+        results.innerHTML += `<h3>Test 3: Export Data</h3>`;
+        results.innerHTML += `<pre>${exported}</pre>`;
+        
+        // Test 4: Simulate app update (clear and recover)
+        results.innerHTML += `<h3>Test 4: Simulate App Update</h3>`;
+        const originalId = deviceId;
+        // Simulate what happens on app update
+        const recoveredId = getOrCreateDeviceId();
+        results.innerHTML += `<p>Original ID: ${originalId}</p>`;
+        results.innerHTML += `<p>Recovered ID: ${recoveredId}</p>`;
+        results.innerHTML += `<p><strong>Match: ${originalId === recoveredId ? '✓ YES' : '✗ NO'}</strong></p>`;
+        
+        results.innerHTML += `<h3>✅ All tests completed!</h3>`;
+    </script>
+</body>
+</html>

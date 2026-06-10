@@ -34,15 +34,35 @@ interface AgentsTabProps {
   agents: AgentState[];
   setAgents: React.Dispatch<React.SetStateAction<AgentState[]>>;
   triggerToast: (type: Toast['type'], title: string, message: string) => void;
+  loading?: boolean;
 }
 
 export default function AgentsTab({
   agents,
   setAgents,
-  triggerToast
+  triggerToast,
+  loading = false
 }: AgentsTabProps) {
   const [selectedAgentId, setSelectedAgentId] = useState<string>('director');
   const [agentDetailsTab, setAgentDetailsTab] = useState<string>('configuration');
+
+  // Show skeleton loaders during initial load
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="h-8 w-48 bg-gray-700 rounded animate-pulse mb-2" />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-[#1E293B] rounded-lg p-4 border border-[#475569] animate-pulse">
+              <div className="h-6 w-6 bg-gray-700 rounded mb-2" />
+              <div className="h-4 w-24 bg-gray-700 rounded mb-2" />
+              <div className="h-3 w-16 bg-gray-700 rounded" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   // Local model configurations details
   const [selectedModel, setSelectedModel] = useState<string>('llama3');

@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Info
 } from 'lucide-react';
+import OnboardingTour from '@/components/onboarding/OnboardingTour';
 
 // Types
 export interface Holding {
@@ -72,6 +73,7 @@ export interface NotificationItem {
 import { usePriceStream } from '@/hooks/usePriceStream';
 import { websocketClient, ConnectionStatus } from '@/lib/websocket';
 import ChatWidget from '@/components/ChatWidget';
+import { SkeletonCard, SkeletonChart, SkeletonConsole, SkeletonTable } from '@/components/Skeleton';
 
 // Import tab components
 import DashboardTab from '@/components/DashboardTab';
@@ -172,7 +174,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch initial data from backend
+  // Fetch initial data from backend (with loading state)
   const fetchBackendData = useCallback(async () => {
     setLoading(true);
 
@@ -250,11 +252,91 @@ export default function Home() {
     setLoading(false);
   }, []);
 
+  // Silent background refresh (no loading state)
+  const refreshBackendData = useCallback(async () => {
+    try {
+      // Refresh portfolio data silently
+      const portfoliosResult = await apiRequest<any[]>('/api/v1/portfolio');
+      if (portfoliosResult.data && portfoliosResult.data.length > 0) {
+        const portfolio = portfoliosResult.data[0];
+        const portfolioId = portfolio.id;
+
+        // Update cash only (don't re-fetch entire portfolio)
+        const freshPortfolio = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}`);
+        if (freshPortfolio.data) {
+          setCash(prev => {
+            const newCash = freshPortfolio.data.cash || 0;
+            return Math.abs(prev - newCash) > 0.01 ? newCash : prev; // Only update if changed
+          });
+        }
+
+        // Update holdings prices silently
+        const holdingsResult = await apiRequest<any[]>(`/api/v1/portfolio/${portfolioId}/holdings`);
+        const holdingsData = holdingsResult.data || [];
+        if (holdingsData.length > 0) {
+          setHoldings(prev => {
+            const newHoldings = holdingsData.map((h: any) => ({
+              symbol: h.symbol,
+              name: h.name || h.symbol,
+              type: h.type || 'Stock',
+              shares: h.shares,
+              avgPrice: h.avg_price || 0,
+              currentPrice: h.current_price || h.avg_price || 0,
+              pnlPercent: h.pnl_percent || 0
+            }));
+            // Only update if data actually changed (prevent unnecessary re-renders)
+            const hasChanged = JSON.stringify(prev) !== JSON.stringify(newHoldings);
+            return hasChanged ? newHoldings : prev;
+          });
+        }
+
+        // Update only recent trades (last 10)
+        const tradesResult = await apiRequest<any[]>(`/api/v1/portfolio/${portfolioId}/trades?limit=10`);
+        const tradesData = tradesResult.data || [];
+        if (tradesData.length > 0) {
+          const newTrades = tradesData.slice(0, 10).map((t: any) => ({
+            id: t.id,
+            date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            type: t.type,
+            symbol: t.symbol,
+            side: 'Long' as 'Long' | 'Short',
+            shares: t.shares,
+            price: t.price,
+            total: t.total,
+            agent: 'Director'
+          }));
+          // Only update if trades changed
+          setTradeHistory(currentTrades => {
+            const hasChanged = JSON.stringify(currentTrades) !== JSON.stringify(newTrades);
+            return hasChanged ? newTrades : currentTrades;
+          });
+        }
+      }
+
+      // Refresh agent status silently
+      const statusResult = await apiRequest<any>('/api/v1/status');
+      if (statusResult.data && statusResult.data.agents) {
+        setAgents(prev => {
+          const newAgents = prev.map(a => ({
+            ...a,
+            status: statusResult.data.agents.includes(a.id.toUpperCase()) ? 'Running' as 'Running' | 'Stopped' | 'Error' : 'Stopped' as 'Running' | 'Stopped' | 'Error'
+          }));
+          // Only update if status changed
+          const hasChanged = JSON.stringify(prev) !== JSON.stringify(newAgents);
+          return hasChanged ? newAgents : prev;
+        });
+      }
+    } catch (error) {
+      // Silently ignore background refresh errors
+      console.error('Background refresh failed:', error);
+    }
+  }, []);
+
   // Initial load and poll for updates (WebSocket handles real-time prices)
   useEffect(() => {
     fetchBackendData();
-    // Poll every 30s for non-price data (WebSocket handles prices)
-    const interval = setInterval(fetchBackendData, 30000);
+    // Silent background refresh every 30s - uses optimized refreshBackendData
+    const interval = setInterval(refreshBackendData, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -491,10 +573,29 @@ export default function Home() {
         <main className={`flex-1 transition-all ${sidebarExpanded ? 'md:pl-60' : 'md:pl-16'} pb-12`}>
           <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-6">
             {loading ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="text-center">
-                  <div className="w-8 h-8 border-2 border-[#3B82F6] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-[#94A3B8] font-mono text-sm">Loading dashboard...</p>
+              <div className="flex flex-col gap-6 w-full animate-pulse">
+                {/* Portfolio Value Cards Skeleton */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {[...Array(4)].map((_, i) => (
+                    <SkeletonCard key={i} />
+                  ))}
+                </div>
+
+                {/* Chart Skeleton */}
+                <div className="bg-[#1E293B] rounded-lg p-6 border border-[#475569]">
+                  <SkeletonChart />
+                </div>
+
+                {/* Holdings & Agents Row */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-[#1E293B] rounded-lg p-6 border border-[#475569]">
+                    <div className="h-6 w-32 bg-gray-700 rounded animate-pulse mb-4" />
+                    <SkeletonTable />
+                  </div>
+                  <div className="bg-[#1E293B] rounded-lg p-6 border border-[#475569]">
+                    <div className="h-6 w-32 bg-gray-700 rounded animate-pulse mb-4" />
+                    <SkeletonConsole />
+                  </div>
                 </div>
               </div>
             ) : (
@@ -503,7 +604,7 @@ export default function Home() {
                   <DashboardTab cash={cash} holdings={holdings} agents={agents} tradeHistory={tradeHistory} triggerToast={triggerToast} loading={loading} portfolioInitialized={portfolioInitialized} />
                 )}
                 {activeTab === 'agents' && (
-                  <AgentsTab agents={agents} setAgents={setAgents} triggerToast={triggerToast} />
+                  <AgentsTab agents={agents} setAgents={setAgents} triggerToast={triggerToast} loading={loading} />
                 )}
                 {activeTab === 'signals' && (
                   <SignalsTab executeTrade={executeTradeFromSignal} triggerToast={triggerToast} />
@@ -597,6 +698,9 @@ export default function Home() {
 
       {/* AI Chat Widget */}
       <ChatWidget />
+
+      {/* Onboarding Tour */}
+      <OnboardingTour activePage={activeTab} enabled={true} />
     </div>
   );
 }

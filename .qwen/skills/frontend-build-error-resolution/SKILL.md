@@ -1,6 +1,6 @@
 ---
 name: frontend-build-error-resolution
-description: Resolve Next.js build errors including duplicate variables, missing modules, and gitignore conflicts
+description: Resolve Next.js build errors including duplicate variables, missing modules, gitignore conflicts, and TypeScript type narrowing issues
 source: auto-skill
 extracted_at: '2026-06-09T16:30:00.000Z'
 ---

@@ -10,6 +10,7 @@ import PayoutSection from './PayoutSection';
 import MarketDataSection from './settings/MarketDataSection';
 import EmailServiceSection from './settings/EmailServiceSection';
 import DiscordBotSection from './settings/DiscordBotSection';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 interface ApiSettings {
   nvidia_api_key: string;
@@ -186,11 +187,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     setLoading(true);
     try {
       // Generate or get device ID
-      let deviceId = localStorage.getItem('device_id');
-      if (!deviceId) {
-        deviceId = 'device_' + Math.random().toString(36).substring(2, 15);
-        localStorage.setItem('device_id', deviceId);
-      }
+      let deviceId = getOrCreateDeviceId();
+      console.log('Using persistent device ID:', deviceId);
 
       const res = await fetch(`${API_URL}/api/v1/settings`, {
         headers: {
@@ -635,7 +633,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         </section>
 
         {/* API Keys Section */}
-        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]" data-tour="api-keys-section">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Key className="w-5 h-5 text-[#3B82F6]" />
@@ -678,7 +676,9 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         </section>
 
         {/* Exness/MT5 Account */}
-        <ExnessSection exness={exness} setExness={setExness} triggerToast={triggerToast} />
+        <div data-tour="exness-section">
+          <ExnessSection exness={exness} setExness={setExness} triggerToast={triggerToast} />
+        </div>
 
         {/* Kronos Colab */}
         <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
@@ -704,16 +704,24 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         </section>
 
         {/* Trading Caps & Risk Limits */}
-        <TradingCapsSection portfolioId={portfolioId} triggerToast={triggerToast} />
+        <div data-tour="trading-caps-section">
+          <TradingCapsSection portfolioId={portfolioId} triggerToast={triggerToast} />
+        </div>
 
         {/* Market Data Providers */}
-        <MarketDataSection marketData={marketData} setMarketData={setMarketData} triggerToast={triggerToast} />
+        <div data-tour="market-data-section">
+          <MarketDataSection marketData={marketData} setMarketData={setMarketData} triggerToast={triggerToast} />
+        </div>
 
         {/* Email Service (SendGrid) */}
-        <EmailServiceSection email={sendgrid} setEmail={setSendgrid} triggerToast={triggerToast} />
+        <div data-tour="email-section">
+          <EmailServiceSection email={sendgrid} setEmail={setSendgrid} triggerToast={triggerToast} />
+        </div>
 
         {/* Discord Bot */}
-        <DiscordBotSection discord={discordBot} setDiscord={setDiscordBot} triggerToast={triggerToast} />
+        <div data-tour="discord-section">
+          <DiscordBotSection discord={discordBot} setDiscord={setDiscordBot} triggerToast={triggerToast} />
+        </div>
 
         {/* Auto-Payout Settings */}
         <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
@@ -826,7 +834,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         </section>
 
         {/* Save Button */}
-        <button onClick={saveApiSettings} className="w-full py-3 bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold rounded-lg flex items-center justify-center gap-2">
+        <button data-tour="save-settings" onClick={saveApiSettings} className="w-full py-3 bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold rounded-lg flex items-center justify-center gap-2">
           <Save className="w-5 h-5" />
           Save All Settings
         </button>
