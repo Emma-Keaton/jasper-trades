@@ -175,6 +175,60 @@ async def get_positions(
     }
 
 
+@router.get("/{portfolio_id}/holdings")
+async def get_holdings(
+    portfolio_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get portfolio holdings (alias for positions endpoint)."""
+    # This is an alias for the positions endpoint
+    portfolio_service = PortfolioService(db)
+    valuation_service = ValuationService()
+
+    positions = await portfolio_service.get_all_positions(portfolio_id, include_empty=False)
+
+    # Update with current prices
+    if positions:
+        prices = await valuation_service.get_prices([p.symbol for p in positions])
+        await portfolio_service.update_position_prices(portfolio_id, prices)
+        positions = await portfolio_service.get_all_positions(portfolio_id, include_empty=False)
+
+    return {
+        "holdings": [
+            {
+                "symbol": p.symbol,
+                "quantity": p.quantity,
+                "avg_price": p.avg_price,
+                "current_price": p.current_price,
+                "market_value": p.market_value,
+                "unrealized_pnl": p.unrealized_pnl,
+                "unrealized_pnl_percent": p.unrealized_pnl_percent,
+            }
+            for p in positions
+        ]
+    }
+
+
+@router.get("/{portfolio_id}/cash")
+async def get_cash(
+    portfolio_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get cash balance for a portfolio."""
+    portfolio_service = PortfolioService(db)
+
+    portfolio = await portfolio_service.get_portfolio(portfolio_id)
+
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    return {
+        "portfolio_id": portfolio_id,
+        "cash": portfolio.cash,
+        "currency": "USD",
+    }
+
+
 @router.post("/{portfolio_id}/cash")
 async def update_cash(
     portfolio_id: int,

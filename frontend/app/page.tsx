@@ -21,7 +21,6 @@ import {
   AlertTriangle,
   Info
 } from 'lucide-react';
-import OnboardingTour from '@/components/onboarding/OnboardingTour';
 
 // Types
 export interface Holding {
@@ -74,6 +73,9 @@ import { usePriceStream } from '@/hooks/usePriceStream';
 import { websocketClient, ConnectionStatus } from '@/lib/websocket';
 import ChatWidget from '@/components/ChatWidget';
 import { SkeletonCard, SkeletonChart, SkeletonConsole, SkeletonTable } from '@/components/Skeleton';
+import { OnboardingProvider } from '@/components/onboarding/OnboardingProvider';
+import OnboardingTour from '@/components/onboarding/OnboardingTour';
+import { usePortfolioHistory } from '@/hooks/usePortfolioHistory';
 
 // Import tab components
 import DashboardTab from '@/components/DashboardTab';
@@ -152,6 +154,13 @@ export default function Home() {
     onStatusChange: setWsStatus,
   });
 
+  // Portfolio history for equity curve chart (Recharts)
+  const { data: portfolioHistory, loading: historyLoading, error: historyError } = usePortfolioHistory({
+    portfolioId: 1,
+    period: '1m',
+    refreshInterval: 30000, // 30 seconds
+  });
+
   // Auto-redirect to /settings when Settings tab is selected
   useEffect(() => {
     if (activeTab === 'settings') {
@@ -219,16 +228,20 @@ export default function Home() {
       setPortfolioLoaded(true);
 
       // Fetch holdings
-      const holdingsResult = await apiRequest<any[]>(`/api/v1/portfolio/${portfolioId}/holdings`);
+      const holdingsResult = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/holdings`);
       if (holdingsResult.data) {
-        setHoldings(holdingsResult.data.map((h: any) => ({
+        // Backend returns { holdings: [...] } not direct array
+        const holdingsArray = Array.isArray(holdingsResult.data) 
+          ? holdingsResult.data 
+          : (holdingsResult.data.holdings || []);
+        setHoldings(holdingsArray.map((h: any) => ({
           symbol: h.symbol,
           name: h.name || h.symbol,
           type: h.type || 'Stock',
-          shares: h.shares,
+          shares: h.shares || h.quantity || 0,
           avgPrice: h.avg_price || 0,
           currentPrice: h.current_price || h.avg_price || 0,
-          pnlPercent: h.pnl_percent || 0
+          pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0
         })));
       }
 
@@ -271,18 +284,21 @@ export default function Home() {
         }
 
         // Update holdings prices silently
-        const holdingsResult = await apiRequest<any[]>(`/api/v1/portfolio/${portfolioId}/holdings`);
-        const holdingsData = holdingsResult.data || [];
+        const holdingsResult = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/holdings`);
+        const holdingsResponse = holdingsResult.data;
+        const holdingsData = Array.isArray(holdingsResponse) 
+          ? holdingsResponse 
+          : (holdingsResponse?.holdings || []);
         if (holdingsData.length > 0) {
           setHoldings(prev => {
             const newHoldings = holdingsData.map((h: any) => ({
               symbol: h.symbol,
               name: h.name || h.symbol,
               type: h.type || 'Stock',
-              shares: h.shares,
+              shares: h.shares || h.quantity || 0,
               avgPrice: h.avg_price || 0,
               currentPrice: h.current_price || h.avg_price || 0,
-              pnlPercent: h.pnl_percent || 0
+              pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0
             }));
             // Only update if data actually changed (prevent unnecessary re-renders)
             const hasChanged = JSON.stringify(prev) !== JSON.stringify(newHoldings);
@@ -425,7 +441,8 @@ export default function Home() {
   const wsText = wsConnected ? 'Live' : 'Connecting';
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC] font-sans flex flex-col selection:bg-[#3B82F6] selection:text-white pb-8 md:pb-0">
+    <OnboardingProvider>
+      <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC] font-sans flex flex-col selection:bg-[#3B82F6] selection:text-white pb-8 md:pb-0">
 
       {/* TOP HEADER */}
       <header className="fixed top-0 left-0 right-0 h-16 bg-[#1E293B] border-b border-[#475569] px-4 flex items-center justify-between z-50">
@@ -439,9 +456,11 @@ export default function Home() {
           </button>
 
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
-            <span className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#3B82F6] to-[#10B981] flex items-center justify-center shadow-lg">
-              <Sparkles className="w-5 h-5 text-white" />
-            </span>
+            <img 
+              src="/logo.png" 
+              alt="Jasper Trades" 
+              className="w-8 h-8 object-contain"
+            />
             <div className="flex flex-col">
               <span className="font-extrabold text-[#F8FAFC] text-md tracking-tight">JASPER</span>
               <span className="text-[10px] text-[#10B981] font-mono leading-none font-semibold">TRADES</span>
@@ -601,7 +620,16 @@ export default function Home() {
             ) : (
               <>
                 {activeTab === 'dashboard' && (
-                  <DashboardTab cash={cash} holdings={holdings} agents={agents} tradeHistory={tradeHistory} triggerToast={triggerToast} loading={loading} portfolioInitialized={portfolioInitialized} />
+                  <DashboardTab
+                    cash={cash}
+                    holdings={holdings}
+                    agents={agents}
+                    tradeHistory={tradeHistory}
+                    triggerToast={triggerToast}
+                    loading={loading}
+                    portfolioInitialized={portfolioInitialized}
+                    equityData={portfolioHistory?.equity || []}
+                  />
                 )}
                 {activeTab === 'agents' && (
                   <AgentsTab agents={agents} setAgents={setAgents} triggerToast={triggerToast} loading={loading} />
@@ -619,7 +647,7 @@ export default function Home() {
                   <AlphaZooTab addAlphaFactor={addAlphaFactorToStrategy} triggerToast={triggerToast} />
                 )}
                 {activeTab === 'portfolio' && (
-                  <PortfolioTab cash={cash} setCash={setCash} holdings={holdings} setHoldings={setHoldings} tradeHistory={tradeHistory} triggerToast={triggerToast} />
+                  <PortfolioTab cash={cash} setCash={setCash} holdings={holdings} setHoldings={setHoldings} tradeHistory={tradeHistory} triggerToast={triggerToast} portfolioInitialized={portfolioInitialized} />
                 )}
                 {activeTab === 'settings' && (
                   <SettingsTab onNavigate={setCurrentSettingsTab} initialTab={currentSettingsTab} triggerToast={triggerToast} />
@@ -702,5 +730,6 @@ export default function Home() {
       {/* Onboarding Tour */}
       <OnboardingTour activePage={activeTab} enabled={true} />
     </div>
+    </OnboardingProvider>
   );
 }

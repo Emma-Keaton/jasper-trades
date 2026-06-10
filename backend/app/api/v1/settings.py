@@ -281,7 +281,7 @@ async def get_settings(device_id: str = Header(None, alias="X-Device-ID")):
         }
 
     except Exception as e:
-        logger.error(f"Failed to get settings: {e}")
+        logger.error(f"Failed to get settings: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve settings")
 
 

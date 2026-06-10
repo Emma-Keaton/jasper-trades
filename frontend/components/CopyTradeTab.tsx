@@ -1,15 +1,15 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  Users, 
-  TrendingUp, 
-  ExternalLink, 
-  UserPlus, 
-  UserPlus2, 
-  Check, 
-  X, 
-  ChevronLeft, 
+import {
+  Users,
+  TrendingUp,
+  ExternalLink,
+  UserPlus,
+  UserPlus2,
+  Check,
+  X,
+  ChevronLeft,
   ChevronRight,
   TrendingDown,
   Info
@@ -35,23 +35,17 @@ interface Trader {
 }
 
 export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
-  // Leaderboard list - empty initially, would fetch from backend
   const [traders, setTraders] = useState<Trader[]>([]);
-
-  // Active copied holdings - empty initially
   const [copiedPositions, setCopiedPositions] = useState<Array<{ id: string; trader: string; symbol: string; entry: number; current: number; pnl: string }>>([]);
-
-  // Detail user profile states
   const [selectedTraderProfile, setSelectedTraderProfile] = useState<Trader | null>(null);
 
-  // Toggle Following status of trader
   const toggleFollowTrader = (id: string, name: string) => {
     setTraders(prev => prev.map(t => {
       if (t.id === id) {
         const nextState = !t.following;
         triggerToast(
-          nextState ? 'success' : 'warning', 
-          nextState ? 'Copy Connection Online' : 'Copy Connection Dispatched', 
+          nextState ? 'success' : 'warning',
+          nextState ? 'Copy Connection Online' : 'Copy Connection Dispatched',
           nextState ? `Commenced passive order synthesis for ${name}.` : `Terminated copy allocations from ${name}.`
         );
         return { ...t, following: nextState };
@@ -60,18 +54,19 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
     }));
   };
 
-  // Close direct copied allocation element
   const unfollowCopiedPosition = (id: string, symbol: string, traderName: string) => {
     setCopiedPositions(prev => prev.filter(p => p.id !== id));
     triggerToast('warning', 'Position Extinguished', `Successfully liquidated copied allocation of ${symbol} from ${traderName}.`);
   };
 
-  // Active follow metric counters
   const activeFollowsCount = traders.filter(t => t.following).length;
 
   return (
-    <div className="flex flex-col gap-6 w-full">
-      
+    <div 
+      data-onboarding="copytrade-tour"
+      className="flex flex-col gap-6 w-full"
+    >
+
       {/* Visual Title */}
       <div>
         <h1 className="text-2xl font-black text-white tracking-tight font-sans">Copy Trading Desk</h1>
@@ -80,7 +75,6 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
 
       {/* SUMMARY BOX CARDS ROW */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1 */}
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
             <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Connections Active</span>
@@ -92,7 +86,6 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
           </div>
         </div>
 
-        {/* Card 2: Total Copy P&L */}
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
             <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Total Copy P&L</span>
@@ -104,7 +97,6 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
           </div>
         </div>
 
-        {/* Card 3: Top Producer */}
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
             <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Alpha Top Producer</span>
@@ -116,7 +108,6 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
           </div>
         </div>
 
-        {/* Card 4 */}
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
             <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold text-slate-400">Copied Holdings</span>
@@ -129,14 +120,17 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
         </div>
       </div>
 
-      {/* LEADERBOARD TABLE GRID */}
-      <div className="bg-[#1E293B] border border-[#475569] rounded-xl p-4">
+      {/* LEADERBOARD TABLE */}
+      <div 
+        data-onboarding="leaderboard-table"
+        className="bg-[#1E293B] border border-[#475569] rounded-xl p-4"
+      >
         <div className="flex items-center justify-between mb-4 border-b border-[#475569] pb-3 select-none">
           <div className="flex flex-col">
             <h3 className="font-bold text-md text-[#F8FAFC]">Verified Traders Leaderboard</h3>
             <span className="text-xs font-mono text-[#94A3B8]">Audit-proven capital managers sorting live ROI indices</span>
           </div>
-          <button 
+          <button
             onClick={() => triggerToast('info', 'Leaderboard Scanned', 'Synchronized audited return streams.')}
             className="text-xs text-[#3B82F6] hover:underline font-mono"
           >
@@ -177,7 +171,7 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
                 <tr key={trader.id} className="h-14 hover:bg-[#334155]/20 transition ease-out">
                   <td className="text-center font-bold text-[#F8FAFC] text-sm">{trader.rank}</td>
                   <td>
-                    <div 
+                    <div
                       onClick={() => setSelectedTraderProfile(trader)}
                       className="flex items-center gap-2.5 cursor-pointer group"
                     >
@@ -198,13 +192,15 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() => setSelectedTraderProfile(trader)}
+                        data-onboarding="trader-profile"
                         className="p-1 px-2 border border-[#475569] hover:bg-[#334155] rounded text-[10px] font-bold text-white transition outline-none"
                       >
                         PROFILE
                       </button>
-                      
+
                       <button
                         onClick={() => toggleFollowTrader(trader.id, trader.user)}
+                        data-onboarding="follow-button"
                         className={`py-1 px-3 rounded text-[10px] font-bold flex items-center gap-1.5 transition outline-none ${
                           trader.following
                             ? 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 hover:bg-[#10B981]/25'
@@ -231,8 +227,11 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
         </div>
       </div>
 
-      {/* ACTIVE COPY POSITION TABLES LISTINGS */}
-      <div className="bg-[#1E293B] border border-[#475569] rounded-xl p-4">
+      {/* ACTIVE COPY POSITIONS */}
+      <div 
+        data-onboarding="copied-positions"
+        className="bg-[#1E293B] border border-[#475569] rounded-xl p-4"
+      >
         <div className="flex flex-col gap-1 mb-4 border-b border-[#475569] pb-3">
           <h3 className="font-bold text-md text-[#F8FAFC]">Active Synthesized Holdings</h3>
           <span className="text-xs font-mono text-[#94A3B8]">Secondary order payloads currently linked with follower allocations</span>
@@ -262,6 +261,7 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
                     <td className="text-right">
                       <button
                         onClick={() => unfollowCopiedPosition(pos.id, pos.symbol, pos.trader)}
+                        data-onboarding="unfollow-button"
                         className="py-1 px-2.5 border border-[#475569] hover:bg-red-500/10 hover:border-red-400 hover:text-red-400 rounded text-[10px] font-bold font-mono uppercase tracking-wider transition outline-none"
                       >
                         LIQUIDATE
@@ -334,7 +334,6 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
         </div>
       )}
 
-      {/* Styled keyframes for overlay modals imports */}
       <style jsx global>{`
         @keyframes fadeIn {
           from { opacity: 0; }

@@ -46,7 +46,6 @@ export default function AgentsTab({
   const [selectedAgentId, setSelectedAgentId] = useState<string>('director');
   const [agentDetailsTab, setAgentDetailsTab] = useState<string>('configuration');
 
-  // Show skeleton loaders during initial load
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -64,14 +63,12 @@ export default function AgentsTab({
     );
   }
 
-  // Local model configurations details
   const [selectedModel, setSelectedModel] = useState<string>('llama3');
   const [temperature, setTemperature] = useState<number>(0.7);
   const [maxTokens, setMaxTokens] = useState<number>(1024);
   const [timeout, setTimeoutVal] = useState<number>(5000);
   const [testingConnection, setTestingConnection] = useState<boolean>(false);
 
-  // Model specification profile maps
   const modelProfiles: { [key: string]: { name: string; speed: number; accuracy: number; cost: number; desc: string } } = {
     llama3: { name: "meta/llama-3.3-70b-instruct", speed: 4, accuracy: 4, cost: 3, desc: "Highly aligned robust task-completer with stellar standard logic." },
     deepseek: { name: "deepseek/deepseek-r1-distill-llama-70b", speed: 2, accuracy: 5, cost: 2, desc: "Chain-of-thought mathematical reasoning model. High latency but elite alpha signals accuracy." },
@@ -81,17 +78,16 @@ export default function AgentsTab({
 
   const activeModel = modelProfiles[selectedModel] || modelProfiles.llama3;
 
-  // Toggle agent status via API
   const toggleAgentStatus = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const agent = agents.find(a => a.id === id);
     if (!agent) return;
 
     const action = agent.status === 'Running' ? 'stop' : 'start';
-    
+
     try {
       const result = await apiRequest<any>(`/api/v1/agents/${id}/${action}`, { method: 'POST' });
-      
+
       if (result.error) {
         triggerToast('error', 'Agent Control Failed', result.error);
         return;
@@ -114,7 +110,6 @@ export default function AgentsTab({
     }
   };
 
-  // Connection validate simulation
   const runConnectionTest = () => {
     setTestingConnection(true);
     setTimeout(() => {
@@ -130,16 +125,22 @@ export default function AgentsTab({
   const selectedAgent = agents.find(a => a.id === selectedAgentId) || agents[0];
 
   return (
-    <div className="flex flex-col gap-6 w-full">
-      
+    <div
+      data-onboarding="agents-tour"
+      className="flex flex-col gap-6 w-full"
+    >
+
       {/* Tab Header */}
       <div>
         <h1 className="text-2xl font-black text-white tracking-tight font-sans">AI Workspace Agents</h1>
         <p className="text-sm text-[#94A3B8]">Deploy, inspect, and benchmark autonomous logic micro-engines.</p>
       </div>
 
-      {/* 1. AGENTS RUNNING CARDS OVERVIEW */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* AGENTS CARDS OVERVIEW */}
+      <div
+        data-onboarding="agent-director"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4"
+      >
         {agents.map((agent) => {
           const isRunning = agent.status === 'Running';
           const isSelected = selectedAgentId === agent.id;
@@ -168,20 +169,20 @@ export default function AgentsTab({
                     {agent.status}
                   </span>
                 </div>
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center" data-onboarding="agent-latency">
                   <span>Avg Speed:</span>
                   <span className="text-[#F8FAFC]">{agent.latency}</span>
                 </div>
               </div>
 
-              {/* Card toggle action controls */}
               <button
                 role="button"
                 aria-label={isRunning ? `Stop agent ${agent.name}` : `Start agent ${agent.name}`}
                 onClick={(e) => toggleAgentStatus(agent.id, e)}
+                data-onboarding="agent-status"
                 className={`w-full py-1 rounded text-[10px] font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-1.5 transition outline-none ${
-                  isRunning 
-                    ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20' 
+                  isRunning
+                    ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20'
                     : 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/20 hover:bg-[#10B981]/25'
                 }`}
               >
@@ -202,9 +203,8 @@ export default function AgentsTab({
         })}
       </div>
 
-      {/* 2. TABBED AGENT DETAIL WORKSPACE */}
+      {/* TABBED AGENT DETAIL WORKSPACE */}
       <div className="bg-[#1E293B] border border-[#475569] rounded-xl overflow-hidden">
-        {/* Detail view header switchers */}
         <div className="bg-[#334155]/30 border-b border-[#475569] px-4 pt-3 flex items-center gap-1 overflow-x-auto">
           {[
             { id: 'configuration', label: 'Configuration' },
@@ -216,8 +216,8 @@ export default function AgentsTab({
               key={tab.id}
               onClick={() => setAgentDetailsTab(tab.id)}
               className={`text-xs font-bold px-4 py-2.5 -mb-px rounded-t-lg transition border-t-2 flex-shrink-0 outline-none ${
-                agentDetailsTab === tab.id 
-                  ? 'bg-[#1E293B] border-[#3B82F6] text-[#3B82F6]' 
+                agentDetailsTab === tab.id
+                  ? 'bg-[#1E293B] border-[#3B82F6] text-[#3B82F6]'
                   : 'border-transparent text-[#94A3B8] hover:text-[#F8FAFC]'
               }`}
             >
@@ -226,7 +226,6 @@ export default function AgentsTab({
           ))}
         </div>
 
-        {/* Tab contents block */}
         <div className="p-6">
           <div className="flex flex-col gap-1 mb-6 border-b border-[#475569]/30 pb-4">
             <div className="flex items-center gap-2">
@@ -240,25 +239,22 @@ export default function AgentsTab({
             </p>
           </div>
 
-          {/* SUB-TAB 1: Configuration panel */}
           {agentDetailsTab === 'configuration' && (
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-              {/* Left Form: Parameters sliders */}
               <div className="md:col-span-6 flex flex-col gap-6">
                 <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-[#94A3B8] border-b border-[#475569]/30 pb-1.5 flex items-center gap-1">
                   <Settings className="w-3.5 h-3.5" /> Engine Parameter Tuner
                 </span>
-                
-                {/* Temperature Slider */}
+
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between text-xs font-mono">
                     <span className="text-[#94A3B8]">Logical Generative Temperature</span>
                     <span className="font-bold text-[#3B82F6]">{temperature}</span>
                   </div>
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="1" 
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
                     step="0.05"
                     value={temperature}
                     onChange={(e) => setTemperature(parseFloat(e.target.value))}
@@ -267,43 +263,40 @@ export default function AgentsTab({
                   <span className="text-[10px] text-[#94A3B8]">Lower temp is precise & deterministic. Higher is imaginative & research-heavy.</span>
                 </div>
 
-                {/* Tokens Slider */}
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between text-xs font-mono">
                     <span className="text-[#94A3B8]">Max Completion Limits</span>
                     <span className="font-bold text-[#3B82F6]">{maxTokens} tokens</span>
                   </div>
-                  <input 
-                    type="range" 
-                    min="256" 
-                    max="4096" 
+                  <input
+                    type="range"
+                    min="256"
+                    max="4096"
                     step="128"
                     value={maxTokens}
                     onChange={(e) => setMaxTokens(parseInt(e.target.value))}
                     className="w-full h-1 bg-[#0F172A] rounded-lg appearance-none cursor-pointer accent-[#3B82F6]"
                   />
-                  <span className="text-[10px] text-[#94A3B8]">Boundary limit on generated thoughts payload. Higher takes more time but allows elaborate outputs.</span>
+                  <span className="text-[10px] text-[#94A3B8]">Boundary limit on generated thoughts payload.</span>
                 </div>
 
-                {/* Timeout Limit */}
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between text-xs font-mono">
                     <span className="text-[#94A3B8]">API Handshake Timeout Max</span>
                     <span className="font-bold text-[#3B82F6]">{timeout}ms</span>
                   </div>
-                  <input 
-                    type="range" 
-                    min="1000" 
-                    max="15000" 
+                  <input
+                    type="range"
+                    min="1000"
+                    max="15000"
                     step="5000"
                     value={timeout}
                     onChange={(e) => setTimeoutVal(parseInt(e.target.value))}
                     className="w-full h-1 bg-[#0F172A] rounded-lg appearance-none cursor-pointer accent-[#3B82F6]"
                   />
-                  <span className="text-[10px] text-[#94A3B8]">Maximum milliseconds before terminating stale inference payloads.</span>
+                  <span className="text-[10px] text-[#94A3B8]">Maximum milliseconds before terminating stale inference.</span>
                 </div>
 
-                {/* Submits and tests buttons block */}
                 <div className="flex items-center gap-3 pt-4">
                   <button
                     onClick={saveAgentConfig}
@@ -314,16 +307,19 @@ export default function AgentsTab({
                   <button
                     onClick={runConnectionTest}
                     disabled={testingConnection}
+                    data-onboarding="test-connection"
                     className="border border-[#475569] hover:bg-[#334155] hover:text-[#F8FAFC] text-[#94A3B8] text-xs font-bold py-2.5 px-4 rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-50 outline-none"
                   >
-                    <RefreshCw className={`w-4 h-4 ${testingConnection ? 'animate-spin' : ''}`} /> 
+                    <RefreshCw className={`w-4 h-4 ${testingConnection ? 'animate-spin' : ''}`} />
                     {testingConnection ? 'TESTING...' : 'VALIDATE NODE'}
                   </button>
                 </div>
               </div>
 
-              {/* Right panel: LLM Selector models */}
-              <div className="md:col-span-6 flex flex-col gap-6">
+              <div
+                data-onboarding="model-config"
+                className="md:col-span-6 flex flex-col gap-6"
+              >
                 <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-[#94A3B8] border-b border-[#475569]/30 pb-1.5 flex items-center gap-1">
                   <Cpu className="w-3.5 h-3.5" /> Backed Model Selection
                 </span>
@@ -345,23 +341,20 @@ export default function AgentsTab({
                   </select>
                 </div>
 
-                {/* Selected Model parameters benchmark rating bar representation */}
                 <div className="bg-[#0F172A] border border-[#475569] p-4 rounded-xl flex flex-col gap-4 font-mono text-xs text-[#94A3B8]">
                   <span className="font-bold text-white text-xs">{activeModel.name}</span>
                   <p className="text-[11px] leading-relaxed select-text">{activeModel.desc}</p>
-                  
+
                   <div className="flex flex-col gap-2 pt-2 border-t border-[#475569]/30">
-                    {/* Speed indicator */}
                     <div className="flex justify-between items-center">
                       <span>Inference Speed Benchmark:</span>
-                      <div className="flex items-center gap-1 font-bold">
+                      <div className="flex items-center gap-1 font-bold" data-onboarding="agent-latency">
                         {Array.from({ length: 5 }).map((_, i) => (
                           <span key={i} className={`w-2.5 h-2.5 rounded-full ${i < activeModel.speed ? 'bg-[#3B82F6]' : 'bg-[#334155]'}`} />
                         ))}
                       </div>
                     </div>
 
-                    {/* Accuracy indicator */}
                     <div className="flex justify-between items-center">
                       <span>Reasoning Quality:</span>
                       <div className="flex items-center gap-1 font-bold">
@@ -371,7 +364,6 @@ export default function AgentsTab({
                       </div>
                     </div>
 
-                    {/* Cost quotient indicator */}
                     <div className="flex justify-between items-center">
                       <span>Inference Overhead Rating:</span>
                       <div className="flex items-center gap-1 font-bold">
@@ -386,9 +378,11 @@ export default function AgentsTab({
             </div>
           )}
 
-          {/* SUB-TAB 2: Performance logs and metrics */}
           {agentDetailsTab === 'performance' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 font-mono text-xs">
+            <div
+              data-onboarding="agent-status"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 font-mono text-xs"
+            >
               <div className="bg-[#0F172A] p-4 rounded-lg border border-[#475569]/30 flex flex-col gap-1.5 justify-center">
                 <span className="text-[#94A3B8]">TOTAL SYNERGY DECISIONS</span>
                 <span className="text-xl font-bold font-mono text-white">1,247 commands</span>
@@ -412,7 +406,6 @@ export default function AgentsTab({
             </div>
           )}
 
-          {/* SUB-TAB 3: Live Agent Streams terminal */}
           {agentDetailsTab === 'logs' && (
             <div className="bg-[#0F172A] border border-[#475569] rounded-lg p-4 font-mono text-xs text-[#94A3B8] h-48 overflow-y-auto flex flex-col gap-2">
               <p className="text-[#3B82F6]">[BOOTSTRAP CLIENT] Secured workspace environment handshakes initiated.</p>
@@ -420,11 +413,10 @@ export default function AgentsTab({
               <p className="text-[#10B981]">[OK] Thread successfully established local connection loop. Client port mapped.</p>
               <p className="text-white">[TELEMETRY] Listening to Webhooks endpoints. Live price feeds running.</p>
               <p className="text-pink-400">[TRACE] Thread synchronized with central {selectedAgent.name} control registers.</p>
-              <p className="text-[#94A3B8] animate-pulse">&gt; Waiting for next automated payload transaction event...</p>
+              <p className="text-[#94A3B8] animate-pulse">{'> '}Waiting for next automated payload transaction event...</p>
             </div>
           )}
 
-          {/* SUB-TAB 4: Skills capability */}
           {agentDetailsTab === 'skills' && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
               <div className="bg-[#0F172A] border border-[#475569]/30 p-4 rounded-lg flex flex-col gap-2">

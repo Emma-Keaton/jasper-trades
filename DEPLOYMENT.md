@@ -11,6 +11,8 @@ This opens two windows:
 - **Backend**: http://localhost:8000 (API docs at /docs)
 - **Frontend**: http://localhost:3000 (trading dashboard)
 
+**Note:** Database migrations run automatically on startup - no manual setup required!
+
 ---
 
 ## Part 1: Local Development Setup
@@ -97,6 +99,43 @@ npm run dev
    - `"should I buy AAPL"` - AI analysis
    - `"is market open"` - Market hours
    - `"help"` - List all commands
+
+---
+
+## Part 1.5: Automatic Database Setup
+
+**No manual database setup required!** Jasper Trades includes automatic database migration that runs on every application startup.
+
+### What Happens on Startup
+
+1. **Check Tables:** System checks if database tables exist
+2. **Create Missing:** Any missing tables are created
+3. **Add Columns:** Missing columns are added to existing tables
+4. **Preserve Data:** Your existing data is preserved
+
+### Deployment Guarantees
+
+✅ **Local:** First run creates fresh database  
+✅ **Render/Cloud:** Database schema auto-updates on deploy  
+✅ **Docker:** Migrations run on container start  
+✅ **Safe:** Migration is idempotent (safe to run multiple times)
+
+### Troubleshooting Database Errors
+
+If you see database errors like `"no such column"`:
+
+```bash
+# 1. Stop the backend
+# 2. Delete the database (local only, not production!)
+rm backend/data/sqlite/jasper_trades.db
+
+# 3. Restart backend - fresh database created automatically
+python -m uvicorn app.main:app --reload
+```
+
+**Production:** Database migrations run automatically - no action needed.
+
+See `DATABASE_SETUP.md` for complete migration details.
 
 ---
 

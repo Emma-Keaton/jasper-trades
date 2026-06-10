@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Shield, Check, X, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { Toast } from '@/app/page';
 
-interface ExnessSettings {
+export interface ExnessSettings {
   login_id: string;
   server: string;
   password: string;

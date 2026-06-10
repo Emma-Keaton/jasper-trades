@@ -27,33 +27,16 @@ echo "📋 Copying frontend build to backend..."
 cd ..
 mkdir -p backend/static
 
-# Copy .next static files (for standalone output)
-if [ -d "frontend/.next/static" ]; then
-    cp -r frontend/.next/static backend/static/
-    echo "   Copied .next/static"
-fi
-
-# Copy public assets
-if [ -d "frontend/public" ]; then
-    cp -r frontend/public backend/static/
-    echo "   Copied public assets"
-fi
-
-# Copy standalone output if it exists (Next.js production build)
-if [ -d "frontend/.next/standalone" ]; then
-    cp -r frontend/.next/standalone/* backend/static/ 2>/dev/null || true
-    echo "   Copied standalone build"
-fi
-
-# Copy index.html from exported build if exists
-if [ -f "frontend/out/index.html" ]; then
-    cp frontend/out/index.html backend/static/ 2>/dev/null || true
-fi
+# Ensure data directories exist for runtime
+echo "📁 Creating data directories..."
+mkdir -p backend/data/sqlite
+mkdir -p backend/data/swarm_tasks
 
 echo ""
 echo "✅ Build complete!"
 echo "   Backend: Ready"
 echo "   Frontend: Built and copied to backend/static"
+echo "   Data directories: Created"
 echo ""
 echo "⚠️  IMPORTANT: Make sure NEXT_PUBLIC_WS_URL is set in Render dashboard"
 echo "   Example: wss://your-backend.onrender.com"

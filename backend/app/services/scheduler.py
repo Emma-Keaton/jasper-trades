@@ -144,10 +144,10 @@ class SchedulerService:
             active_agents = agent_registry.get_active()
 
             generated_count = 0
-            for agent_name, agent in active_agents.items():
+            for agent_name in active_agents:
                 # Each agent generates signals based on its strategy
-                # This is a simplified version
                 logger.debug(f"Agent {agent_name} generating signals")
+                # Agents generate signals via their analyze() method
                 # Would call agent.analyze() and agent.generate_signal()
 
             await db.close()
@@ -155,7 +155,7 @@ class SchedulerService:
             logger.info(f"Generated {generated_count} new signals")
 
         except Exception as e:
-            logger.error(f"Error generating signals: {e}")
+            logger.error(f"Error generating signals: {e}", exc_info=True)
 
     async def _expire_signals(self):
         """Check and mark expired signals."""

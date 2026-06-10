@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   TrendingUp,
   Bot,
@@ -10,7 +10,9 @@ import {
   Plus
 } from 'lucide-react';
 import { Holding, TradeHistoryItem, Toast } from '@/app/page';
+import { EquityDataPoint } from '@/hooks/usePortfolioHistory';
 import { SkeletonCard, SkeletonChart, SkeletonConsole, SkeletonTable } from './Skeleton';
+import EquityChart from './charts/EquityChart';
 
 interface DashboardTabProps {
   cash: number;
@@ -20,6 +22,7 @@ interface DashboardTabProps {
   triggerToast: (type: Toast['type'], title: string, message: string) => void;
   loading?: boolean;
   portfolioInitialized?: boolean;
+  equityData?: EquityDataPoint[];
 }
 
 export default function DashboardTab({
@@ -29,7 +32,8 @@ export default function DashboardTab({
   tradeHistory,
   triggerToast,
   loading = false,
-  portfolioInitialized = false
+  portfolioInitialized = false,
+  equityData = []
 }: DashboardTabProps) {
   const [timeframe, setTimeframe] = useState<string>('1M');
 
@@ -37,45 +41,34 @@ export default function DashboardTab({
   const totalHoldingsValue = holdings.reduce((sum, h) => sum + (h.shares * h.currentPrice), 0);
   const totalPortfolioValue = totalHoldingsValue + cash;
 
-  // Only calculate PnL if portfolio is initialized with real trading activity
-  // Otherwise show $0 PnL to avoid phantom gains/losses on initial $100K
-  const portfolioChange = portfolioInitialized ? totalPortfolioValue - 100000 : 0;
-  const portfolioChangePercent = portfolioInitialized && totalPortfolioValue > 0
-    ? (portfolioChange / 100000) * 100
+  // PnL is calculated and provided by backend via portfolio history
+  // Frontend does NOT make assumptions about initial values
+  // Display portfolio value as-is from backend data
+  const portfolioChange = equityData && equityData.length > 0
+    ? totalPortfolioValue - equityData[0].y  // Change from first data point
+    : 0;  // No history data = no PnL to show
+  const portfolioChangePercent = equityData && equityData.length > 0 && equityData[0].y > 0
+    ? (portfolioChange / equityData[0].y) * 100
     : 0;
 
-  // Chart data based on actual portfolio performance
-  const getChartCoordinates = () => {
-    // Show flat line at $0 when not initialized or loading
-    if (loading || !portfolioInitialized || totalPortfolioValue === 0) {
-      return {
-        points: "M 0 150 L 600 150",
-        dots: [
-          {cx: 0, cy: 150, label: "Start", val: "$0"},
-          {cx: 600, cy: 150, label: "Now", val: "$0"}
-        ],
-        fillGradient: "M 0 150 L 600 150 L 600 200 L 0 200 Z",
-        high: "$0", low: "$0", current: "$0"
-      };
+  // Chart data for equity curve - use actual backend data
+  const chartData = useMemo(() => {
+    // If we have actual equity data from backend, use it
+    if (equityData && equityData.length > 0) {
+      return equityData.map(point => ({ x: point.x, y: point.y }));
     }
 
-    const isPositive = portfolioChange >= 0;
-    const endY = isPositive ? 100 - Math.min(Math.abs(portfolioChangePercent) * 2, 60) : 100 + Math.min(Math.abs(portfolioChangePercent) * 2, 60);
+    // Fallback: show flat line at current value if portfolio exists
+    if (totalPortfolioValue > 0) {
+      return [
+        { x: 0, y: totalPortfolioValue },
+        { x: 1, y: totalPortfolioValue }
+      ];
+    }
 
-    return {
-      points: `M 0 100 L 600 ${endY}`,
-      dots: [
-        {cx: 0, cy: 100, label: "Start", val: "$100,000"},
-        {cx: 600, cy: endY, label: "Now", val: `$${totalPortfolioValue.toLocaleString()}`}
-      ],
-      fillGradient: `M 0 100 L 600 ${endY} L 600 200 L 0 200 Z`,
-      high: isPositive ? `$${totalPortfolioValue.toLocaleString()}` : "$100,000",
-      low: isPositive ? "$100,000" : `$${totalPortfolioValue.toLocaleString()}`,
-      current: `$${totalPortfolioValue.toLocaleString()}`
-    };
-  };
-
-  const chartData = getChartCoordinates();
+    // No portfolio data - empty chart
+    return [];
+  }, [equityData, totalPortfolioValue]);
 
   if (loading) {
     return (
@@ -108,7 +101,10 @@ export default function DashboardTab({
   }
 
   return (
-    <div className="flex flex-col gap-6 w-full">
+    <div
+      data-onboarding="dashboard-tour"
+      className="flex flex-col gap-6 w-full"
+    >
 
       {/* Dynamic View Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -126,7 +122,10 @@ export default function DashboardTab({
       </div>
 
       {/* PORTFOLIO SUMMARY CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div
+        data-onboarding="portfolio-value"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+      >
         {/* Card 1: Total Value */}
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between relative overflow-hidden group hover:border-[#3B82F6] transition">
           <div className="flex flex-col gap-1.5">
@@ -142,7 +141,7 @@ export default function DashboardTab({
           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-[#3B82F6] to-transparent opacity-0 group-hover:opacity-100 transition" />
         </div>
 
-        {/* Card 2: 24h P&L */}
+        {/* Card 2: P&L */}
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between relative overflow-hidden group hover:border-[#10B981] transition">
           <div className="flex flex-col gap-1.5">
             <span className="text-xs uppercase font-mono text-[#94A3B8] tracking-wider font-bold">Total P&L</span>
@@ -199,121 +198,54 @@ export default function DashboardTab({
       {/* EQUITY CURVE CHART & AGENT CONSOLE GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-        {/* Equity Curve Chart */}
-        <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl lg:col-span-7 flex flex-col gap-4">
+        {/* Equity Curve Chart with Recharts */}
+        <div
+          data-onboarding="pnl-chart"
+          className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl lg:col-span-7 flex flex-col gap-4"
+        >
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
               <span className="font-bold text-md text-[#F8FAFC]">Portfolio Equity Curve</span>
               <span className="text-xs font-mono text-[#94A3B8]">Performance since inception</span>
             </div>
-
-            {/* Range Toggle buttons */}
-            <div className="bg-[#0F172A] p-1 border border-[#475569] rounded-lg flex items-center gap-1 font-mono">
-              {['1D', '1W', '1M'].map(btn => (
-                <button
-                  key={btn}
-                  onClick={() => {
-                    setTimeframe(btn);
-                    triggerToast('info', 'Timeframe Updated', `Chart view changed to ${btn}`);
-                  }}
-                  className={`text-[10px] font-bold px-2 py-1 rounded transition max-h-7 flex items-center outline-none ${
-                    timeframe === btn ? 'bg-[#3B82F6] text-white' : 'text-[#94A3B8] hover:text-[#F8FAFC]'
-                  }`}
-                >
-                  {btn}
-                </button>
-              ))}
-            </div>
           </div>
 
-          {/* Chart */}
-          <div className="relative w-full h-[180px] bg-[#0F172A] border border-[#475569] rounded-lg flex items-center justify-center p-2 group">
-            {/* Plot grid guides */}
-            <div className="absolute inset-0 flex flex-col justify-between py-4 px-2 pointer-events-none opacity-20">
-              <div className="border-b border-[#475569] w-full" />
-              <div className="border-b border-[#475569] w-full" />
-              <div className="border-b border-[#475569] w-full" />
-              <div className="border-b border-[#475569] w-full" />
-            </div>
-
-            {/* SVG Drawing */}
-            <svg viewBox="0 0 600 200" preserveAspectRatio="none" className="w-full h-full">
-              <defs>
-                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.30"/>
-                  <stop offset="100%" stopColor="#3B82F6" stopOpacity="0.0"/>
-                </linearGradient>
-              </defs>
-
-              {/* Area Under-fill */}
-              <path
-                d={chartData.fillGradient}
-                fill="url(#areaGrad)"
-                className="transition-all duration-500 ease-in-out"
-              />
-
-              {/* Line stroke */}
-              <path
-                d={chartData.points}
-                fill="none"
-                stroke="#3B82F6"
-                strokeWidth="3.2"
-                strokeLinecap="round"
-                className="transition-all duration-500 ease-in-out"
-              />
-
-              {/* Data points */}
-              {chartData.dots.map((dot, index) => (
-                <g key={index} className="transition-all duration-500 ease-in-out">
-                  <circle
-                    cx={dot.cx}
-                    cy={dot.cy}
-                    r="5"
-                    fill="#3B82F6"
-                    stroke="#F8FAFC"
-                    strokeWidth="1.5"
-                    className="cursor-pointer hover:r-7 transition"
-                  />
-                  <text
-                    x={dot.cx}
-                    y="190"
-                    textAnchor="middle"
-                    fill="#94A3B8"
-                    fontSize="9.5"
-                    fontFamily="monospace"
-                  >
-                    {dot.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-
-            {/* Legend */}
-            <div className="absolute top-2 left-2 bg-[#1E293B] border border-[#475569] rounded px-2 py-1 flex items-center gap-1.5 shadow-lg select-none">
-              <span className="w-1.5 h-1.5 bg-[#3B82F6] rounded-full" />
-              <span className="text-[10px] text-[#94A3B8] font-mono uppercase font-bold">Portfolio Value</span>
-            </div>
-          </div>
+          {/* Equity Chart with fullscreen and timeframe */}
+          <EquityChart
+            data={chartData}
+            timeframe={timeframe as any}
+            onTimeframeChange={(tf) => {
+              setTimeframe(tf);
+              triggerToast('info', 'Timeframe Updated', `Chart view changed to ${tf}`);
+            }}
+          />
 
           {/* Chart stats */}
           <div className="flex items-center justify-between px-2 pt-1 font-mono text-[11px] text-[#94A3B8]">
             <div className="flex items-center gap-1.5">
               <span>Starting:</span>
-              <span className="font-bold text-white leading-none">{portfolioInitialized ? '$100,000' : '$0'}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span>Peak:</span>
-              <span className="font-bold text-[#10B981] leading-none">{chartData.high}</span>
+              <span className="font-bold text-white leading-none">
+                {equityData && equityData.length > 0 ? `$${equityData[0].y.toLocaleString()}` : '$0'}
+              </span>
             </div>
             <div className="flex items-center gap-1.5">
               <span>Current:</span>
-              <span className="font-bold text-[#3B82F6] leading-none">{chartData.current}</span>
+              <span className="font-bold text-[#3B82F6] leading-none">${totalPortfolioValue.toLocaleString()}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span>Change:</span>
+              <span className={`font-bold leading-none ${portfolioChange >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                {portfolioChange >= 0 ? '+' : ''}{portfolioChangePercent.toFixed(2)}%
+              </span>
             </div>
           </div>
         </div>
 
         {/* Agent Activity Console */}
-        <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl lg:col-span-5 flex flex-col gap-4">
+        <div
+          data-onboarding="trade-history"
+          className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl lg:col-span-5 flex flex-col gap-4"
+        >
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
               <h3 className="font-bold text-md text-[#F8FAFC]">Agent Activity Log</h3>
@@ -353,7 +285,10 @@ export default function DashboardTab({
       </div>
 
       {/* HOLDINGS TABLE */}
-      <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl">
+      <div
+        data-onboarding="holdings-table"
+        className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl"
+      >
         <div className="flex items-center justify-between mb-4 border-b border-[#475569] pb-3">
           <div className="flex flex-col">
             <h3 className="font-bold text-md text-[#F8FAFC]">Current Holdings</h3>

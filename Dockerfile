@@ -65,5 +65,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Set working directory to backend
 WORKDIR /app/backend
 
-# Run application on port from environment variable (defaults to 8080)
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# Run application with automatic migrations and start server
+# Migrations run automatically on app startup via lifespan event
+CMD ["sh", "-c", "echo '🚀 Starting Jasper Trades with automatic migrations...' && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

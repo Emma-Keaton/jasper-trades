@@ -1,16 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Key, Shield, Server, Check, X, RefreshCw, MessageCircle, Bell, Mail, Send, DollarSign, Hash, Smartphone, TrendingUp } from 'lucide-react';
+import { Save, Key, Shield, Server, Check, X, RefreshCw, MessageCircle, Bell, Mail, Send, DollarSign, Hash, Smartphone, TrendingUp, Plane } from 'lucide-react';
 import { Toast } from '@/app/page';
 import { SkeletonCard, SkeletonText } from './Skeleton';
-import ExnessSection from './ExnessSection';
+import ExnessSection, { ExnessSettings } from './ExnessSection';
 import TradingCapsSection from './TradingCapsSection';
 import PayoutSection from './PayoutSection';
 import MarketDataSection from './settings/MarketDataSection';
 import EmailServiceSection from './settings/EmailServiceSection';
 import DiscordBotSection from './settings/DiscordBotSection';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 
 interface ApiSettings {
   nvidia_api_key: string;
@@ -20,18 +21,6 @@ interface ApiSettings {
   binance_api_key: string;
   binance_api_secret: string;
   colab_kronos_url: string;
-}
-
-interface ExnessSettings {
-  login_id: string;
-  server: string;
-  password: string;
-  investor_password: string;
-  enabled: boolean;
-  configured: boolean;
-  is_connected?: boolean;
-  balance?: number;
-  last_sync_at?: string;
 }
 
 interface WhatsAppSettings {
@@ -78,7 +67,8 @@ interface SettingsTabProps {
   onNavigate?: (tab: string) => void;
 }
 
-export default function SettingsTab({ triggerToast, initialTab = 'api', onNavigate }: SettingsTabProps) {
+export default function SettingsTab({ triggerToast, initialTab = 'api', onNavigate }: SettingsTabProps) { 
+  const { resetTours } = useOnboarding();
   const [formData, setFormData] = useState<ApiSettings>({
     nvidia_api_key: '',
     alpaca_api_key: '',
@@ -834,10 +824,20 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         </section>
 
         {/* Save Button */}
-        <button data-tour="save-settings" onClick={saveApiSettings} className="w-full py-3 bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold rounded-lg flex items-center justify-center gap-2">
-          <Save className="w-5 h-5" />
-          Save All Settings
-        </button>
+        <div
+          data-onboarding="save-reset"
+          className="flex items-center justify-between gap-3 pt-6 border-t border-[#475569]"
+        >
+          <button
+            onClick={() => { resetTours(); triggerToast('success', 'Tours Reset', 'Onboarding tours will show again on next page navigation'); }}
+            className="px-4 py-2 border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm flex items-center gap-2"
+          >
+            <Plane className="w-4 h-4" /> Reset Onboarding Tours
+          </button>
+          <button onClick={saveApiSettings} className="px-6 py-3 bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold rounded-lg flex items-center justify-center gap-2">
+            <Save className="w-5 h-5" /> Save All Settings
+          </button>
+        </div>
       </div>
     </div>
   );

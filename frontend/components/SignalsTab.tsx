@@ -43,30 +43,22 @@ export default function SignalsTab({
   executeTrade,
   triggerToast
 }: SignalsTabProps) {
-  // Available filters states
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [selectedAsset, setSelectedAsset] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [minConfidence, setMinConfidence] = useState<number>(0);
-
-  // Watchlist list state
   const [watchlist, setWatchlist] = useState<string[]>([]);
-
-  // Real signals from backend
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | undefined>();
 
-  // Fetch signals from backend
   useEffect(() => {
     const fetchSignals = async () => {
       setLoading(true);
       setError(undefined);
-
       try {
         const response = await fetch(`${API_URL}/api/v1/signals?limit=50`);
         const data = await response.json();
-
         if (response.ok && Array.isArray(data)) {
           setSignals(data);
         } else {
@@ -80,7 +72,7 @@ export default function SignalsTab({
     };
 
     fetchSignals();
-    const interval = setInterval(fetchSignals, 5000); // Poll every 5s
+    const interval = setInterval(fetchSignals, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -102,11 +94,10 @@ export default function SignalsTab({
       triggerToast('info', 'Trade Aborted', 'HOLD signals do not translate to order executions.');
       return;
     }
-    const totalCost = sig.price * 1; // 1 share default
+    const totalCost = sig.price * 1;
     executeTrade(sig.symbol, sig.type, 1, sig.price, totalCost, sig.agent);
   };
 
-  // Perform multi-parameters filtering on signals array
   const filteredSignals = signals.filter(sig => {
     const matchesAgent = selectedAgent === 'all' || sig.agent.toLowerCase() === selectedAgent.toLowerCase();
     const matchesAsset = selectedAsset === 'all' || sig.symbol.toLowerCase() === selectedAsset.toLowerCase();
@@ -137,8 +128,11 @@ export default function SignalsTab({
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full">
-      
+    <div 
+      data-onboarding="signals-tour"
+      className="flex flex-col gap-6 w-full"
+    >
+
       {/* Title Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -150,15 +144,17 @@ export default function SignalsTab({
         </span>
       </div>
 
-      {/* FILTER BAR ROW SPECIFICATION */}
-      <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex flex-col gap-4">
+      {/* FILTER BAR */}
+      <div 
+        data-onboarding="signal-filters"
+        className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex flex-col gap-4"
+      >
         <div className="flex items-center gap-2 border-b border-[#475569]/30 pb-2">
           <Filter className="w-4 h-4 text-[#3B82F6]" />
           <span className="font-mono text-[10px] font-bold uppercase text-[#94A3B8]">Live Feed Parameters Range</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          {/* Filter Agent */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs text-[#94A3B8] font-mono leading-none">Scanning Agent</label>
             <select
@@ -173,7 +169,6 @@ export default function SignalsTab({
             </select>
           </div>
 
-          {/* Filter Asset */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs text-[#94A3B8] font-mono leading-none">Specific Asset Symbol</label>
             <select
@@ -188,7 +183,6 @@ export default function SignalsTab({
             </select>
           </div>
 
-          {/* Filter Type */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs text-[#94A3B8] font-mono leading-none">Signal Type</label>
             <select
@@ -203,7 +197,6 @@ export default function SignalsTab({
             </select>
           </div>
 
-          {/* Score rating sliders selectors */}
           <div className="flex flex-col gap-1.5">
             <span className="text-xs text-[#94A3B8] font-mono leading-none">Minimum Confidence Score</span>
             <div className="flex items-center gap-1.5 h-9 bg-[#0F172A] border border-[#475569] rounded-lg px-2 text-xs">
@@ -222,7 +215,6 @@ export default function SignalsTab({
           </div>
         </div>
 
-        {/* Clear Actions Pill lists */}
         {(selectedAgent !== 'all' || selectedAsset !== 'all' || selectedType !== 'all' || minConfidence > 0) && (
           <div className="flex items-center justify-between border-t border-[#475569]/20 pt-2.5">
             <div className="flex items-center gap-2 flex-wrap text-xs">
@@ -256,7 +248,10 @@ export default function SignalsTab({
       </div>
 
       {/* SIGNALS CARDS STACK */}
-      <div className="flex flex-col gap-4">
+      <div 
+        data-onboarding="signal-cards"
+        className="flex flex-col gap-4"
+      >
         {filteredSignals.length > 0 ? (
           filteredSignals.map(sig => {
             const isBUY = sig.type === 'BUY';
@@ -265,16 +260,15 @@ export default function SignalsTab({
             const watchlisted = watchlist.includes(sig.symbol);
 
             return (
-              <div 
+              <div
                 key={sig.id}
+                data-onboarding="thesis-reason"
                 className="bg-[#1E293B] border border-[#475569] rounded-xl overflow-hidden shadow-lg flex flex-col md:flex-row relative"
               >
-                {/* Visual type side pillar */}
                 <div className={`w-full md:w-1.5 self-stretch ${
                   isBUY ? 'bg-[#10B981]' : isSELL ? 'bg-[#EF4444]' : 'bg-[#3B82F6]'
                 }`} />
 
-                {/* Main Card Content */}
                 <div className="flex-1 p-5 flex flex-col gap-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#475569]/30 pb-3">
                     <div className="flex items-center gap-3">
@@ -296,7 +290,6 @@ export default function SignalsTab({
                     </div>
                   </div>
 
-                  {/* Thesis description */}
                   <div className="flex flex-col gap-2">
                     <span className="font-mono text-[10px] text-[#94A3B8] uppercase font-bold flex items-center gap-1">
                       <Info className="w-3.5 h-3.5" /> Analytical Hypothesis Thesis
@@ -304,8 +297,10 @@ export default function SignalsTab({
                     <p className="text-sm text-[#F8FAFC] leading-relaxed select-text">{sig.thesis}</p>
                   </div>
 
-                  {/* Expected upside stats container */}
-                  <div className="bg-[#0F172A] border border-[#475569]/50 p-3 rounded-lg grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs select-none">
+                  <div 
+                    data-onboarding="target-stop"
+                    className="bg-[#0F172A] border border-[#475569]/50 p-3 rounded-lg grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs select-none"
+                  >
                     <div className="flex flex-col gap-1.5">
                       <span className="text-[#94A3B8] text-[10px] uppercase">Transaction Target</span>
                       <span className="font-bold text-white uppercase">{sig.type} {sig.shares} Shares @ ${sig.price.toLocaleString()}</span>
@@ -320,11 +315,11 @@ export default function SignalsTab({
                     </div>
                   </div>
 
-                  {/* Actions buttons shelf */}
                   <div className="flex items-center gap-2 flex-wrap border-t border-[#475569]/30 pt-3 mt-1">
                     {!isHOLD && (
                       <button
                         onClick={() => handleExecuteTradeAction(sig)}
+                        data-onboarding="execute-button"
                         className="bg-[#3B82F6] hover:bg-[#2563EB] text-white text-xs font-black py-2 px-4 rounded-lg flex items-center gap-1.5 outline-none transition"
                       >
                         <Check className="w-4 h-4" /> EXECUTE TRANSACTION
@@ -332,13 +327,14 @@ export default function SignalsTab({
                     )}
                     <button
                       onClick={() => toggleWatchlist(sig.symbol)}
+                      data-onboarding="watchlist-star"
                       className={`text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-1.5 outline-none border transition ${
-                        watchlisted 
-                          ? 'bg-[#10B981]/15 border-[#10B981] text-[#10B981]' 
+                        watchlisted
+                          ? 'bg-[#10B981]/15 border-[#10B981] text-[#10B981]'
                           : 'border-[#475569] text-[#94A3B8] hover:bg-[#334155] hover:text-[#F8FAFC]'
                       }`}
                     >
-                      <Star className={`w-4 h-4 ${watchlisted ? 'fill-current' : ''}`} /> 
+                      <Star className={`w-4 h-4 ${watchlisted ? 'fill-current' : ''}`} />
                       {watchlisted ? 'TRACKING ON WATCHLIST' : 'ADD TO WATCHLIST'}
                     </button>
                     <button
