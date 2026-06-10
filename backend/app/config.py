@@ -2,6 +2,7 @@
 from pydantic_settings import BaseSettings
 from typing import Optional, List
 import structlog
+import os
 
 logger = structlog.get_logger(__name__)
 
@@ -26,7 +27,7 @@ class Settings(BaseSettings):
 
     # Server
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = int(os.getenv("PORT", "8000"))  # Render sets PORT=8080
 
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/sqlite/jasper_trades.db"
