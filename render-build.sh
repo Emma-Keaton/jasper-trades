@@ -1,10 +1,15 @@
 #!/bin/sh
 # Render Build Script - Builds both backend and frontend
 # This script runs before the start command
+# Build v2 - Clean node_modules before install
 
 set -e
 
 echo "🔨 Building Jasper Trades (Backend + Frontend)..."
+
+# Clean any existing build artifacts
+echo "🧹 Cleaning previous builds..."
+rm -rf frontend/node_modules frontend/.next frontend/out 2>/dev/null || true
 
 # Install backend dependencies
 echo "📦 Installing Python dependencies..."
