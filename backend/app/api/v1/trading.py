@@ -80,7 +80,6 @@ async def execute_trade(
                     name="Default",
                     initial_cash=100000.0,
                     is_paper=True,
-                    broker=broker or "alpaca",
                 )
                 portfolio_id = portfolio.id
             else:

@@ -17,7 +17,7 @@ from app.services.chat_ai import get_chat_ai
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
+router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 class WebhookMessage(BaseModel):

@@ -29,7 +29,7 @@ export const portfolioTour: TourStep[] = [
     id: 'sync-broker',
     targetElement: '[data-onboarding="sync-broker"]',
     title: 'Sync Broker',
-    description: 'Pull live positions from your connected broker (Alpaca/Binance). Keeps your portfolio in sync with external accounts.',
+    description: 'Pull live positions from your connected broker (Binance). Keeps your portfolio in sync with external accounts.',
     action: {
       label: 'Trigger Sync',
       onClick: () => {

@@ -477,6 +477,143 @@ class MarketDataService:
 
         return {'success': False, 'error': f'Unknown asset class: {asset_class}'}
 
+    async def get_currency_conversion(
+        self,
+        amount: float,
+        from_currency: str,
+        to_currency: str,
+        use_trove: bool = False,
+        trove_api_key: Optional[str] = None,
+        trove_base_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Convert amount between currencies using Trove API or Alpha Vantage fallback.
+
+        Args:
+            amount: Amount to convert
+            from_currency: Source currency (e.g., "NGN")
+            to_currency: Target currency (e.g., "USD")
+            use_trove: Whether to try Trove API first
+            trove_api_key: Trove API key (if provided)
+            trove_base_url: Trove base URL (if provided)
+
+        Returns:
+            Conversion result with original amount, converted amount, and exchange rate
+        """
+        # Handle same currency conversion
+        if from_currency == to_currency:
+            return {
+                'success': True,
+                'data': {
+                    'amount': amount,
+                    'from_currency': from_currency,
+                    'to_currency': to_currency,
+                    'converted_amount': amount,
+                    'exchange_rate': 1.0,
+                },
+                'provider': 'identity',
+            }
+
+        # Try Trove API first if configured
+        if use_trove and trove_api_key and trove_base_url:
+            try:
+                result = await self._get_forex_rate_trove(
+                    from_currency, 
+                    to_currency,
+                    trove_api_key,
+                    trove_base_url
+                )
+                if result.get('success'):
+                    rate = result['data']['rate']
+                    return {
+                        'success': True,
+                        'data': {
+                            'amount': amount,
+                            'from_currency': from_currency,
+                            'to_currency': to_currency,
+                            'converted_amount': amount * rate,
+                            'exchange_rate': rate,
+                            'bid': result['data'].get('bid'),
+                            'ask': result['data'].get('ask'),
+                        },
+                        'provider': 'trove',
+                    }
+            except Exception as e:
+                logger.warning(f"Trove forex conversion failed, falling back to Alpha Vantage: {e}")
+
+        # Fallback to Alpha Vantage
+        if from_currency and to_currency:
+            result = await self.get_forex_rate_alphavantage(from_currency, to_currency)
+            if result.get('success'):
+                rate = result['data']['rate']
+                return {
+                    'success': True,
+                    'data': {
+                        'amount': amount,
+                        'from_currency': from_currency,
+                        'to_currency': to_currency,
+                        'converted_amount': amount * rate,
+                        'exchange_rate': rate,
+                        'bid': result['data'].get('bid'),
+                        'ask': result['data'].get('ask'),
+                    },
+                    'provider': 'alphavantage',
+                }
+
+        return {
+            'success': False,
+            'error': 'No currency conversion providers configured',
+        }
+
+    async def _get_forex_rate_trove(
+        self,
+        from_currency: str,
+        to_currency: str,
+        api_key: str,
+        base_url: str,
+    ) -> Dict[str, Any]:
+        """
+        Get forex exchange rate from Trove API.
+
+        Args:
+            from_currency: Source currency
+            to_currency: Target currency
+            api_key: Trove API key
+            base_url: Trove API base URL
+
+        Returns:
+            Exchange rate data
+        """
+        try:
+            url = f"{base_url}/forex/rate"
+            params = {'from': from_currency, 'to': to_currency}
+            headers = {'Authorization': f'Bearer {api_key}'}
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+
+            if not data:
+                return {'success': False, 'error': 'No data from Trove', 'provider': 'trove'}
+
+            return {
+                'success': True,
+                'data': {
+                    'from_currency': from_currency,
+                    'to_currency': to_currency,
+                    'rate': float(data.get('rate', 0)),
+                    'bid': float(data.get('bid', 0)),
+                    'ask': float(data.get('ask', 0)),
+                    'timestamp': data.get('timestamp', datetime.utcnow().isoformat()),
+                },
+                'provider': 'trove',
+            }
+
+        except Exception as e:
+            logger.error(f"Trove forex error: {e}")
+            return {'success': False, 'error': str(e), 'provider': 'trove'}
+
     def get_available_providers(self) -> Dict[str, bool]:
         """Get list of configured providers."""
         return {

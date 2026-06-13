@@ -1,6 +1,6 @@
 # Database Models
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, Text, ForeignKey
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
 Base = declarative_base()
@@ -21,7 +21,7 @@ class Trade(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Broker info
-    broker = Column(String)  # alpaca, binance, ibkr, solana
+    broker = Column(String)  # binance, solana, cTrader
     broker_order_id = Column(String)
     
     # Agent info
@@ -59,16 +59,21 @@ class Signal(Base):
 class Portfolio(Base):
     """Portfolio holdings."""
     __tablename__ = "portfolios"
-    
+
     id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, index=True)  # Device fingerprint
     name = Column(String, default="Default")
     cash = Column(Float, default=100000.0)  # Start with $100K for paper trading
     initial_value = Column(Float, default=100000.0)
+    initial_capital = Column(Float, default=10000.0)  # For equity curve calculations
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
     # Type
     is_paper = Column(Boolean, default=True)
     broker = Column(String)
+    is_active = Column(Boolean, default=True)
+
+    # Relationships (user relationship removed for device-based auth)
 
 
 class Position(Base):
@@ -161,28 +166,12 @@ class DeviceSettings(Base):
 
     # Broker API keys (encrypted)
     nvidia_key = Column(String, nullable=True)  # Encrypted
-    alpaca_key = Column(String, nullable=True)  # Encrypted
-    alpaca_secret = Column(String, nullable=True)  # Encrypted
-    alpaca_paper = Column(Boolean, default=True)
     binance_key = Column(String, nullable=True)  # Encrypted
     binance_secret = Column(String, nullable=True)  # Encrypted
-
-    # IBKR (encrypted JSON)
-    ibkr_host = Column(String, nullable=True)
-    ibkr_port = Column(Integer, nullable=True)
-    ibkr_client_id = Column(Integer, nullable=True)
-    ibkr_enabled = Column(Boolean, default=False)
 
     # Solana/Jupiter
     solana_rpc_url = Column(String, nullable=True)
     jupiter_enabled = Column(Boolean, default=False)
-
-    # Exness/MT5 (encrypted)
-    exness_login_id = Column(String, nullable=True)  # MT5 Login ID (e.g., 87291043)
-    exness_server = Column(String, nullable=True)  # MT5 Server (e.g., Exness-MT5-Real6)
-    exness_password = Column(String, nullable=True)  # Encrypted trading password
-    exness_investor_password = Column(String, nullable=True)  # Encrypted investor password (read-only)
-    exness_enabled = Column(Boolean, default=False)
 
     colab_url = Column(String, nullable=True)  # Kronos Colab URL
 
@@ -212,6 +201,9 @@ class DeviceSettings(Base):
     # Discord Bot (encrypted JSON)
     discord_bot_config = Column(String, nullable=True)  # JSON: {bot_token, guild_id, channel_id, enabled, chat_enabled}
 
+    # Environment mode (sandbox/live trading)
+    environment_mode = Column(String(20), default="sandbox")  # "sandbox" or "live"
+
     # LLM settings
     nvidia_model = Column(String, nullable=True, default="nvidia/nemotron-mini-4b-instruct")
 
@@ -224,17 +216,36 @@ class DeviceSettings(Base):
     #   "payout_enabled": true,
     #   "payout_percentage": 50.0,  // Configurable: 0-100
     #   "payout_schedule_hour": 20,  // 0-23 ET
-    #   "payout_destination": "crypto_wallet",  // "crypto_wallet" | "forex_account" | "split"
+    #   "payout_destination": "crypto_wallet",
     #   "crypto_wallet": "0x...",  // USDT wallet (ERC20 or SOLANA)
     #   "crypto_chain": "ethereum",  // "ethereum" | "solana" | "bsc"
-    #   "forex_reinvest_percentage": 100.0,  // If forex: % of profit to reinvest
-    #   "split_ratio": 50,  // If split: % to crypto (remainder to forex)
     #   "min_payout_threshold": 10.0  // Minimum profit before payout triggers
     # }
     payout_config = Column(String, nullable=True)  # Encrypted JSON
 
     # Tatum API key for blockchain transfers (encrypted)
     tatum_api_key = Column(String, nullable=True)  # Encrypted
+
+    # Trove API (Nigerian/US stocks - encrypted)
+    trove_api_key = Column(String, nullable=True)  # Encrypted
+    trove_base_url = Column(String, nullable=True)  # Sandbox or production URL
+    trove_enabled = Column(Boolean, default=False)
+    trove_account_id = Column(String, nullable=True)  # Primary Trove account ID
+    trove_sandbox = Column(Boolean, default=True)  # True = Sandbox, False = Live
+
+    # Currency preferences
+    default_currency = Column(String(3), default="USD")  # "USD" or "NGN"
+    currency_conversion_enabled = Column(Boolean, default=True)  # Enable automatic currency conversion
+
+    # Nigerian payout support (encrypted JSON)
+    # Structure: {
+    #   "naira_bank_enabled": true,
+    #   "bank_account_number": "0123456789",
+    #   "bank_code": "058",  # Nigerian bank code
+    #   "account_name": "John Doe",
+    #   "bank_name": "Guaranty Trust Bank"
+    # }
+    naira_bank_details = Column(String, nullable=True)  # Encrypted JSON
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -555,41 +566,3 @@ class TradingCap(Base):
 
     # Relationships
     portfolio = relationship("Portfolio", backref="trading_caps")
-
-
-class BrokerAccount(Base):
-    """Linked external broker account (Exness, MT5, etc.)."""
-    __tablename__ = "broker_accounts"
-
-    id = Column(Integer, primary_key=True)
-    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False)
-
-    # Broker type
-    broker_type = Column(String, nullable=False)  # 'exness', 'alpaca', 'binance', etc.
-    broker_name = Column(String)  # Display name (e.g., "Exness Real-6")
-
-    # Account credentials (encrypted)
-    account_id = Column(String, nullable=False)  # MT5 Login ID or broker account ID
-    account_password = Column(String, nullable=True)  # Encrypted trading password
-    investor_password = Column(String, nullable=True)  # Encrypted investor password (read-only)
-    server_name = Column(String, nullable=True)  # MT5 server (e.g., "Exness-MT5-Real6")
-
-    # Connection status
-    is_connected = Column(Boolean, default=False)
-    last_sync_at = Column(DateTime, nullable=True)
-    connection_error = Column(String, nullable=True)
-
-    # Account info (cached from broker)
-    balance = Column(Float, default=0.0)
-    equity = Column(Float, default=0.0)
-    margin = Column(Float, default=0.0)
-    free_margin = Column(Float, default=0.0)
-    currency = Column(String, default="USD")
-
-    # Metadata
-    config = Column(JSON)  # Broker-specific config
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relationships
-    portfolio = relationship("Portfolio", backref="broker_accounts")

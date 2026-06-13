@@ -82,7 +82,7 @@ class PortfolioService:
         name: str,
         initial_cash: float = 100000.0,
         is_paper: bool = True,
-        broker: str = "alpaca",
+        broker: str = "ctrader",
     ) -> Portfolio:
         """
         Create a new portfolio.
@@ -91,7 +91,7 @@ class PortfolioService:
             name: Portfolio name
             initial_cash: Starting cash amount
             is_paper: Paper trading or live
-            broker: Default broker
+            broker: Default broker (defaults to ctrader)
 
         Returns:
             Created Portfolio object

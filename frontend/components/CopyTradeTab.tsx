@@ -1,85 +1,155 @@
 'use client';
 
-import React, { useState } from 'react';
-import {
-  Users,
-  TrendingUp,
-  ExternalLink,
-  UserPlus,
-  UserPlus2,
-  Check,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  TrendingDown,
-  Info
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, TrendingUp, ExternalLink, Award } from 'lucide-react';
 import { Toast } from '@/app/page';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface CopyTradeTabProps {
   triggerToast: (type: Toast['type'], title: string, message: string) => void;
 }
 
 interface Trader {
-  id: string;
-  rank: string;
-  user: string;
-  color: string;
-  ret: string;
-  winRate: string;
-  aum: string;
-  trades: number;
-  copiers: string;
-  following: boolean;
-  avatarInitails: string;
+  trader_id: string;
+  trader_name: string;
+  total_return: number;
+  win_rate: number;
+  total_followers: number;
+  total_aum: number;
+  max_drawdown: number;
+  sharpe_ratio: number | null;
+  trades_count: number;
+  is_verified: boolean;
+}
+
+interface CopyTradeStats {
+  following_count: number;
+  total_copied_trades: number;
+  total_pnl: number;
+  avg_pnl: number;
+  win_rate: number;
+  total_signals_copied: number;
+}
+
+interface CopyTrade {
+  id: number;
+  follow_id: number;
+  source_signal_id: number;
+  symbol: string;
+  action: string;
+  quantity: number;
+  copied_at: string;
+  copy_percentage: number;
+  pnl: number;
+  pnl_percent: number;
+  closed_at: string | null;
 }
 
 export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
   const [traders, setTraders] = useState<Trader[]>([]);
-  const [copiedPositions, setCopiedPositions] = useState<Array<{ id: string; trader: string; symbol: string; entry: number; current: number; pnl: string }>>([]);
-  const [selectedTraderProfile, setSelectedTraderProfile] = useState<Trader | null>(null);
+  const [stats, setStats] = useState<CopyTradeStats | null>(null);
+  const [copyTrades, setCopyTrades] = useState<CopyTrade[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [followingMap, setFollowingMap] = useState<Record<string, boolean>>({});
 
-  const toggleFollowTrader = (id: string, name: string) => {
-    setTraders(prev => prev.map(t => {
-      if (t.id === id) {
-        const nextState = !t.following;
-        triggerToast(
-          nextState ? 'success' : 'warning',
-          nextState ? 'Copy Connection Online' : 'Copy Connection Dispatched',
-          nextState ? `Commenced passive order synthesis for ${name}.` : `Terminated copy allocations from ${name}.`
-        );
-        return { ...t, following: nextState };
+  useEffect(() => {
+    fetchLeaderboard();
+    fetchStats();
+    fetchCopyTrades();
+  }, []);
+
+  const fetchLeaderboard = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/traders/leaderboard?limit=50`);
+      if (res.ok) {
+        const data = await res.json();
+        setTraders(data);
       }
-      return t;
-    }));
+    } catch (err) {
+      console.error('Failed to fetch leaderboard:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const unfollowCopiedPosition = (id: string, symbol: string, traderName: string) => {
-    setCopiedPositions(prev => prev.filter(p => p.id !== id));
-    triggerToast('warning', 'Position Extinguished', `Successfully liquidated copied allocation of ${symbol} from ${traderName}.`);
+  const fetchStats = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/copytrade/stats`);
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch stats:', err);
+    }
   };
 
-  const activeFollowsCount = traders.filter(t => t.following).length;
+  const fetchCopyTrades = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/copytrade/history?limit=50`);
+      if (res.ok) {
+        const data = await res.json();
+        setCopyTrades(data.copy_trades || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch copy trades:', err);
+    }
+  };
+
+  const toggleFollowTrader = async (traderId: string, traderName: string) => {
+    try {
+      const isFollowing = followingMap[traderId];
+      const endpoint = isFollowing ? '/unfollow' : '/follow';
+      const method = isFollowing ? 'POST' : 'POST';
+
+      const res = await fetch(`${API_URL}/api/v1/traders/${traderId}${endpoint}`, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: isFollowing ? undefined : JSON.stringify({
+          trader_id: traderId,
+          copy_percentage: 100,
+          max_position_size: 10000,
+          auto_copy: true,
+        }),
+      });
+
+      if (res.ok) {
+        setFollowingMap(prev => ({ ...prev, [traderId]: !isFollowing }));
+        triggerToast(
+          isFollowing ? 'warning' : 'success',
+          isFollowing ? 'Unfollowed Trader' : 'Following Trader',
+          isFollowing ? `Stopped copying ${traderName}` : `Now copying ${traderName}'s trades`
+        );
+        fetchStats();
+      } else {
+        const error = await res.json();
+        triggerToast('error', 'Error', error.detail || 'Failed to update follow status');
+      }
+    } catch (err: any) {
+      triggerToast('error', 'Error', err.message || 'Failed to update follow status');
+    }
+  };
+
+  const totalPnl = stats?.total_pnl || 0;
+  const winRate = stats?.win_rate || 0;
 
   return (
-    <div 
-      data-onboarding="copytrade-tour"
-      className="flex flex-col gap-6 w-full"
-    >
-
-      {/* Visual Title */}
+    <div className="flex flex-col gap-6 w-full">
+      {/* Title */}
       <div>
         <h1 className="text-2xl font-black text-white tracking-tight font-sans">Copy Trading Desk</h1>
-        <p className="text-sm text-[#94A3B8]">Bridge direct allocation models with audited top performers in real-time.</p>
+        <p className="text-sm text-[#94A3B8]">Follow top performers and auto-copy their trades in real-time.</p>
       </div>
 
-      {/* SUMMARY BOX CARDS ROW */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
-            <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Connections Active</span>
-            <span className="text-2xl font-black font-mono text-white">{activeFollowsCount} Traders</span>
-            <span className="text-[11px] text-[#94A3B8] font-mono">Rebalancing live allocations</span>
+            <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Following</span>
+            <span className="text-2xl font-black font-mono text-white">{stats?.following_count || 0} Traders</span>
           </div>
           <div className="p-3 bg-[#3B82F6]/10 text-[#3B82F6] rounded-xl">
             <Users className="w-5 h-5" />
@@ -89,268 +159,130 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
             <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Total Copy P&L</span>
-            <span className="text-2xl font-black font-mono text-[#94A3B8]">$0.00</span>
-            <span className="text-[11px] text-[#94A3B8] font-mono">No copied trades yet</span>
+            <span className={`text-2xl font-black font-mono ${totalPnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+              ${totalPnl.toFixed(2)}
+            </span>
           </div>
-          <div className="p-3 bg-[#94A3B8]/10 text-[#94A3B8] rounded-xl">
+          <div className="p-3 bg-[#10B981]/10 text-[#10B981] rounded-xl">
             <TrendingUp className="w-5 h-5" />
           </div>
         </div>
 
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
-            <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Alpha Top Producer</span>
-            <span className="text-xl font-black font-mono text-[#94A3B8]">N/A</span>
-            <span className="text-[11px] text-[#94A3B8] font-mono">Enable copy trading</span>
+            <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Win Rate</span>
+            <span className="text-2xl font-black font-mono text-white">{winRate.toFixed(1)}%</span>
           </div>
-          <div className="p-3 bg-[#94A3B8]/10 text-[#94A3B8] rounded-xl">
-            👑
+          <div className="p-3 bg-[#F59E0B]/10 text-[#F59E0B] rounded-xl">
+            <Award className="w-5 h-5" />
           </div>
         </div>
 
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
-            <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold text-slate-400">Copied Holdings</span>
-            <span className="text-2xl font-black font-mono text-white">{copiedPositions.length} Items</span>
-            <span className="text-[11px] text-[#94A3B8] font-mono">Hedged across 3 desks</span>
+            <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Copied Trades</span>
+            <span className="text-2xl font-black font-mono text-white">{stats?.total_copied_trades || 0}</span>
           </div>
-          <div className="p-3 bg-[#EC4899]/10 text-[#EC4899] rounded-xl">
-            🔥
+          <div className="p-3 bg-[#8B5CF6]/10 text-[#8B5CF6] rounded-xl">
+            <ExternalLink className="w-5 h-5" />
           </div>
         </div>
       </div>
 
-      {/* LEADERBOARD TABLE */}
-      <div 
-        data-onboarding="leaderboard-table"
-        className="bg-[#1E293B] border border-[#475569] rounded-xl p-4"
-      >
-        <div className="flex items-center justify-between mb-4 border-b border-[#475569] pb-3 select-none">
-          <div className="flex flex-col">
-            <h3 className="font-bold text-md text-[#F8FAFC]">Verified Traders Leaderboard</h3>
-            <span className="text-xs font-mono text-[#94A3B8]">Audit-proven capital managers sorting live ROI indices</span>
-          </div>
-          <button
-            onClick={() => triggerToast('info', 'Leaderboard Scanned', 'Synchronized audited return streams.')}
-            className="text-xs text-[#3B82F6] hover:underline font-mono"
-          >
-            Refresh index
-          </button>
+      {/* Leaderboard Table */}
+      <div className="bg-[#1E293B] border border-[#475569] rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-[#475569]">
+          <h2 className="text-lg font-bold text-white font-sans">Top Traders Leaderboard</h2>
+          <p className="text-sm text-[#94A3B8]">Ranked by total returns</p>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs font-mono text-[#94A3B8] min-w-[700px]">
-            <thead>
-              <tr className="border-b border-[#475569] text-slate-400 font-bold uppercase tracking-wide text-[10px] h-8 select-none">
-                <th className="pb-2 text-center w-12">Rank</th>
-                <th className="pb-2">Trader Account</th>
-                <th className="pb-2 text-right">Trailing ROI</th>
-                <th className="pb-2 text-right">Win Frequency</th>
-                <th className="pb-2 text-right">Audited AUM</th>
-                <th className="pb-2 text-right">Copiers Count</th>
-                <th className="pb-2 text-right w-40">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#475569]/30">
-              {traders.length === 0 ? (
+        {isLoading ? (
+          <div className="p-8 text-center text-gray-400">Loading leaderboard...</div>
+        ) : traders.length === 0 ? (
+          <div className="p-8 text-center text-gray-400">No traders available yet</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-[#0F172A]">
                 <tr>
-                  <td colSpan={7} className="text-center py-12">
-                    <div className="flex flex-col items-center justify-center gap-3">
-                      <div className="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center">
-                        <Users className="w-8 h-8 text-gray-500" />
-                      </div>
-                      <div className="text-center">
-                        <h4 className="text-lg font-bold text-white mb-1">No Traders Yet</h4>
-                        <p className="text-sm text-gray-400">Leaderboard will appear when copy trading is enabled</p>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                traders.map((trader) => (
-                <tr key={trader.id} className="h-14 hover:bg-[#334155]/20 transition ease-out">
-                  <td className="text-center font-bold text-[#F8FAFC] text-sm">{trader.rank}</td>
-                  <td>
-                    <div
-                      onClick={() => setSelectedTraderProfile(trader)}
-                      className="flex items-center gap-2.5 cursor-pointer group"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-[#0F172A] flex items-center justify-center font-bold text-xs text-white border border-[#475569]/50 group-hover:border-[#3B82F6]">
-                        {trader.avatarInitails}
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-bold text-[#3B82F6] group-hover:underline">{trader.user}</span>
-                        <span className="text-[10px] text-[#94A3B8]">{trader.trades} completed trades</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="text-right font-bold text-[#10B981]">{trader.ret}</td>
-                  <td className="text-right font-bold text-white">{trader.winRate}</td>
-                  <td className="text-right text-[#F8FAFC]">{trader.aum}</td>
-                  <td className="text-right">{trader.copiers} copiers</td>
-                  <td className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => setSelectedTraderProfile(trader)}
-                        data-onboarding="trader-profile"
-                        className="p-1 px-2 border border-[#475569] hover:bg-[#334155] rounded text-[10px] font-bold text-white transition outline-none"
-                      >
-                        PROFILE
-                      </button>
-
-                      <button
-                        onClick={() => toggleFollowTrader(trader.id, trader.user)}
-                        data-onboarding="follow-button"
-                        className={`py-1 px-3 rounded text-[10px] font-bold flex items-center gap-1.5 transition outline-none ${
-                          trader.following
-                            ? 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 hover:bg-[#10B981]/25'
-                            : 'bg-[#3B82F6] hover:bg-[#2563EB] text-white'
-                        }`}
-                      >
-                        {trader.following ? (
-                          <>
-                            <Check className="w-3 h-3" /> COPIED ✓
-                          </>
-                        ) : (
-                          <>
-                            <UserPlus className="w-3 h-3" /> COPY TRADER
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ACTIVE COPY POSITIONS */}
-      <div 
-        data-onboarding="copied-positions"
-        className="bg-[#1E293B] border border-[#475569] rounded-xl p-4"
-      >
-        <div className="flex flex-col gap-1 mb-4 border-b border-[#475569] pb-3">
-          <h3 className="font-bold text-md text-[#F8FAFC]">Active Synthesized Holdings</h3>
-          <span className="text-xs font-mono text-[#94A3B8]">Secondary order payloads currently linked with follower allocations</span>
-        </div>
-
-        <div className="overflow-x-auto">
-          {copiedPositions.length > 0 ? (
-            <table className="w-full text-left text-xs font-mono text-[#94A3B8]">
-              <thead>
-                <tr className="border-b border-[#475569] text-slate-400 font-bold uppercase tracking-wide text-[10px] h-8 select-none">
-                  <th className="pb-2">Source Trader</th>
-                  <th className="pb-2">Asset Symbol</th>
-                  <th className="pb-2 text-right">Entry Point</th>
-                  <th className="pb-2 text-right">Market Valuation</th>
-                  <th className="pb-2 text-right">Total Net Return</th>
-                  <th className="pb-2 text-right w-36">Command Action</th>
+                  <th className="px-4 py-3 text-left text-xs font-mono text-[#94A3B8] uppercase">Rank</th>
+                  <th className="px-4 py-3 text-left text-xs font-mono text-[#94A3B8] uppercase">Trader</th>
+                  <th className="px-4 py-3 text-right text-xs font-mono text-[#94A3B8] uppercase">Return</th>
+                  <th className="px-4 py-3 text-right text-xs font-mono text-[#94A3B8] uppercase">Win Rate</th>
+                  <th className="px-4 py-3 text-right text-xs font-mono text-[#94A3B8] uppercase">Followers</th>
+                  <th className="px-4 py-3 text-right text-xs font-mono text-[#94A3B8] uppercase">Trades</th>
+                  <th className="px-4 py-3 text-center text-xs font-mono text-[#94A3B8] uppercase">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#475569]/30">
-                {copiedPositions.map(pos => (
-                  <tr key={pos.id} className="h-11 hover:bg-[#334155]/20 transition ease-out">
-                    <td className="font-bold text-[#3B82F6]">{pos.trader}</td>
-                    <td className="font-bold text-white">{pos.symbol}</td>
-                    <td className="text-right">${pos.entry.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td className="text-right">${pos.current.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td className="text-right font-bold text-[#10B981]">{pos.pnl}</td>
-                    <td className="text-right">
+              <tbody className="divide-y divide-[#475569]">
+                {traders.map((trader, index) => (
+                  <tr key={trader.trader_id} className="hover:bg-[#334155]/50 transition-colors">
+                    <td className="px-4 py-3 text-sm font-mono text-white">#{index + 1}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs">
+                          {trader.trader_name.substring(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-white">{trader.trader_name}</div>
+                          {trader.is_verified && (
+                            <div className="text-xs text-[#10B981] flex items-center gap-1">
+                              <Award className="w-3 h-3" /> Verified
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className={`px-4 py-3 text-right text-sm font-mono ${trader.total_return >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                      {trader.total_return >= 0 ? '+' : ''}{trader.total_return.toFixed(2)}%
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-mono text-white">{trader.win_rate.toFixed(1)}%</td>
+                    <td className="px-4 py-3 text-right text-sm font-mono text-white">{trader.total_followers}</td>
+                    <td className="px-4 py-3 text-right text-sm font-mono text-white">{trader.trades_count}</td>
+                    <td className="px-4 py-3 text-center">
                       <button
-                        onClick={() => unfollowCopiedPosition(pos.id, pos.symbol, pos.trader)}
-                        data-onboarding="unfollow-button"
-                        className="py-1 px-2.5 border border-[#475569] hover:bg-red-500/10 hover:border-red-400 hover:text-red-400 rounded text-[10px] font-bold font-mono uppercase tracking-wider transition outline-none"
+                        onClick={() => toggleFollowTrader(trader.trader_id, trader.trader_name)}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                          followingMap[trader.trader_id]
+                            ? 'bg-[#EF4444]/10 text-[#EF4444] hover:bg-[#EF4444]/20'
+                            : 'bg-[#3B82F6]/10 text-[#3B82F6] hover:bg-[#3B82F6]/20'
+                        }`}
                       >
-                        LIQUIDATE
+                        {followingMap[trader.trader_id] ? 'Unfollow' : 'Follow'}
                       </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          ) : (
-            <div className="text-center py-8 text-[#94A3B8] font-mono text-xs">
-              No active copy allocations. Select a top performer above to initiate order synthesis.
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* TRADER OVERLAY METRICS MODAL */}
-      {selectedTraderProfile && (
-        <div className="fixed inset-0 bg-[#0F172A]/80 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setSelectedTraderProfile(null)}>
-          <div className="bg-[#1E293B] border border-[#475569] rounded-xl max-w-lg w-full p-6 flex flex-col gap-4 shadow-2xl animate-scale-up" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-[#475569] pb-3">
-              <div className="flex items-center gap-3">
-                <span className="text-xl">{selectedTraderProfile.rank}</span>
-                <span className="font-black text-white text-md font-mono">{selectedTraderProfile.user} Profile</span>
+      {/* Recent Copy Trades */}
+      {copyTrades.length > 0 && (
+        <div className="bg-[#1E293B] border border-[#475569] rounded-xl overflow-hidden">
+          <div className="p-4 border-b border-[#475569]">
+            <h2 className="text-lg font-bold text-white font-sans">Recent Copied Trades</h2>
+          </div>
+          <div className="divide-y divide-[#475569]">
+            {copyTrades.map((trade) => (
+              <div key={trade.id} className="p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-white font-medium">{trade.symbol}</div>
+                  <div className="text-xs text-[#94A3B8]">
+                    {new Date(trade.copied_at).toLocaleDateString()} • {trade.copy_percentage}% copy
+                  </div>
+                </div>
+                <div className={`text-right font-mono ${trade.pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                  <div>${trade.pnl.toFixed(2)}</div>
+                  <div className="text-xs">{trade.pnl_percent.toFixed(2)}%</div>
+                </div>
               </div>
-              <button onClick={() => setSelectedTraderProfile(null)}>
-                <X className="w-5 h-5 text-[#94A3B8] hover:text-white" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 font-mono text-xs text-[#94A3B8] py-2 border-b border-[#475569]/30">
-              <div className="flex flex-col gap-1 leading-normal">
-                <span>Trailing Return (ROI)</span>
-                <strong className="text-[#10B981] text-lg">{selectedTraderProfile.ret}</strong>
-              </div>
-              <div className="flex flex-col gap-1 leading-normal">
-                <span>Operational Win rate</span>
-                <strong className="text-white text-lg">{selectedTraderProfile.winRate}</strong>
-              </div>
-              <div className="flex flex-col gap-1 leading-normal">
-                <span>Managed Assets (AUM)</span>
-                <strong className="text-[#3B82F6] text-lg">{selectedTraderProfile.aum}</strong>
-              </div>
-              <div className="flex flex-col gap-1 leading-normal">
-                <span>Audited Copiers Followers</span>
-                <strong className="text-white text-lg">{selectedTraderProfile.copiers} users</strong>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <span className="font-mono text-[10px] text-[#94A3B8] font-bold uppercase flex items-center gap-1">
-                <Info className="w-3.5 h-3.5" /> Performance Summary
-              </span>
-              <p className="text-xs text-[#94A3B8] leading-relaxed">
-                This account operates on continuous automated algorithms scanning mid-cap sectors. Maintains a maximum risk-per-trade boundary of 1.5% and utilizes multi-layer volatility hedgers. Fully audited on-chain profile.
-              </p>
-            </div>
-
-            <button
-              onClick={() => {
-                toggleFollowTrader(selectedTraderProfile.id, selectedTraderProfile.user);
-                setSelectedTraderProfile(null);
-              }}
-              className="w-full bg-[#3B82F6] hover:bg-[#2563EB] text-white text-xs font-bold py-2.5 rounded-lg transition"
-            >
-              {selectedTraderProfile.following ? 'DISCONNECT COPY SYNERGY' : 'SYNCHRONIZE COPY ACTIONS'}
-            </button>
+            ))}
           </div>
         </div>
       )}
-
-      <style jsx global>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes scaleUp {
-          from { transform: scale(0.95); opacity: 0; }
-          to { transform: scale(1); opacity: 1; }
-        }
-        .animate-fade-in {
-          animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-        .animate-scale-up {
-          animation: scaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-      `}</style>
-
     </div>
   );
 }

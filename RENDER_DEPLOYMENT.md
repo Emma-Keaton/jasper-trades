@@ -97,12 +97,9 @@ MODEL_SMART="nvidia/nemotron-3-ultra-550b-a55b"
 MODEL_DEEP="nvidia/nemotron-3-ultra-550b-a55b"
 
 # ────────────────────────────────────────────────
-# Alpaca Trading (Optional - can configure via UI later)
-# Sign up: https://alpaca.markets/
+#  Trading (Optional - can configure via UI later)
+# Sign up: https://.markets/
 # ────────────────────────────────────────────────
-ALPACA_API_KEY=""
-ALPACA_API_SECRET=""
-ALPACA_PAPER=true
 
 # ────────────────────────────────────────────────
 # Binance (Optional)
@@ -239,9 +236,8 @@ curl https://YOUR_BACKEND_URL.onrender.com/api/v1/ai/chat \
 1. Go to your frontend (local or Vercel)
 2. **Settings Page** → Configure:
    - **NVIDIA NIM API** - Paste API key, test, save
-   - **Alpaca Trading** - Enter API keys for paper/live trading
+   - ** Trading** - Enter API keys for paper/live trading
    - **Binance** - Crypto trading (optional)
-   - **Exness/MT5** - Forex/CFD (optional)
    - **Notifications** - WhatsApp, Discord, Email (optional)
    - **Kronos Colab** - Paste Colab URL for AI predictions
 
@@ -259,10 +255,10 @@ curl https://YOUR_BACKEND_URL.onrender.com/api/v1/ai/chat \
 | `API_AUTH_KEY` | ✅ | `jasper_7xR3...` | Auth token for API |
 | `NVIDIA_API_KEY` | ✅ | `nvapi_xxxxx` | Get from https://build.nvidia.com |
 | `MODEL_FAST` | ✅ | `nvidia/nemotron-mini-4b-instruct` | Free tier model |
-| `ALPACA_PAPER` | ✅ | `true` | true=paper, false=live |
+| `_PAPER` | ✅ | `true` | true=paper, false=live |
 | `CORS_ORIGINS` | ⚠️ | `https://frontend.vercel.app` | Your frontend URL |
 | `DATABASE_URL` | ⚠️ | `sqlite+aiosqlite:///./data/...` | SQLite file path |
-| `ALPACA_API_KEY` | Optional | `PK_xxxxx` | Paper/live trading |
+| `_API_KEY` | Optional | `PK_xxxxx` | Paper/live trading |
 | `KRONOS_COLAB_URL` | Optional | `https://xxx.ngrok.io` | AI predictions |
 
 **Legend:**
@@ -324,5 +320,5 @@ curl https://YOUR_BACKEND_URL.onrender.com/api/v1/ai/chat \
 1. **Deploy Frontend to Vercel** (separate guide)
 2. **Configure Trading Caps** via Settings page
 3. **Set up Notifications** (Discord/WhatsApp/Email)
-4. **Test Paper Trading** with Alpaca
+4. **Test Paper Trading** with 
 5. **Enable Auto-Payout** (optional)

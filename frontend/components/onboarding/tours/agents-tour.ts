@@ -29,7 +29,7 @@ export const agentsTour: TourStep[] = [
     id: 'execution-agent',
     targetElement: '[data-onboarding="agent-execution"]',
     title: 'Execution Agent',
-    description: 'Handles actual order placement. Routes to best broker (Alpaca/Binance), manages slippage, and confirms fills.',
+    description: 'Handles actual order placement. Routes to best broker (Binance), manages slippage, and confirms fills.',
     tip: 'Uses Llama-3.2-3B for ultra-low latency execution',
     position: 'bottom',
   },

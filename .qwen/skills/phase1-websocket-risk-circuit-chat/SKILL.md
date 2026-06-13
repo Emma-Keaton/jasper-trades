@@ -16,7 +16,6 @@ This skill captures the approach for implementing 4 P0 features for a trading pl
 **Pattern:** Publisher-Subscriber with Room-Based Channels
 
 ```
-Backend: Alpaca WS → MarketDataService → ConnectionManager → Frontend WS Clients
 Frontend: usePriceStream hook → WebSocketClient → Component state updates
 ```
 
@@ -28,7 +27,6 @@ Frontend: usePriceStream hook → WebSocketClient → Component state updates
 
 **File Structure:**
 ```
-backend/app/services/market_data_service.py  # Alpaca WS client
 backend/app/api/websocket/streams.py         # ConnectionManager + publishers
 frontend/lib/websocket.ts                     # Reusable WS client
 frontend/hooks/usePriceStream.ts              # React hook
@@ -200,6 +198,5 @@ curl http://localhost:8000/api/v1/circuit-breaker/status
 | Correlations | Identity matrix | Fetch 90-day returns, compute matrix |
 | Circuit breaker | In-memory state | Redis-backed for persistence |
 | Chat AI | No long-term memory | Vector DB + RAG for conversation history |
-| Price data | Alpaca IEX only | Multi-exchange consolidation |
 
 The MVP approach is sufficient for testing and validation. Plan enhancements for Phase 2+.

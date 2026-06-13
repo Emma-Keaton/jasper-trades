@@ -1,25 +1,31 @@
 """
-Auto-Payout Scheduler - FLEXIBLE PAYOUT ROUTING
+Auto-Payout Scheduler - CRYPTO WALLET & NAIRA BANK PAYOUTS
 
 Background scheduler for automated profit distribution.
 Runs every hour, checks if portfolios should execute auto-payout.
 
 Payout Destinations:
-1. Crypto Wallet (USDT on ERC20/SOLANA/BSC)
-2. Forex Account (reinvest profits into Exness MT5)
-3. Split (percentage to crypto, remainder to forex)
+1. Crypto Wallet (USDT on ERC20/SOLANA/BSC via Tatum)
+2. Nigerian Bank Account (NGN via Trove API)
 
 Configuration (encrypted JSON in DeviceSettings):
 {
     "payout_enabled": true,
     "payout_percentage": 50.0,  # Configurable: 0-100
     "payout_schedule_hour": 20,  # 0-23 ET
-    "payout_destination": "crypto_wallet",  # or "forex_account" | "split"
+    "payout_destination": "crypto_wallet",  # or "naira_bank"
     "crypto_wallet": "0x...",  # USDT wallet address
     "crypto_chain": "ethereum",  # or "solana" | "bsc"
-    "forex_reinvest_percentage": 100.0,  # % to reinvest if forex
-    "split_ratio": 50,  # % to crypto if split (remainder to forex)
     "min_payout_threshold": 10.0  # Minimum profit before payout
+}
+
+For Naira bank payouts, also requires:
+{
+    "naira_bank_enabled": true,
+    "bank_account_number": "0123456789",
+    "bank_code": "058",  # Nigerian bank code
+    "account_name": "John Doe",
+    "bank_name": "Guaranty Trust Bank"
 }
 """
 import asyncio
@@ -42,8 +48,6 @@ class PayoutScheduler:
     
     Destination logic:
     1. crypto_wallet → USDT to external wallet via Tatum
-    2. forex_account → Reinvest profits into Exness MT5 account
-    3. split → Split between crypto and forex based on ratio
     """
 
     def __init__(self):
@@ -150,8 +154,7 @@ class PayoutScheduler:
                     withdrawal_service = WithdrawalService(session)
                     result = await withdrawal_service.execute_auto_payout(
                         portfolio.id,
-                        payout_config,
-                        settings
+                        payout_config
                     )
 
                     if result:

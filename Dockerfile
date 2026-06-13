@@ -7,6 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
+    make \
     wget \
     curl \
     gnupg \
@@ -49,8 +50,8 @@ RUN mkdir -p /app/backend/static && \
     cp -r /app/frontend/out/* /app/backend/static/ && \
     echo "Frontend static files copied to backend/static"
 
-# Install OpenWA for WhatsApp (skip post-install scripts that fail)
-RUN cd backend && npm init -y && npm install @open-wa/wa-automate --ignore-scripts || npm install @open-wa/wa-automate
+# OpenWA for WhatsApp is optional. To enable, install @open-wa/wa-automate in the backend directory.
+# RUN cd/backend && npm install @open-wa/wa-automate
 
 # Create data directories
 RUN mkdir -p /app/backend/data/sqlite /app/backend/data/logs /app/backend/data/models

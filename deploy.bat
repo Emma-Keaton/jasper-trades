@@ -26,8 +26,8 @@ if not exist .env (
     echo.
     echo Please create .env file with your API keys:
     echo   - NVIDIA_API_KEY
-    echo   - ALPACA_API_KEY
-    echo   - ALPACA_API_SECRET
+    echo   - _API_KEY
+    echo   - _API_SECRET
     echo.
     echo Copy .env.example to .env and edit it.
     echo.

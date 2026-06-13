@@ -5,17 +5,9 @@ export const settingsTour: TourStep[] = [
     id: 'api-keys',
     targetElement: '[data-onboarding="api-keys"]',
     title: 'API Keys Section',
-    description: 'Configure your NVIDIA NIM API key (for AI models), Alpaca (stocks), and Binance (crypto) credentials. Stored encrypted locally.',
+    description: 'Configure your NVIDIA NIM API key (for AI models), and Binance (crypto) credentials. Stored encrypted locally.',
     tip: 'Start with paper trading keys, switch to live when ready',
     position: 'bottom',
-  },
-  {
-    id: 'exness-integration',
-    targetElement: '[data-onboarding="exness-integration"]',
-    title: 'Exness/MT5 Integration',
-    description: 'Connect your Exness MetaTrader 5 account for live forex/CFD trading. Requires login ID, server, and passwords.',
-    skipAction: true,
-    position: 'right',
   },
   {
     id: 'trading-caps',

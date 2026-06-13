@@ -25,10 +25,9 @@ Users configure ALL keys at: http://localhost:3000/settings
 
 Keys stored encrypted in database:
 - NVIDIA_API_KEY
-- ALPACA_API_KEY + ALPACA_API_SECRET
+- _API_KEY + _API_SECRET
 - BINANCE_API_KEY + BINANCE_API_SECRET
 - TATUM_API_KEY (new!)
-- IBKR (via JSON config)
 - Colab URL (separate from Tatum)
 
 All services now use ApiKeyService class to get keys from database.

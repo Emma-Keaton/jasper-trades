@@ -13,7 +13,6 @@ This skill documents the complete implementation of Phase 1 features for the Jas
 
 ### 1. WebSocket Real-Time Data
 - **Backend:** `backend/app/services/market_data_service.py`
-  - Alpaca WebSocket V2 protocol integration
   - Auto-reconnect with exponential backoff
   - Publishes to WebSocket streams for frontend
   - Subscribes to portfolio symbols automatically
@@ -71,7 +70,6 @@ This skill documents the complete implementation of Phase 1 features for the Jas
 ### New Backend Files
 ```
 backend/app/services/
-├── market_data_service.py    # Alpaca/Binance WebSocket feeds
 ├── circuit_breaker.py         # Trading halt logic  
 └── chat_ai.py                 # AI conversation handler
 

@@ -104,7 +104,7 @@ class ChatAI:
         """
         text_lower = text.lower()
 
-        # Market status queries
+        # Market status
         if any(word in text_lower for word in ['market open', 'market close', 'market hours', 'is market', 'market status', 'trading hours']):
             return 'market_status'
 
@@ -144,10 +144,8 @@ class ChatAI:
 
     def _extract_symbol(self, text: str) -> Optional[str]:
         """Extract trading symbol from text."""
-        # Look for uppercase words (likely symbols)
         words = text.upper().split()
         for word in words:
-            # Clean non-alpha chars
             cleaned = re.sub(r'[^A-Z]', '', word)
             if len(cleaned) >= 2 and len(cleaned) <= 5:
                 return cleaned
@@ -205,11 +203,10 @@ class ChatAI:
             if not positions:
                 return "You don't have any open positions right now."
 
-            # Group by type
             message = "📊 *Current Positions*\n\n"
             message += "━━━━━━━━━━━━━━━━━━━━\n"
 
-            for pos in positions[:5]:  # Top 5
+            for pos in positions[:5]:
                 pnl = pos.unrealized_pnl or 0
                 pnl_pct = pos.unrealized_pnl_percent or 0
                 emoji = "🟢" if pnl >= 0 else "🔴"
@@ -231,7 +228,6 @@ class ChatAI:
     async def _handle_explain_trade(self, symbol: str) -> str:
         """Handle trade explanation query."""
         try:
-            # Get recent trades for symbol
             from sqlalchemy import select
             from app.models import Trade
 
@@ -252,7 +248,6 @@ class ChatAI:
             if not trades:
                 return f"No recent trades found for {symbol}."
 
-            # Generate AI explanation
             trade_context = "\n".join([
                 f"- {t.type} {t.shares} {t.symbol} @ ${t.price:.2f} on {t.created_at.strftime('%m/%d %H:%M')} | Agent: {t.agent_name or 'AI'}"
                 for t in trades
@@ -308,116 +303,77 @@ Keep it conversational and informative.
 
     async def _handle_market_status(self) -> str:
         """Handle market status query."""
-        try:
-            # Check market hours via Alpaca if available
-            from app.brokers.alpaca_service import AlpacaBrokerService
-            from app.config import settings
-            
-            if settings.ALPACA_API_KEY and settings.ALPACA_API_SECRET:
-                try:
-                    broker = AlpacaBrokerService()
-                    await broker.connect()
-                    clock = await broker.get_clock()
-                    
-                    is_open = clock.get('is_open', False)
-                    next_open = clock.get('next_open', '')
-                    next_close = clock.get('next_close', '')
-                    
-                    if is_open:
-                        status = "🟢 *Market is OPEN*"
-                    else:
-                        status = "🔴 *Market is CLOSED*"
-                    
-                    message = (
-                        f"{status}\n\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"Next Open: {next_open}\n"
-                        f"Next Close: {next_close}\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"\n"
-                        f"Market hours: 9:30 AM - 4:00 PM ET\n"
-                        f"Weekends and holidays closed."
-                    )
-                    return message
-                except Exception as e:
-                    logger.debug(f"Failed to get market clock: {e}")
-            
-            # Fallback
-            now = datetime.utcnow()
-            is_open = now.weekday() < 5 and 13 <= now.hour < 20  # Rough ET market hours
-            
-            status = "🟢 *Market is OPEN*" if is_open else "🔴 *Market is CLOSED*"
-            
-            return (
-                f"{status}\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"Market hours: 9:30 AM - 4:00 PM ET\n"
-                f"Weekends and holidays closed.\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"\n"
-                f"Status is approximate. For exact hours, configure Alpaca API."
-            )
-            
-        except Exception as e:
-            logger.error(f"Market status error: {e}")
-            return "Sorry, I couldn't retrieve market status right now."
+        now = datetime.utcnow()
+        is_weekend = now.weekday() >= 5
+        hour = now.hour
+        
+        # Simple US market hours check (9:30 AM - 4:00 PM ET)
+        is_market_open = not is_weekend and 13 <= hour < 21  # ET is UTC-4/5, approx
+        
+        status = "🟢 OPEN" if is_market_open else "🔴 CLOSED"
+        next_open = "9:30 AM ET" if is_weekend or hour >= 21 else "9:30 AM ET (next trading day)"
+        
+        return (
+            f"📊 *Market Status*\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"US Stock Market: {status}\n\n"
+            f"Trading Hours: 9:30 AM - 4:00 PM ET\n"
+            f"Next Open: {next_open}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Crypto markets trade 24/7.\n"
+            f"Forex trades Sunday 5 PM - Friday 5 PM ET."
+        )
 
     async def _handle_recent_trades(self) -> str:
         """Handle recent trades query."""
         try:
             from sqlalchemy import select
             from app.models import Trade
-            
-            # Get trades from last 24 hours
-            cutoff = datetime.utcnow() - timedelta(days=1)
-            
-            query = select(Trade).where(
-                Trade.created_at >= cutoff,
-                Trade.status == 'filled'
-            ).order_by(Trade.created_at.desc()).limit(10)
-            
-            result = await self.db.execute(query)
-            trades = list(result.scalars().all())
-            
-            if not trades:
-                return "No trades executed in the last 24 hours."
-            
-            message = f"📊 *Recent Trades (Last 24h)*\n\n"
-            message += "━━━━━━━━━━━━━━━━━━━━\n"
-            
-            for t in trades[:5]:
-                emoji = "✅" if t.type == 'buy' else "💰"
-                pnl_info = ""
-                if t.pnl is not None:
-                    pnl_emoji = "🟢" if t.pnl > 0 else "🔴" if t.pnl < 0 else "➖"
-                    pnl_info = f" | {pnl_emoji} PnL: ${t.pnl:+,.2f}"
-                
-                message += f"{emoji} {t.type.upper()} {t.shares} {t.symbol}\n"
-                message += f"  @ ${t.price:.2f}{pnl_info}\n"
-                message += f"  Agent: {t.agent_name or 'AI'}\n"
-                message += "━━━━━━━━━━━━━━━━━━━━\n"
-            
-            if len(trades) > 5:
-                message += f"_...and {len(trades) - 5} more trades_\n"
-            
-            return message
-            
-        except Exception as e:
-            logger.error(f"Recent trades error: {e}")
-            return "Sorry, I couldn't retrieve recent trades right now."
 
-    async def _handle_brainstorm(self, text: str) -> str:
-        """Handle trade brainstorming query."""
-        try:
-            symbol = self._extract_symbol(text)
-            if not symbol:
-                return "I couldn't identify a trading symbol in your message. Try asking about a specific stock or crypto (e.g., 'Should I buy AAPL?')."
-            
-            # Get market context
             portfolio_service = PortfolioService(self.db)
             portfolios = await portfolio_service.get_portfolios()
+
+            if not portfolios:
+                return "No portfolio found."
+
+            query = select(Trade).where(
+                Trade.status == 'filled'
+            ).order_by(Trade.created_at.desc()).limit(10)
+
+            result = await self.db.execute(query)
+            trades = list(result.scalars().all())
+
+            if not trades:
+                return "No recent trades found."
+
+            message = "📜 *Recent Trades*\n\n"
+            message += "━━━━━━━━━━━━━━━━━━━━\n"
+
+            for t in trades[:5]:
+                pnl_emoji = "🟢" if (t.pnl or 0) > 0 else "🔴" if (t.pnl or 0) < 0 else "➖"
+                pnl_text = f"${t.pnl:+,.2f}" if t.pnl is not None else "Open"
+                
+                message += f"{pnl_emoji} {t.symbol} {t.side.upper()}\n"
+                message += f"  {t.shares} @ ${t.price:.2f}\n"
+                message += f"  {pnl_text}\n"
+                message += "━━━━━━━━━━━━━━━━━━━━\n"
+
+            return message
+
+        except Exception as e:
+            logger.error(f"Recent trades error: {e}")
+            return "Sorry, I couldn't retrieve your recent trades."
+
+    async def _handle_brainstorm(self, text: str) -> str:
+        """Handle brainstorming/query about symbol."""
+        try:
+            symbol = self._extract_symbol(text) or 'AAPL'
             
+            # Get portfolio context
+            portfolio_service = PortfolioService(self.db)
+            portfolios = await portfolio_service.get_portfolios()
             portfolio_ctx = ""
+            
             if portfolios:
                 summary = await portfolio_service.get_portfolio_summary(portfolios[0].id)
                 portfolio_ctx = f"""
@@ -426,18 +382,12 @@ User's portfolio context:
 - Cash Available: ${summary.get('cash', 0):,.2f}
 - Current Return: {summary.get('total_return_percent', 0):.1f}%
 """
-            
-            # Get market data if available
-            from app.services.market_data_service import market_data_service
-            current_price = market_data_service.get_price(symbol)
-            price_context = f"Current {symbol} price: ${current_price:.2f}\n" if current_price else ""
-            
+
             prompt = f"""
 User is asking for advice about {symbol}.
 
 Question: "{text}"
 
-{price_context}
 {portfolio_ctx}
 
 Provide a balanced, informative response:
@@ -455,15 +405,15 @@ Keep it concise (3-5 sentences) and conversational.
             ]
 
             response = await nvidia_client.chat_completion(messages, task_type='analysis')
-            
+
             message = f"💡 *{symbol} Analysis*\n\n"
             message += "━━━━━━━━━━━━━━━━━━━━\n"
             message += response.strip()
             message += "\n\n━━━━━━━━━━━━━━━━━━━━\n"
             message += "_⚠️ Not financial advice. Do your own research._"
-            
+
             return message
-            
+
         except Exception as e:
             logger.error(f"Brainstorm error: {e}")
             return "Sorry, I couldn't analyze that right now. Try asking about a specific symbol."
@@ -473,47 +423,47 @@ Keep it concise (3-5 sentences) and conversational.
         try:
             from sqlalchemy import select
             from app.models import Trade, DecisionLog
-            
+
             symbol = self._extract_symbol(text)
-            
+
             # Get recent trades with agent info
             query = select(Trade).where(
                 Trade.agent_name.isnot(None)
             ).order_by(Trade.created_at.desc()).limit(5)
-            
+
             if symbol:
                 query = query.where(Trade.symbol == symbol.upper())
-            
+
             result = await self.db.execute(query)
             trades = list(result.scalars().all())
-            
+
             if not trades:
                 # Try decision logs
                 log_query = select(DecisionLog).order_by(DecisionLog.created_at.desc()).limit(5)
                 if symbol:
                     log_query = log_query.where(DecisionLog.symbol == symbol.upper())
-                
+
                 log_result = await self.db.execute(log_query)
                 decisions = list(log_result.scalars().all())
-                
+
                 if not decisions:
                     return "No agent decisions found. Trades may be executed automatically without specific agent attribution."
-                
+
                 message = "🤖 *Recent Agent Decisions*\n\n"
                 message += "━━━━━━━━━━━━━━━━━━━━\n"
-                
+
                 for d in decisions[:3]:
                     message += f"• {d.symbol}: {d.action.upper()}\n"
                     message += f"  Agent: {d.agent_name or 'AI'}\n"
                     message += f"  Confidence: {d.confidence:.0%}\n"
                     message += f"  Reason: {d.reasoning[:80]}...\n"
                     message += "━━━━━━━━━━━━━━━━━━━━\n"
-                
+
                 return message
-            
+
             message = f"🤖 *Agent Trade Decisions*\n\n"
             message += "━━━━━━━━━━━━━━━━━━━━\n"
-            
+
             for t in trades[:5]:
                 message += f"• {t.symbol}: {t.side.upper()} {t.shares}\n"
                 message += f"  Agent: {t.agent_name or 'AI'}\n"
@@ -522,9 +472,9 @@ Keep it concise (3-5 sentences) and conversational.
                     pnl_emoji = "🟢" if t.pnl > 0 else "🔴" if t.pnl < 0 else "➖"
                     message += f"  {pnl_emoji} PnL: ${t.pnl:+,.2f}\n"
                 message += "━━━━━━━━━━━━━━━━━━━━\n"
-            
+
             return message
-            
+
         except Exception as e:
             logger.error(f"Agent question error: {e}")
             return "Sorry, I couldn't retrieve agent decision information right now."
@@ -551,7 +501,6 @@ Keep it concise (3-5 sentences) and conversational.
     async def _handle_conversation(self, text: str) -> str:
         """Handle general conversation."""
         try:
-            # Get portfolio context for AI
             portfolio_service = PortfolioService(self.db)
             portfolios = await portfolio_service.get_portfolios()
 

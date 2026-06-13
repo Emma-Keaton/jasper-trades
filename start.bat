@@ -135,7 +135,7 @@ echo 1. Wait for services to finish starting (~10 seconds)
 echo 2. Open http://localhost:3000/settings
 echo 3. Configure API keys:
 echo    - NVIDIA NIM API (required for AI)
-echo    - Alpaca API Keys (for trading)
+echo    -  API Keys (for trading)
 echo 4. Start trading!
 echo.
 echo See DEPLOYMENT.md for cloud deployment.

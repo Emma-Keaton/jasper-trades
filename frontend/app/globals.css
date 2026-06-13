@@ -1,9 +1,6 @@
-@import "tailwindcss";
-
-@theme {
-  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* Slick dashboard custom scrollbars matching slate theme */
 ::-webkit-scrollbar {
@@ -61,4 +58,3 @@
 .tour-active .tour-highlight {
   pointer-events: auto;
 }
-

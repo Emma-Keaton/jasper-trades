@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 import structlog
 
 from app.brokers import get_broker, get_broker_for_asset
-from app.brokers.alpaca_service import AlpacaBrokerService
 from app.brokers.ccxt_service import CCXTBrokerService
 
 logger = structlog.get_logger(__name__)
@@ -17,7 +16,7 @@ class ValuationService:
     Valuation Service - Fetch prices and calculate position values.
 
     Features:
-    - Multi-source price fetching (Alpaca, CCXT, etc.)
+    - Multi-source price fetching (CCXT, cTrader, etc.)
     - Price caching with TTL
     - Batch price fetching
     - Fallback logic between providers
@@ -181,7 +180,7 @@ class ValuationService:
 
     async def _fetch_stock_price(self, symbol: str) -> Optional[float]:
         """
-        Fetch stock price from Alpaca.
+        Fetch stock price.
 
         Args:
             symbol: Stock symbol
@@ -190,19 +189,17 @@ class ValuationService:
             Current price or None
         """
         try:
-            broker = get_broker("alpaca")
-
+            broker = None  
             if not broker or not broker.is_connected:
-                logger.debug("Alpaca not connected, skipping stock price fetch")
+                logger.debug("Stock broker not configured, skipping price fetch")
                 return None
 
-            # Get market data
-            if isinstance(broker, AlpacaBrokerService):
-                market_data = await broker.get_market_data(symbol)
-                if market_data and "ask" in market_data:
-                    return float(market_data["ask"])
-                elif market_data and "last" in market_data:
-                    return float(market_data["last"])
+            # Get market data - use generic broker interface
+            market_data = await broker.get_market_data(symbol)
+            if market_data and "ask" in market_data:
+                return float(market_data["ask"])
+            elif market_data and "last" in market_data:
+                return float(market_data["last"])
 
             # Alternative: Get position to get current price
             position = await broker.get_position(symbol)
@@ -227,13 +224,11 @@ class ValuationService:
         prices = {}
 
         try:
-            broker = get_broker("alpaca")
-
+            broker = None  
             if not broker or not broker.is_connected:
-                logger.warning("Alpaca not connected")
+                logger.warning("Stock broker not connected")
                 return prices
 
-            # Fetch prices one by one (Alpaca doesn't have batch quotes in free tier)
             for symbol in symbols:
                 price = await self._fetch_stock_price(symbol)
                 if price:

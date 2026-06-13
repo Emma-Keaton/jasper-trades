@@ -211,7 +211,7 @@ export default function WithdrawModal({
               className="w-full bg-[#0F172A] border border-[#475569] rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-[#10B981] transition-colors"
             >
               <option value="crypto_wallet">Crypto Wallet (USDC/USDT)</option>
-              <option value="broker">Broker Account (Alpaca/Binance)</option>
+              <option value="broker">Broker Account (Binance)</option>
             </select>
           </div>
 

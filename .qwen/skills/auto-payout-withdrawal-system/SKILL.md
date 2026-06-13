@@ -231,7 +231,6 @@ Features:
 **All profits → USDT before payout:**
 
 1. **Forex profits** (IBKR): Realized in USD → Convert to USDT
-2. **Stock profits** (Alpaca): Realized in USD → Convert to USDT  
 3. **Crypto profits** (Binance): Realized in USDT → No conversion needed
 
 **Conversion Options (Production):**

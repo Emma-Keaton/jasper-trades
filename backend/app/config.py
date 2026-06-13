@@ -1,5 +1,5 @@
 # Configuration
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional, List
 import structlog
 import os
@@ -10,15 +10,21 @@ logger = structlog.get_logger(__name__)
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables + database.
-    
+
     Priority:
     1. Settings from database (loaded via Settings API)
     2. Environment variables
     3. Default values
-    
+
     API keys for NVIDIA, brokers, and WhatsApp are configured via Settings page
     and stored encrypted in the database. Environment variables are fallback.
     """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"  # Allow extra fields from .env that aren't in the model
+    )
 
     # Application
     APP_NAME: str = "Jasper Trades"
@@ -38,29 +44,21 @@ class Settings(BaseSettings):
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
 
     # Model Routing - Based on actual FREE tier testing (2026-06)
-    # Working FREE models: nemotron-mini-4b, nemotron-3-ultra-550b, kimi-k2.6
-    # Meta/Mistral models require special access or have rate limits
-    MODEL_FAST: str = "nvidia/nemotron-mini-4b-instruct"  # 4B, fast, FREE verified ✅
-    MODEL_FREE_FAST: str = "nvidia/nemotron-mini-4b-instruct"  # Same as fast - confirmed FREE ✅
-    MODEL_BALANCED: str = "moonshotai/kimi-k2.6"  # Mid-size, FREE verified ✅
-    MODEL_SMART: str = "nvidia/nemotron-3-ultra-550b-a55b"  # 550B reasoning, FREE verified ✅
-    MODEL_SMART_FREE: str = "nvidia/nemotron-3-ultra-550b-a55b"  # Best FREE reasoning ✅
-    MODEL_DEEP: str = "nvidia/nemotron-3-ultra-550b-a55b"  # 550B is deepest FREE available ✅
-    MODEL_ALTERNATIVE: str = "moonshotai/kimi-k2.6"  # Alternative perspective, FREE ✅
-
-    # Alpaca - Use database settings if available
-    ALPACA_API_KEY: Optional[str] = None  # Set via Settings page
-    ALPACA_API_SECRET: Optional[str] = None  # Set via Settings page
-    ALPACA_PAPER: bool = True  # Set via Settings page
+    # Working FREE models: meta/llama-3.2-3b, meta/llama-3.1-8b, meta/llama-3.1-70b, meta/llama-3.3-70b, mistralai/mixtral-8x7b, nvidia/nemotron-mini-4b, moonshotai/kimi-k2.6
+    # Meta/Llama models (3.2-3b, 3.1-8b, 3.1-70b, 3.3-70b) are FREE and verified ✅
+    # Mistral Mixtral 8x7B is FREE and verified ✅
+    # NVIDIA Nemotron 4B is FREE and verified ✅
+    MODEL_FAST: str = "meta/llama-3.2-3b-instruct"  # 3B, fast, FREE verified ✅
+    MODEL_FREE_FAST: str = "meta/llama-3.2-3b-instruct"  # Same as fast - confirmed FREE ✅
+    MODEL_BALANCED: str = "meta/llama-3.1-8b-instruct"  # Mid-size, FREE verified ✅
+    MODEL_SMART: str = "meta/llama-3.1-70b-instruct"  # 70B reasoning, FREE verified ✅
+    MODEL_SMART_FREE: str = "meta/llama-3.1-70b-instruct"  # Best FREE reasoning ✅
+    MODEL_DEEP: str = "meta/llama-3.3-70b-instruct"  # 70B is deepest FREE available ✅
+    MODEL_ALTERNATIVE: str = "mistralai/mixtral-8x7b-instruct-v0.1"  # Alternative perspective, FREE ✅
 
     # Binance - Use database settings if available
     BINANCE_API_KEY: Optional[str] = None  # Set via Settings page
     BINANCE_API_SECRET: Optional[str] = None  # Set via Settings page
-
-    # Interactive Brokers
-    IBKR_HOST: Optional[str] = None
-    IBKR_PORT: int = 7497
-    IBKR_CLIENT_ID: int = 1
 
     # Solana/Jupiter
     SOLANA_RPC_URL: str = "https://api.mainnet-beta.solana.com"
@@ -92,6 +90,15 @@ class Settings(BaseSettings):
     KRONOS_COLAB_URL: Optional[str] = None  # Colab public URL (ngrok)
     KRONOS_COLAB_STRATEGY: str = "cascade"  # cascade|ensemble|context|mini|small|base
 
+    # cTrader OpenAPI (OAuth 2.0 Copy Trading)
+    CTRADER_CLIENT_ID: Optional[str] = None
+    CTRADER_CLIENT_SECRET: Optional[str] = None
+    CTRADER_REDIRECT_URI: Optional[str] = None
+    CTRADER_SANDBOX: bool = True
+    CTRADER_ENCRYPTION_KEY: Optional[str] = None
+    CTRADER_BROKER_ENABLED: bool = True
+    CTRADER_RATE_LIMIT: int = 50
+
     # WhatsApp Integration - Use database settings
     WHATSAPP_SERVICE_URL: str = "http://localhost:2785"  # Default OpenWA URL
 
@@ -99,10 +106,6 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 
 settings = Settings()
@@ -141,10 +144,6 @@ def get_api_key_from_settings(key_name: str, fallback: Optional[str] = None) -> 
                     
                     if key_name == "nvidia_api_key" and device_settings.nvidia_key:
                         return encryption.decrypt(device_settings.nvidia_key)
-                    elif key_name == "alpaca_api_key" and device_settings.alpaca_key:
-                        return encryption.decrypt(device_settings.alpaca_key)
-                    elif key_name == "alpaca_api_secret" and device_settings.alpaca_secret:
-                        return encryption.decrypt(device_settings.alpaca_secret)
                     elif key_name == "binance_api_key" and device_settings.binance_key:
                         return encryption.decrypt(device_settings.binance_key)
                     elif key_name == "binance_api_secret" and device_settings.binance_secret:

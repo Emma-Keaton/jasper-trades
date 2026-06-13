@@ -32,7 +32,6 @@ The migration system:
 - All other application tables
 
 **Columns Added to `device_settings`:**
-- Exness/MT5 integration (login_id, server, password, etc.)
 - Market data APIs (alphavantage, finnhub, twelvedata, etc.)
 - Notification configs (discord, slack, email, telegram, whatsapp)
 - Email service (sendgrid)
@@ -118,13 +117,13 @@ rm backend/data/sqlite/jasper_trades.db-wal
 
 ### Missing Columns After Update
 
-**Symptom:** `no such column: exness_login_id`
+**Symptom:** `no such column: <column_name>`
 
 **Solution:**
 ```bash
 # Backend should auto-migrate on startup
 # Check logs for migration messages:
-# "✓ Added column: exness_login_id"
+# "✓ Added column: <column_name>"
 
 # If not auto-migrating, check:
 # 1. app/migrations.py exists

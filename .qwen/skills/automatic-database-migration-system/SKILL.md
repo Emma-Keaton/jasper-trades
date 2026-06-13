@@ -14,6 +14,11 @@ When deploying updates with new database columns (e.g., Exness integration, mark
 (sqlite3.OperationalError) no such column: device_settings.exness_login_id
 ```
 
+Additionally, when adding NOT NULL columns to existing tables, failing to provide a DEFAULT value would cause migration failures like:
+```
+(sqlite3.OperationalError) Cannot add a NOT NULL column with default value NULL
+```
+
 Manual database migration (Alembic) was overkill for this project's needs. A simpler, automatic solution was required.
 
 ## Solution Approach

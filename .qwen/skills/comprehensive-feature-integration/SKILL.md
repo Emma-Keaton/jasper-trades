@@ -115,7 +115,6 @@ async def sync_broker_balance(portfolio_id: int, db: AsyncSession):
     if portfolio.is_paper:
         return {"status": "paper_trading"}
     
-    broker = get_broker(portfolio.broker or "alpaca")
     account = await broker.get_account()
     positions = await broker.get_positions()
     

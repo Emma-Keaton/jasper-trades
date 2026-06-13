@@ -12,9 +12,8 @@ The Jasper Trades backend is now **production-ready** with full broker integrati
 
 **Files Created:**
 - `app/brokers/base.py` - Abstract base class for all brokers
-- `app/brokers/alpaca_service.py` - Alpaca Securities integration (stocks, options, crypto)
+- `app/brokers/_service.py` - cTrader integration (stocks, options, crypto)
 - `app/brokers/ccxt_service.py` - CCXT integration (100+ crypto exchanges)
-- `app/brokers/ibkr_service.py` - Interactive Brokers integration (professional trading)
 - `app/brokers/solana_service.py` - Solana/Jupiter DEX integration (DeFi)
 - `app/brokers/registry.py` - Broker registry and factory
 - `app/brokers/__init__.py` - Module exports
@@ -148,9 +147,8 @@ backend/
 │   ├── brokers/ ✅ NEW
 │   │   ├── __init__.py
 │   │   ├── base.py
-│   │   ├── alpaca_service.py
+│   │   ├── _service.py
 │   │   ├── ccxt_service.py
-│   │   ├── ibkr_service.py
 │   │   ├── solana_service.py
 │   │   └── registry.py
 │   └── services/ ✅ NEW
@@ -188,7 +186,7 @@ backend/
 ## What Works Now
 
 ### ✅ Broker Integration
-- Submit real orders to Alpaca (paper/live)
+- Submit real orders to  (paper/live)
 - Submit crypto orders via CCXT (Binance, Coinbase, etc.)
 - Submit orders to Interactive Brokers
 - Execute DeFi swaps on Solana via Jupiter
@@ -259,8 +257,8 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your API keys:
 # - NVIDIA_API_KEY (for AI models)
-# - ALPACA_API_KEY, ALPACA_API_SECRET (for trading)
-# - Optional: BINANCE_*, IBKR_*, etc.
+# - _API_KEY, _API_SECRET (for trading)
+# - Optional: BINANCE_*, etc.
 ```
 
 ### 3. Run Backend

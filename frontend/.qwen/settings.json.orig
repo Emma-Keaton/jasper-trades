@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(E:\\Projects\\jasper-trades\\backend\\app\\brokers/**)"
+    ]
+  }
+}

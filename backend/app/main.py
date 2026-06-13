@@ -11,6 +11,13 @@ from contextlib import asynccontextmanager
 from typing import List
 import structlog
 
+# Load .env file BEFORE any imports that use os.getenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed, rely on system env vars only
+
 from app.config import settings
 from app.database import get_db, init_db, close_db, async_session
 from app.models import Trade, Signal, Portfolio
@@ -20,6 +27,7 @@ from app.brokers import broker_registry, initialize_brokers
 from app.services import init_scheduler, get_scheduler
 from app.services.market_data_service import market_data_service
 from app.services.embedded_openwa import embedded_openwa, get_embedded_openwa
+from app.services.forex_polling_service import start_forex_polling, stop_forex_polling
 
 # Kronos integration (optional - 4GB RAM optimized)
 try:
@@ -36,8 +44,19 @@ from app.api.websocket import streams as websocket_streams
 from app.api.v1 import settings as api_settings_router
 from app.api.v1 import alpha_factors, backtest, withdrawal
 from app.api.v1 import heartbeat, polymarket, debate, ensemble, swarm, quantlib, checkpoint, notify
-from app.api.v1 import exness, trading_caps
+from app.api.v1 import trading_caps
 from app.api.v1 import settings_extensions
+from app.api.v1 import broker_connections
+from app.api.v1 import copytrade
+from app.api.v1 import forex  # Trove forex conversion
+from app.api.v1 import banks  # Nigerian bank list
+
+# cTrader OAuth token refresh scheduler
+try:
+    from app.schedulers.ctrader_token_refresh import start_token_refresh_scheduler
+    CTRADER_SCHEDULER_AVAILABLE = True
+except ImportError:
+    CTRADER_SCHEDULER_AVAILABLE = False
 
 # Configure structured logging (compatible with latest structlog)
 structlog.configure(
@@ -55,6 +74,10 @@ structlog.configure(
 )
 
 logger = structlog.get_logger(__name__)
+
+# Log scheduler availability after logger is defined
+if not CTRADER_SCHEDULER_AVAILABLE:
+    logger.warning("cTrader token refresh scheduler not available")
 
 
 @asynccontextmanager
@@ -110,7 +133,6 @@ async def lifespan(app: FastAPI):
                 name="Default",
                 initial_cash=100000.0,
                 is_paper=True,
-                broker="alpaca",
             )
             logger.info("Created default portfolio")
 
@@ -156,6 +178,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Auto-payout scheduler startup failed: {e}")
 
+    # Start cTrader OAuth token refresh scheduler (refreshes tokens every 6 hours)
+    if CTRADER_SCHEDULER_AVAILABLE:
+        try:
+            from app.database import async_engine
+            await start_token_refresh_scheduler(async_engine)
+            logger.info("cTrader token refresh scheduler started (refreshes every 6 hours)")
+        except Exception as e:
+            logger.warning(f"cTrader token refresh scheduler startup failed: {e}")
+
+    # Start forex polling service (NGN/USD rates every 60 seconds)
+    try:
+        await start_forex_polling()
+        logger.info("Forex polling service started (NGN/USD rates every 60s)")
+    except Exception as e:
+        logger.warning(f"Forex polling service startup failed: {e}")
+
     yield
 
     # Shutdown
@@ -184,6 +222,13 @@ async def lifespan(app: FastAPI):
         logger.info("Embedded OpenWA stopped")
     except Exception as e:
         logger.warning(f"Error stopping OpenWA: {e}")
+
+    # Stop forex polling service
+    try:
+        await stop_forex_polling()
+        logger.info("Forex polling service stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping forex polling: {e}")
 
     # Stop agents
     await agent_registry.stop_all()
@@ -239,9 +284,13 @@ app.include_router(swarm.router, tags=["swarm"])
 app.include_router(quantlib.router, tags=["quantlib"])
 app.include_router(checkpoint.router, tags=["checkpoint"])
 app.include_router(notify.router, tags=["notify"])
-app.include_router(exness.router, prefix="/api/v1", tags=["exness"])
 app.include_router(trading_caps.router, prefix="/api/v1", tags=["trading-caps"])
 app.include_router(settings_extensions.router, prefix="/api/v1", tags=["settings-extensions"])
+app.include_router(broker_connections.router, prefix="/api/v1", tags=["brokers"])
+app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+app.include_router(copytrade.router, tags=["Copy Trading"])
+app.include_router(forex.router, tags=["forex"])  # Trove forex conversion
+app.include_router(banks.router, prefix="/api/v1", tags=["banks"])  # Nigerian bank list
 
 
 @app.get("/")

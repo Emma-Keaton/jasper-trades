@@ -111,9 +111,6 @@ CORS_ORIGINS="http://localhost:3000,https://your-domain.com"
 
 **Optional (configure via Settings page after deployment):**
 ```env
-ALPACA_API_KEY=
-ALPACA_API_SECRET=
-ALPACA_PAPER=true
 BINANCE_API_KEY=
 BINANCE_API_SECRET=
 KRONOS_COLAB_URL=
@@ -195,7 +192,6 @@ Render free tier sleeps after 15 minutes of inactivity.
 After deployment, configure via Settings page (`https://your-app.onrender.com/settings`):
 
 1. **NVIDIA NIM API** - Paste API key, test connection
-2. **Alpaca Trading** - Add API keys, enable Paper Trading mode
 3. **Notifications** - Configure Discord/WhatsApp/Email (optional)
 4. **Kronos Colab** - Add Colab URL for AI predictions (optional)
 

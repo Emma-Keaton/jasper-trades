@@ -15,7 +15,7 @@ class BacktestService:
     Backtest Service - Production strategy backtesting.
 
     Requirements:
-    - Real market data connection (Alpaca, YFinance, or other)
+    - Real market data connection (YFinance, cTrader, or other)
     - No mock/simulated data
     - Actual historical OHLCV data
     - Real commission and slippage modeling

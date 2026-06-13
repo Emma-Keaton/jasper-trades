@@ -16,14 +16,13 @@ This document contains detailed wireframes for all screens in the Jasper Trades 
 8. [Portfolio](#8-portfolio)
 9. [Settings](#9-settings)
    - [9.1 API Keys](#91-api-keys)
-   - [9.2 Exness/MT5 Account](#92-exnessmt5-account)
-   - [9.3 Trading Caps & Risk Limits](#93-trading-caps--risk-limits)
-   - [9.4 Market Data Providers](#94-market-data-providers)
-   - [9.5 Email Service (SendGrid)](#95-email-service-sendgrid)
-   - [9.6 Discord Bot](#96-discord-bot)
-   - [9.7 LLM Model Configuration](#97-llm-model-configuration)
-   - [9.8 Notifications](#98-notifications)
-   - [9.9 Data & Storage](#99-data--storage)
+   - [9.2 Trading Caps & Risk Limits](#92-trading-caps--risk-limits)
+   - [9.3 Market Data Providers](#93-market-data-providers)
+   - [9.4 Email Service (SendGrid)](#94-email-service-sendgrid)
+   - [9.5 Discord Bot](#95-discord-bot)
+   - [9.6 LLM Model Configuration](#96-llm-model-configuration)
+   - [9.7 Notifications](#97-notifications)
+   - [9.8 Data & Storage](#98-data--storage)
 
 ---
 
@@ -226,7 +225,7 @@ Main trading dashboard showing real-time overview of agents, portfolio, and mark
 │ │                                                                          │   │
 │ │ [10:42:40] [⚡ Execution]                                                 │   │
 │ │ Order executed: BUY 5.6 shares NVDA @ $889.50                           │   │
-│ │ Broker: Alpaca Paper | Status: FILLED                                    │   │
+│ │ Broker:  Paper | Status: FILLED                                    │   │
 │ │                                                                          │   │
 │ └──────────────────────────────────────────────────────────────────────────┘   │
 ├────────────────────────────────────────────────────────────────────────────────┤
@@ -1398,7 +1397,7 @@ Configure API keys, broker connections, agent preferences, and application setti
 │ │ Status: [🟢 Connected]  |  Usage Today: $2.47  |  Requests: 1,247         │ │
 │ │ Base URL: https://integrate.api.nvidia.com/v1                             │ │
 │ │                                                                            │ │
-│ │ Alpaca Securities                                                          │ │
+│ │  Securities                                                          │ │
 │ │ ─────────────────────────────────────────────────────────────────────────  │ │
 │ │ API Key:    [•••••••••••••••••••                      ] [Show] [Test]      │ │
 │ │ API Secret: [••••••••••••••••••••••••••••••••••••    ] [Show]             │ │
@@ -1409,12 +1408,6 @@ Configure API keys, broker connections, agent preferences, and application setti
 │ │ ─────────────────────────────────────────────────────────────────────────  │ │
 │ │ API Key:    [                                          ] [Show] [Test]      │ │
 │ │ API Secret: [                                          ] [Show]             │ │
-│ │ Status: [⚪ Not Configured]                                                 │ │
-│ │                                                                            │ │
-│ │ Interactive Brokers                                                        │ │
-│ │ ─────────────────────────────────────────────────────────────────────────  │ │
-│ │ Host: [                                      ]                            │ │
-│ │ Port: [7497]  Client ID: [1]                                               │ │
 │ │ Status: [⚪ Not Configured]                                                 │ │
 │ │                                                                            │ │
 │ │ GitHub (for signal sync)                                                   │ │
@@ -1531,64 +1524,6 @@ Radio Group (Environment):
 - Event triggers: Trade executed, Signal generated, Risk alert
 - Quiet hours: Time range picker
 - Test notification button
-```
-
-**Exness/MT5 Account Panel:**
-```yaml
-Container:
-  - Background: Surface
-  - Border-radius: lg
-  - Padding: 24px
-  - Margin-bottom: 16px
-
-Section Header:
-  - Title: "Exness/MT5 Account"
-  - Icon: Shield
-  - Status badge: "Connected" (green) or "Not Configured" (gray)
-  - Info button opens setup guide
-
-Form Fields:
-  MT5 Login ID:
-    - Type: Numeric text field
-    - Placeholder: "e.g., 87291043"
-    - Validation: Numeric only
-    - Help text: "Your Exness MT5 account number"
-
-  Server Selection:
-    - Type: Dropdown
-    - Options: Exness-MT5-Real6, Exness-MT5-Real7, etc.
-    - Help text: "Found in Exness email or MT5 terminal"
-
-  Trading Password:
-    - Type: Password field
-    - Show/Hide toggle button
-    - Help text: "Your MT5 trading password"
-
-  Investor Password (Optional):
-    - Type: Password field
-    - Show/Hide toggle
-    - Help text: "Read-only access password"
-
-  Enable Toggle:
-    - Checkbox: "Enable Exness trading"
-    - Default: Unchecked
-
-Action Buttons:
-  - "Link Account" (Primary, green)
-  - "Sync" (Secondary, refresh icon)
-  - "Test Connection" (Outline)
-
-Connection Status Box:
-  - Background: Green 10% opacity when connected
-  - Shows: Balance, Equity, Free Margin
-  - Last synced timestamp
-  - Connection indicator dot
-
-Info Modal (Info button beside title):
-  - What is Exness/MT5
-  - Local vs Cloud hosting explanation
-  - Step-by-step setup guide
-  - Links to Exness signup
 ```
 
 **Trading Caps & Risk Limits Panel:**

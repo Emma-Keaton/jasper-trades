@@ -201,7 +201,7 @@ Output JSON with:
 
         Args:
             trade: Trade to submit
-            broker: Broker name (alpaca, binance, ibkr, solana) or "auto" for routing
+            broker: Broker name (binance, solana) or "auto" for routing
 
         Returns:
             Updated Trade with broker_order_id

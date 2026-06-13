@@ -24,7 +24,7 @@ Jasper Trades merges four powerful open-source AI trading platforms into one uni
 │ │ - Agent execution (Director, Quant, Risk, Execution)      │   │
 │ │ - Paper trading engine ($100K simulation)                 │   │
 │ │ - SQLite database (local, fast)                           │   │
-│ │ - Broker adapters (Alpaca, Binance, IBKR, Solana)         │   │
+│ │ - Broker adapters (Binance, cTrader, Solana)         │   │
 │ └───────────────────────────────────────────────────────────┘   │
 │                                                                 │
 │ ┌───────────────────────────────────────────────────────────┐   │
@@ -59,7 +59,7 @@ Jasper Trades merges four powerful open-source AI trading platforms into one uni
 | **Agent Framework** | LangChain + Custom | Vibe + AutoHedge | Flexible, no paid dependencies |
 | **LLM Provider** | NVIDIA NIM API | All 4 platforms | Pay-per-use, multiple models |
 | **Charts** | ECharts + Recharts | Vibe + AI-Trader | Free, powerful |
-| **Broker APIs** | Alpaca, CCXT, IBKR | Fincept + AI-Trader | Free paper trading + live trading |
+| **Broker APIs** | CCXT | Fincept + AI-Trader | Free paper trading + live trading |
 
 ---
 
@@ -85,7 +85,7 @@ Jasper Trades merges four powerful open-source AI trading platforms into one uni
 
 ## Paper Trading Strategy
 
-### Primary: Alpaca Securities
+### Primary: cTrader
 - **Unlimited free paper trading** (stocks, options, crypto)
 - Same API for paper + live (just switch endpoint)
 - No account minimums
@@ -117,7 +117,7 @@ class PaperTradingService:
 | 37 specialized agents | Implement as `agents/specialists/` (Buffett, Graham, etc.) | Phase 3 |
 | Node editor (visual workflows) | React Flow library in frontend | Phase 4 |
 | Multi-asset analytics | Integrate into `backtest_service.py` | Phase 3 |
-| 16 broker integrations | `brokers/` adapters (Zerodha, IBKR, Alpaca, etc.) | Phase 2 |
+| 16 broker integrations | `brokers/` adapters (Zerodha, , etc.) | Phase 2 |
 
 ### From AI-Trader (HKUDS)
 | Feature | Implementation | Status |
@@ -160,7 +160,7 @@ class PaperTradingService:
 - [ ] Initialize FastAPI project structure
 - [ ] Create base agent class (from Vibe-Trading + AutoHedge)
 - [ ] Implement Director Agent (from AutoHedge)
-- [ ] Add Alpaca broker adapter (free paper trading)
+- [ ] Add  broker adapter (free paper trading)
 - [ ] Set up SQLite database
 - [ ] Configure NVIDIA NIM API integration
 
@@ -172,10 +172,10 @@ class PaperTradingService:
 
 #### Integration
 - [ ] Connect frontend to backend
-- [ ] Test Director Agent → Alpaca paper trading
+- [ ] Test Director Agent → cTrader paper trading
 - [ ] Add basic logging
 
-**Deliverable:** Web dashboard where Director Agent can analyze markets and execute paper trades via Alpaca
+**Deliverable:** Web dashboard where Director Agent can analyze markets and execute paper trades via 
 
 ---
 
@@ -190,7 +190,6 @@ class PaperTradingService:
 
 #### Broker Expansion
 - [ ] Add Binance adapter (via CCXT - free)
-- [ ] Add Interactive Brokers adapter
 - [ ] Add Solana/Jupiter adapter (for DeFi)
 
 #### Frontend
@@ -306,10 +305,9 @@ jasper-trades/
 │   │   │   ├── data_service.py       # 100+ connectors from Fincept
 │   │   │   └── paper_trading_service.py  # Paper trading engine
 │   │   ├── brokers/              # Broker adapters
-│   │   │   ├── alpaca.py         # Stocks/Options (free paper trading)
+│   │   │   ├── .py         # Stocks/Options (free paper trading)
 │   │   │   ├── binance.py        # Crypto (via CCXT)
 │   │   │   ├── coinbase.py       # Crypto (via CCXT)
-│   │   │   ├── ibkr.py           # Interactive Brokers
 │   │   │   └── solana.py         # AutoHedge Jupiter/DeFi
 │   │   ├── models/
 │   │   │   ├── db.py             # SQLAlchemy models
@@ -392,7 +390,7 @@ jasper-trades/
 3. **Set up FastAPI backend** - Base configuration, SQLite, logging
 4. **Implement core agent framework** - Base agent class with NVIDIA NIM integration
 5. **Build 4-stage pipeline** - Director → Quant → Risk → Execution
-6. **Add Alpaca broker adapter** - Paper trading first
+6. **Add  broker adapter** - Paper trading first
 7. **Create React frontend** - Basic dashboard + agent status
 8. **Test end-to-end flow** - News → Analysis → Paper Trade
 
@@ -402,7 +400,7 @@ jasper-trades/
 
 1. **Local-first architecture** - Zero latency, zero hosting cost
 2. **NVIDIA NIM for LLM** - Pay-per-use, multiple models, no upfront cost
-3. **Alpaca for paper trading** - Free, unlimited, same API for live
+3. ** for paper trading** - Free, unlimited, same API for live
 4. **PythonAnywhere + Vercel for cloud** - No credit card required
 5. **SQLite for database** - File-based, no server needed
 6. **PWA for mobile** - No app store fees, works offline

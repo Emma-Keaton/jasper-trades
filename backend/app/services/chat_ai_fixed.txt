@@ -1,0 +1,48 @@
+"Ask for 'portfolio status' for current value."
+        )
+
+    async def _handle_market_status(self) -> str:
+        """Handle market status query."""
+        try:
+            # Get portfolio summary
+            portfolio_service = PortfolioService(self.db)
+            summary = await portfolio_service.get_portfolio_summary(1)
+            portfolio_ctx = f"""
+User's portfolio context:
+- Total Value: ${summary.get('total_value', 0):,.2f}
+- Cash Available: ${summary.get('cash', 0):,.2f}
+- Current Return: {summary.get('total_return_percent', 0):.1f}%
+"""
+
+            # Get market data if available
+            from app.services.market_data_service import market_data_service
+            current_price = market_data_service.get_price(symbol)
+            price_context = f"Current {symbol} price: ${current_price:.2f}\n" if current_price else ""
+
+            prompt = f"""
+User is asking for advice about {symbol}.
+
+Question: "{text}"
+
+{price_context}
+{portfolio_ctx}
+
+Provide a balanced, informative response:
+1. Current market sentiment (if known)
+2. Key factors to consider
+3. Risk considerations
+4. NOT financial advice disclaimer
+
+Keep it concise (3-5 sentences) and conversational.
+"""
+
+            messages = [
+                {"role": "system", "content": "You are Jasper, a helpful AI trading assistant. Provide balanced analysis, NOT financial advice."},
+                {"role": "user", "content": prompt}
+            ]
+
+            response = await nvidia_client.chat_completion(messages, task_type='analysis')
+
+            message = f"💡 *{symbol} Analysis*\n\n"
+            message += "━━━━━━━━━━━━━━━━━━━━\n"
+            message += response.strip()

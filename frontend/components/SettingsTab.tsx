@@ -4,20 +4,19 @@ import { useState, useEffect } from 'react';
 import { Save, Key, Shield, Server, Check, X, RefreshCw, MessageCircle, Bell, Mail, Send, DollarSign, Hash, Smartphone, TrendingUp, Plane } from 'lucide-react';
 import { Toast } from '@/app/page';
 import { SkeletonCard, SkeletonText } from './Skeleton';
-import ExnessSection, { ExnessSettings } from './ExnessSection';
 import TradingCapsSection from './TradingCapsSection';
 import PayoutSection from './PayoutSection';
 import MarketDataSection from './settings/MarketDataSection';
 import EmailServiceSection from './settings/EmailServiceSection';
 import DiscordBotSection from './settings/DiscordBotSection';
+import CTraderConnection from './settings/CTraderConnection';
+import TroveSettings from './settings/TroveSettings';
+import CurrencyToggle from './settings/CurrencyToggle';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 
 interface ApiSettings {
   nvidia_api_key: string;
-  alpaca_api_key: string;
-  alpaca_api_secret: string;
-  alpaca_paper: boolean;
   binance_api_key: string;
   binance_api_secret: string;
   colab_kronos_url: string;
@@ -71,22 +70,9 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   const { resetTours } = useOnboarding();
   const [formData, setFormData] = useState<ApiSettings>({
     nvidia_api_key: '',
-    alpaca_api_key: '',
-    alpaca_api_secret: '',
-    alpaca_paper: true,
     binance_api_key: '',
     binance_api_secret: '',
     colab_kronos_url: '',
-  });
-
-  const [exness, setExness] = useState<ExnessSettings>({
-    login_id: '',
-    server: '',
-    password: '',
-    investor_password: '',
-    enabled: false,
-    configured: false,
-    is_connected: false,
   });
 
   const [whatsapp, setWhatsapp] = useState<WhatsAppSettings>({
@@ -133,10 +119,17 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     payout_enabled: false,
     payout_percentage: 50,
     payout_schedule_hour: 20,
-    payout_destination: 'crypto_wallet' as 'crypto_wallet' | 'forex_account' | 'split',
+    payout_destination: 'crypto_wallet' as 'crypto_wallet' | 'naira_bank' | 'forex_account' | 'split',
     split_ratio: 50,
     min_payout_threshold: 10,
     configured: false,
+  });
+
+  const [paymentGateways, setPaymentGateways] = useState({
+    paystack_api_key: '',
+    flutterwave_api_key: '',
+    paystack_enabled: false,
+    flutterwave_enabled: false,
   });
 
   const [marketData, setMarketData] = useState({
@@ -193,9 +186,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       // Always load form data (even if not configured)
       setFormData({
         nvidia_api_key: data.nvidia_api_key || '',
-        alpaca_api_key: data.alpaca_api_key || '',
-        alpaca_api_secret: data.alpaca_api_secret || '',
-        alpaca_paper: data.alpaca_paper ?? true,
         binance_api_key: data.binance_api_key || '',
         binance_api_secret: data.binance_api_secret || '',
         colab_kronos_url: data.colab_kronos_url || '',
@@ -203,7 +193,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       
       setDeviceInfo(`Device ID: ${deviceId}`);
 
-      // Get portfolio ID for trading caps and Exness
+      // Get portfolio ID for trading caps
       const portfolioRes = await fetch(`${API_URL}/api/v1/portfolio`);
       const portfolios = await portfolioRes.json();
       if (portfolios.data && portfolios.data.length > 0) {
@@ -258,7 +248,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         body: JSON.stringify({
           service,
           key: service === 'nvidia' ? formData.nvidia_api_key :
-               service === 'alpaca' ? formData.alpaca_api_key :
+               
                formData.binance_api_key
         }),
       });
@@ -354,6 +344,23 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       triggerToast('success', 'Telegram Configured', 'Telegram notifications enabled.');
     } catch (error) {
       triggerToast('error', 'Failed', 'Could not configure Telegram.');
+    }
+  };
+
+  const savePaymentGateways = async () => {
+    try {
+      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      await fetch(`${API_URL}/api/v1/settings/payment-gateways`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-ID': deviceId,
+        },
+        body: JSON.stringify(paymentGateways),
+      });
+      triggerToast('success', 'Payment Gateways Saved', 'Nigerian bank payout configuration saved.');
+    } catch (error) {
+      triggerToast('error', 'Failed', 'Could not save payment gateway settings.');
     }
   };
 
@@ -638,24 +645,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-[#10B981]" />
-              <h2 className="text-lg font-semibold text-white">Alpaca Trading</h2>
-            </div>
-            <button onClick={() => testConnection('alpaca')} disabled={!formData.alpaca_api_key} className="text-xs px-3 py-1.5 rounded-md bg-[#10B981]/20 text-[#10B981] disabled:opacity-50">Test</button>
-          </div>
-          <input type="password" value={formData.alpaca_api_key} onChange={(e) => setFormData({...formData, alpaca_api_key: e.target.value})} placeholder="API Key (PK...)" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm mb-2" />
-          <input type="password" value={formData.alpaca_api_secret} onChange={(e) => setFormData({...formData, alpaca_api_secret: e.target.value})} placeholder="API Secret" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-          <div className="flex items-center gap-2 mt-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={formData.alpaca_paper} onChange={(e) => setFormData({...formData, alpaca_paper: e.target.checked})} className="w-4 h-4" />
-              <span className="text-sm text-gray-400">Paper Trading</span>
-            </label>
-          </div>
-        </section>
-
-        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
               <Key className="w-5 h-5 text-[#F7931A]" />
               <h2 className="text-lg font-semibold text-white">Binance</h2>
             </div>
@@ -665,10 +654,34 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           <input type="password" value={formData.binance_api_secret} onChange={(e) => setFormData({...formData, binance_api_secret: e.target.value})} placeholder="API Secret" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
         </section>
 
-        {/* Exness/MT5 Account */}
-        <div data-tour="exness-section">
-          <ExnessSection exness={exness} setExness={setExness} triggerToast={triggerToast} />
+        {/* cTrader OAuth Connection (Multi-Tenant Copy Trading) */}
+        <div data-tour="ctrader-section">
+          <CTraderConnection
+            onConnected={(accountId) => {
+              triggerToast('success', 'cTrader Connected', 'Your account is now connected for auto-trading!');
+            }}
+          />
         </div>
+
+        {/* Trove API - US & Nigerian Stocks */}
+        <div data-tour="trove-section">
+          <TroveSettings triggerToast={triggerToast} />
+        </div>
+
+        {/* Currency Toggle - USD/NGN */}
+        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-[#10B981]" />
+              <h2 className="text-lg font-semibold text-white">Currency Display</h2>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mb-3">
+            Toggle between US Dollar (USD) and Nigerian Naira (NGN) for all monetary values.
+            Exchange rates update every 60 seconds.
+          </p>
+          <CurrencyToggle />
+        </section>
 
         {/* Kronos Colab */}
         <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
@@ -823,6 +836,94 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           </button>
         </section>
 
+        {/* Payment Gateways - Nigerian Banks */}
+        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]" data-tour="payment-gateways">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-[#10B981]" />
+              <h2 className="text-lg font-semibold text-white">Payment Gateways (Nigerian Banks)</h2>
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-400 mb-4">
+            Configure Paystack or Flutterwave to enable dynamic Nigerian bank list fetching and 
+            CBN-mandated account validation for Naira payouts.
+          </p>
+
+          {/* Paystack */}
+          <div className="mb-4 p-3 bg-[#10B981]/10 border border-[#10B981]/30 rounded-md">
+            <div className="flex items-center justify-between mb-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={paymentGateways.paystack_enabled}
+                  onChange={(e) => setPaymentGateways({...paymentGateways, paystack_enabled: e.target.checked})}
+                  className="w-4 h-4 rounded border-gray-600 text-[#10B981] focus:ring-[#10B981]"
+                />
+                <span className="text-sm text-gray-300 font-medium">Paystack</span>
+              </label>
+              <a
+                href="https://dashboard.paystack.com/settings/api"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-[#10B981] hover:underline"
+              >
+                Get API Key →
+              </a>
+            </div>
+            <input
+              type="password"
+              value={paymentGateways.paystack_api_key}
+              onChange={(e) => setPaymentGateways({...paymentGateways, paystack_api_key: e.target.value})}
+              placeholder="sk_live_xxx or sk_test_xxx"
+              className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#10B981]"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Secret key for account validation and bank list fetching
+            </p>
+          </div>
+
+          {/* Flutterwave */}
+          <div className="p-3 bg-[#F59E0B]/10 border border-[#F59E0B]/30 rounded-md">
+            <div className="flex items-center justify-between mb-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={paymentGateways.flutterwave_enabled}
+                  onChange={(e) => setPaymentGateways({...paymentGateways, flutterwave_enabled: e.target.checked})}
+                  className="w-4 h-4 rounded border-gray-600 text-[#F59E0B] focus:ring-[#F59E0B]"
+                />
+                <span className="text-sm text-gray-300 font-medium">Flutterwave</span>
+              </label>
+              <a
+                href="https://dashboard.flutterwave.com/settings/api"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-[#F59E0B] hover:underline"
+              >
+                Get API Key →
+              </a>
+            </div>
+            <input
+              type="password"
+              value={paymentGateways.flutterwave_api_key}
+              onChange={(e) => setPaymentGateways({...paymentGateways, flutterwave_api_key: e.target.value})}
+              placeholder="FLWSECK_xxx"
+              className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#F59E0B]"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Secret key for account validation and bank list fetching
+            </p>
+          </div>
+
+          <div className="mt-4 p-3 bg-[#3B82F6]/10 border border-[#3B82F6]/30 rounded-md">
+            <p className="text-xs text-[#3B82F6]">
+              <strong>💡 Why configure this?</strong> Nigerian regulations (CBN NIP) require account validation 
+              before transfers. Your users will see verified account holder names before payouts, preventing fraud.
+            </p>
+          </div>
+        </section>
+
         {/* Save Button */}
         <div
           data-onboarding="save-reset"
@@ -834,7 +935,15 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           >
             <Plane className="w-4 h-4" /> Reset Onboarding Tours
           </button>
-          <button onClick={saveApiSettings} className="px-6 py-3 bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold rounded-lg flex items-center justify-center gap-2">
+          <button
+            onClick={async () => {
+              await saveApiSettings();
+              if (paymentGateways.paystack_api_key || paymentGateways.flutterwave_api_key) {
+                await savePaymentGateways();
+              }
+            }}
+            className="px-6 py-3 bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold rounded-lg flex items-center justify-center gap-2"
+          >
             <Save className="w-5 h-5" /> Save All Settings
           </button>
         </div>

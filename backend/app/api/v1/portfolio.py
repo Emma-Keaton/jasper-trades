@@ -5,10 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any, Optional
 from datetime import datetime
+import structlog
 
 from app.database import get_db
 from app.services.portfolio_service import PortfolioService
 from app.services.valuation_service import ValuationService
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -120,7 +123,7 @@ async def create_portfolio(
     name: str,
     initial_cash: float = 100000.0,
     is_paper: bool = True,
-    broker: str = "alpaca",
+    broker: str = "ctrader",
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new portfolio."""
@@ -181,7 +184,6 @@ async def get_holdings(
     db: AsyncSession = Depends(get_db),
 ):
     """Get portfolio holdings (alias for positions endpoint)."""
-    # This is an alias for the positions endpoint
     portfolio_service = PortfolioService(db)
     valuation_service = ValuationService()
 
@@ -311,23 +313,23 @@ async def sync_broker_balance(
 ):
     """
     Sync portfolio cash and positions from live broker.
-    
+
     Args:
         portfolio_id: Portfolio to sync
         force_refresh: Force refresh even if recently synced
-    
+
     Returns:
         Sync status and updated portfolio summary
     """
     from app.brokers import get_broker
-    
+
     portfolio_service = PortfolioService(db)
     valuation_service = ValuationService()
-    
+
     portfolio = await portfolio_service.get_portfolio(portfolio_id)
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
-    
+
     # Check if portfolio is live trading
     if portfolio.is_paper:
         return {
@@ -336,11 +338,11 @@ async def sync_broker_balance(
             "cash": portfolio.cash,
             "total_value": portfolio.cash,
         }
-    
+
     # Get broker for this portfolio
-    broker_name = portfolio.broker or "alpaca"
+    broker_name = portfolio.broker or "ctrader"
     broker = get_broker(broker_name)
-    
+
     if not broker or not broker.is_connected:
         # Try to connect
         if hasattr(broker, 'connect'):
@@ -350,24 +352,24 @@ async def sync_broker_balance(
                     status_code=503,
                     detail=f"Could not connect to {broker_name} broker"
                 )
-    
+
     try:
         # Fetch account data from broker
         account = await broker.get_account()
-        
+
         if not account:
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to fetch account data from {broker_name}"
             )
-        
+
         # Update portfolio cash from broker
         old_cash = portfolio.cash
         portfolio.cash = account.cash
-        
+
         # Fetch positions from broker and sync
         broker_positions = await broker.get_positions()
-        
+
         # Clear existing positions first for accurate sync
         existing_positions = await portfolio_service.get_all_positions(portfolio_id)
         for pos in existing_positions:
@@ -378,7 +380,7 @@ async def sync_broker_balance(
                     quantity=pos.quantity,
                     price=pos.current_price or pos.avg_price
                 )
-        
+
         # Add positions from broker
         for pos_data in broker_positions:
             if pos_data.quantity > 0:
@@ -389,21 +391,22 @@ async def sync_broker_balance(
                     price=pos_data.avg_price,
                     current_price=pos_data.current_price,
                 )
-        
+
         await db.commit()
         await db.refresh(portfolio)
-        
+
         # Get updated summary
         summary = await portfolio_service.get_portfolio_summary(portfolio_id)
-        
+
         logger.info(
             f"Synced portfolio with {broker_name}",
             portfolio_id=portfolio_id,
             old_cash=old_cash,
             new_cash=portfolio.cash,
             total_value=summary["total_value"],
+            positions_synced=len(broker_positions),
         )
-        
+
         return {
             "status": "success",
             "broker": broker_name,
@@ -412,7 +415,7 @@ async def sync_broker_balance(
             "total_value": summary["total_value"],
             "positions_synced": len(broker_positions),
         }
-        
+
     except Exception as e:
         logger.error(f"Failed to sync broker balance: {e}")
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")

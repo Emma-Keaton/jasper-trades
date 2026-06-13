@@ -1,0 +1,17 @@
+async def _handle_market_status(self) -> str:
+        """Handle market status query."""
+        try:
+            # Get portfolio summary
+            portfolio_service = PortfolioService(self.db)
+            summary = await portfolio_service.get_portfolio_summary(1)
+            portfolio_ctx = f"""
+User's portfolio context:
+- Total Value: ${summary.get('total_value', 0):,.2f}
+- Cash Available: ${summary.get('cash', 0):,.2f}
+- Current Return: {summary.get('total_return_percent', 0):.1f}%
+"""
+
+            # Get market data if available
+            from app.services.market_data_service import market_data_service
+            current_price = market_data_service.get_price(symbol)
+            price_context = f"Current {symbol} price: ${current_price:.2f}\n" if current_price else ""

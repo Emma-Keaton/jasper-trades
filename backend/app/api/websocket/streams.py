@@ -223,6 +223,22 @@ async def websocket_portfolio(websocket: WebSocket):
         manager.disconnect(websocket, "portfolio")
 
 
+@router.websocket("/ws/forex")
+async def websocket_forex(websocket: WebSocket):
+    """WebSocket endpoint for forex rate updates.
+
+    Clients connect to this room to receive real-time NGN/USD rate updates.
+    Rates are pushed every 60 seconds from the forex polling service.
+    """
+    await manager.connect(websocket, "forex_rates")
+    try:
+        while True:
+            # Keep connection alive - client just listens for updates
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, "forex_rates")
+
+
 async def start_publisher_tasks():
     """Start background publisher tasks"""
     asyncio.create_task(price_publisher())
@@ -258,5 +274,24 @@ async def publish_risk_update(risk_metrics: dict):
     """Publish risk metrics update"""
     await manager.broadcast("risk", {
         "type": "risk_update",
-        "data": risk_metrics
+        **risk_metrics,
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
+
+async def publish_forex_update(data: dict):
+    """
+    Publish forex rate update to WebSocket subscribers.
+
+    Args:
+        data: Dict with rates, timestamp, and source
+        Example: {
+            "rates": {"NGN/USD": {"rate": 0.00065, "bid": 0.00064, "ask": 0.00066}},
+            "timestamp": "2026-06-11T14:35:00Z",
+            "source": "trove"
+        }
+    """
+    await manager.broadcast("forex_rates", {
+        "type": "forex_update",
+        **data,
     })

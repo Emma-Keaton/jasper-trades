@@ -52,7 +52,6 @@ interface ApiSettings {
 
 // ✅ CORRECT
 interface ApiSettings {
-  alpaca_paper: boolean;
 }
 ```
 

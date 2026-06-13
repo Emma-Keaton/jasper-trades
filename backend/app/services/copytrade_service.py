@@ -398,7 +398,9 @@ class CopyTradeService:
                 "following_count": 0,
                 "total_copied_trades": 0,
                 "total_pnl": 0.0,
+                "avg_pnl": 0.0,
                 "win_rate": 0.0,
+                "total_signals_copied": 0,
             }
 
         # Get copy trades

@@ -72,10 +72,10 @@ services:
       - MODEL_SMART=meta/llama-3.3-70b-instruct
       - MODEL_DEEP=nvidia/nemotron-3-super-120b-a12b
       
-      # Alpaca Trading - configure via Settings page
-      - ALPACA_API_KEY=
-      - ALPACA_API_SECRET=
-      - ALPACA_PAPER=true
+      #  Trading - configure via Settings page
+      - _API_KEY=
+      - _API_SECRET=
+      - _PAPER=true
       
       # Binance - configure via Settings page (optional)
       - BINANCE_API_KEY=

@@ -47,10 +47,6 @@ copy .env.example .env.local
 # NVIDIA NIM API (Required)
 NVIDIA_API_KEY=nvapi-your-key-here
 
-# Alpaca (Optional - can configure via Settings page)
-ALPACA_API_KEY=PK_xxxxx
-ALPACA_API_SECRET=xxxxx
-ALPACA_PAPER=true
 
 # Security (change in production)
 SECRET_KEY=change-this-to-random-secret-key
@@ -256,10 +252,10 @@ frontend/.env.local
    - Paste into "NVIDIA NIM API"
    - Click "Test" → "Save All Settings"
 
-3. **Configure Alpaca:**
-   - Sign up: https://alpaca.markets/ (free)
+3. **Configure :**
+   - Sign up: https://.markets/ (free)
    - Get API keys from dashboard
-   - Paste into "Alpaca Trading"
+   - Paste into " Trading"
    - Check "Paper Trading Mode"
    - Click "Save"
 
@@ -280,47 +276,26 @@ Jasper auto-routes trades by asset class:
 
 | Asset Class | Broker |
 |-------------|--------|
-| Stocks/Equities | Alpaca |
+| Stocks/Equities (US + Nigerian NGX) | Trove Finance |
 | Crypto | Binance |
 | Solana Tokens | Solana |
-| Forex/CFD | Exness (MT5) |
-| Futures/Forex | IBKR |
 
 ### Configure Multiple Brokers
 
-1. **Alpaca (Stocks):**
-   - Settings → Alpaca Trading
-   - Enter API keys
-   - Save
+1. **Trove Finance (Stocks):**
+   - Get API key: https://sandbox.api.trovefinance.com/
+   - Settings → Trove API
+   - Enter API key, enable sandbox mode for testing
+   - Save & Test
 
 2. **Binance (Crypto):**
    - Settings → Binance
    - Enter API keys
    - Save
 
-3. **Exness/MT5 (Forex/CFD):**
-   - **Requirements:**
-     - Windows with MT5 installed (for local hosting)
-     - OR Exness API credentials (for cloud hosting)
-   - **Setup:**
-     - Settings → Exness/MT5 Account
-     - Enter MT5 Login ID (e.g., 87291043)
-     - Select server (e.g., Exness-MT5-Real6)
-     - Enter trading password
-     - Click "Link Account"
-   - **Local Hosting (Windows):** Trades execute via MT5 terminal
-   - **Cloud Hosting (Linux):** Trades use Exness REST API (requires separate API key/secret)
-
-4. **IBKR (Futures/Forex):**
-   - Requires IB Gateway running
-   - Settings → Brokers → IBKR
-   - Enter host, port, client ID
-   - Save
-
 **Result:** When you execute a trade:
-- `AAPL` → Routes to Alpaca
+- `AAPL`, `TSLA`, `DANGCEM.LAGOS` → Routes to Trove (US + Nigerian stocks)
 - `BTCUSDT` → Routes to Binance
-- `EURUSD` → Routes to Exness (MT5)
 - `SOL` → Routes to Solana broker
 
 ---
@@ -494,8 +469,6 @@ Production-ready auto-payout system with flexible destination routing:
 
 **Payout Destinations:**
 1. **Crypto Wallet** - USDT transfers via Tatum (ERC20/SOLANA/BSC)
-2. **Forex Account** - Reinvest profits into Exness MT5 account
-3. **Split Mode** - Distribute between crypto and forex simultaneously
 
 **Features:**
 - Configurable payout percentage (0-100%)
@@ -524,24 +497,16 @@ Production-ready auto-payout system with flexible destination routing:
 | `payout_enabled` | boolean | Enable/disable auto-payout |
 | `payout_percentage` | number (0-100) | % of daily profit to distribute |
 | `payout_schedule_hour` | number (0-23) | Hour in ET timezone for execution |
-| `payout_destination` | string | `crypto_wallet`, `forex_account`, or `split` |
+| `payout_destination` | string | `crypto_wallet` |
 | `crypto_wallet` | string | USDT wallet address (ERC20: 0x..., SOLANA: base58) |
 | `crypto_chain` | string | `ethereum`, `solana`, or `bsc` |
-| `split_ratio` | number (0-100) | % to crypto (remainder to forex) - only for split mode |
 | `min_payout_threshold` | number | Minimum profit before payout triggers |
 
 ### Prerequisites
 
-**Option 1: Crypto Wallet Payout**
+**Crypto Wallet Payout:**
 - Tatum API key (free tier: https://tatumi.com)
 - USDT wallet address (ERC20, SOLANA, or BSC)
-
-**Option 2: Forex Reinvestment**
-- Exness MT5 account configured in Settings
-- MT5 terminal installed (Windows) OR Exness API credentials
-
-**Option 3: Split Mode**
-- Both crypto wallet AND Exness MT5 account configured
 
 ### Step 1: Configure Tatum API Key (For Crypto Payouts)
 
@@ -557,16 +522,7 @@ Production-ready auto-payout system with flexible destination routing:
 TATUM_API_KEY=tat_xxxxx
 ```
 
-### Step 2: Configure Exness MT5 (For Forex Reinvestment)
-
-1. Navigate to "Exness/MT5 Account" tab in Settings
-2. Enter:
-   - MT5 Login ID (e.g., `87291043`)
-   - Server (e.g., `Exness-MT5-Real6`)
-   - Trading password (encrypted storage)
-3. Click "Link Account" and "Sync" to verify
-
-### Step 3: Set Payout Configuration
+### Step 2: Set Payout Configuration
 
 1. Go to Settings → "Auto-Payout"
 
@@ -579,8 +535,6 @@ TATUM_API_KEY=tat_xxxxx
 
 4. **Select Destination:**
    - **Crypto Wallet** - Enter USDT address, select chain (ERC20/SOLANA/BSC)
-   - **Forex Account** - Reinvest 100% into MT5 (compounding)
-   - **Split** - Set ratio (e.g., 50% crypto, 50% forex reinvestment)
 
 5. **Set Schedule:**
    - Select hour in ET timezone (e.g., 8 PM ET)
@@ -608,10 +562,8 @@ Check: Profit > Threshold? → No → Skip (wait for next day)
   ↓
 Calculate: Payout Amount = Profit × (Percentage / 100)
   ↓
-Route based on destination:
-  ├─ crypto_wallet → Tatum API → USDT transfer → Your wallet
-  ├─ forex_account → MT5 internal transfer → Exness balance
-  └─ split → Both simultaneously (ratio-based split)
+Route to destination:
+  └─ crypto_wallet → Tatum API → USDT transfer → Your wallet
   ↓
 Database audit trail (Withdrawal table)
   ↓
@@ -626,19 +578,6 @@ Notification (WhatsApp/Discord/Email configured)
 - Transaction hash stored in database
 - Network fees paid from payout amount
 - Real API call: `POST https://api.tatum.io/v3/blockchain/transaction`
-
-**Forex Reinvestment (MT5):**
-- Internal transfer via MetaTrader 5
-- Requires MT5 terminal running (Windows)
-- Instant settlement, no fees
-- Transaction ref: `MT5_{order_number}`
-- Falls back to Exness REST API if cloud-hosted
-
-**Split Mode:**
-- Two parallel transactions
-- Crypto portion: Real Tatum transfer
-- Forex portion: MT5 internal transfer
-- Both logged separately in audit trail
 
 ### API Endpoints
 
@@ -687,11 +626,6 @@ Response:
 - Add TATUM_API_KEY to settings
 - Key must have ETH/SOL mainnet permissions
 
-**"MT5 not available":**
-- MT5 terminal must be installed and running (Windows)
-- Check `MetaTrader5` Python package installed: `pip install MetaTrader5`
-- For cloud hosting, use Exness REST API method (requires partner credentials)
-
 **"Already paid out today":**
 - System prevents duplicate daily payouts
 - Wait until next scheduled execution
@@ -721,7 +655,6 @@ GET /api/v1/withdrawals?portfolio_id={id}&type=auto_payout
 
 - [ ] Tatum API key configured and tested
 - [ ] Crypto wallet address validated (test transaction sent)
-- [ ] Exness MT5 account linked (if using forex reinvestment)
 - [ ] Payout percentage set (0-100%)
 - [ ] Schedule hour configured (ET timezone)
 - [ ] Minimum threshold set ($10 recommended)
@@ -735,10 +668,6 @@ GET /api/v1/withdrawals?portfolio_id={id}&type=auto_payout
 - Free tier: 100 transactions/month
 - Paid: $99/month for 1000 transactions
 - Gas fees: Additional (paid in ETH/SOL/BNB)
-
-**MT5 Internal Transfers:**
-- Free (no transaction fees)
-- Instant settlement
 
 ---
 
@@ -942,17 +871,16 @@ When a trade is executed:
 
 **Via Settings Page (Recommended):**
 1. Go to Settings
-2. Find "Alpaca Trading" section
+2. Find " Trading" section
 3. Toggle "Paper Trading Mode"
 4. Save
 
 **Via Environment Variable:**
 ```env
 # Paper Trading (Default)
-ALPACA_PAPER=true
 
 # Live Trading
-ALPACA_PAPER=false
+_PAPER=false
 ```
 
 ### Verification
@@ -965,7 +893,7 @@ Response shows:
 ```json
 {
   "broker_status": {
-    "alpaca": {
+    "": {
       "connected": true,
       "paper_trading": true  // Current mode
     }
@@ -982,23 +910,11 @@ Response shows:
 | **Vercel** | Hobby | Unlimited deployments, 100GB/mo | $0 |
 | **Render** | Free | 500 hours/month, 512MB RAM | $0* |
 | **NVIDIA NIM** | Free tier | $25 credits/month | $0 (testing) |
-| **Alpaca** | Paper trading | Unlimited | $0 |
-| **Exness** | Free account | Forex/CFD trading | $0 (Standard spreads) |
-| **MT5 Terminal** | Free | Desktop trading platform | $0 |
+| **Tatum** | Free tier | 100 transactions/month | $0 |
 | **UptimeRobot** | Free | 50 monitors | $0 |
 | **Total** | | | **$0/month** |
 
 *With UptimeRobot keeping it awake 24/7
-
-### Exness Trading Costs
-
-| Account Type | Spread EURUSD | Commission | Min Deposit |
-|--------------|---------------|------------|-------------|
-| Standard | From 1.0 pip | $0 | $10 |
-| Raw Spread | From 0.0 pip | $7/lot | $100 |
-| Pro | From 0.0 pip | $7/lot | $1,000 |
-
-**Note:** Exness charges via spreads (built into trade price), not platform fees.
 
 ### Scaling Path (Paid)
 
@@ -1036,98 +952,11 @@ Response shows:
 2. Check encryption key generated
 3. Verify X-Device-ID header in requests
 
-### Exness/MT5 Connection Issues
-
-**Local Hosting (Windows):**
-1. Ensure MT5 terminal is installed and running
-2. Verify login credentials in MT5 first (manual login test)
-3. Check server name matches exactly (case-sensitive)
-4. Restart MT5 terminal if connection stale
-
-**Cloud Hosting (Linux/Render):**
-1. MT5 library not available on Linux
-2. Must use Exness REST API instead
-3. Configure Exness API key/secret in Settings
-4. Trades will route via REST API (slower but works on cloud)
-
 ### Trading Caps Not Blocking Trades
-1. Verify caps are enabled (green "Active" badge)
-2. Check enforcement mode (Hard vs Soft limit)
-3. Ensure portfolio ID is set (create portfolio first)
-4. Review backend logs for cap validation
-
-### Withdrawal to Exness Fails
-1. Verify Exness account linked in Settings
-2. Check MT5 connection status (should show "Connected")
-3. For cloud hosting, configure Exness REST API credentials
-4. Withdrawal may require manual processing on Exness side
-
-### High Memory Usage
 Backend optimized for 4GB RAM:
 - Check Kronos settings
 - Reduce batch size if needed
 - Use `kronos-mini-int8` model
-
----
-
-## Local vs Cloud Hosting Comparison
-
-### Local Hosting (Windows)
-
-**Advantages:**
-- ✅ Full MT5 terminal integration
-- ✅ Fastest execution (direct terminal access)
-- ✅ No cloud hosting costs
-- ✅ Full control over data
-
-**Requirements:**
-- Windows 10/11
-- MetaTrader 5 installed
-- Python 3.11+
-- Node.js 18+
-
-**Setup:**
-```bash
-# Install MT5 from https://www.exness.com/
-# Install Python dependencies
-pip install MetaTrader5
-
-# Start backend
-python -m uvicorn app.main:app --reload
-```
-
-### Cloud Hosting (Linux - Render/Vercel)
-
-**Advantages:**
-- ✅ Always online
-- ✅ No local machine required
-- ✅ Automatic scaling
-- ✅ Built-in monitoring
-
-**Limitations:**
-- ❌ MT5 library not available (Linux)
-- ❌ Must use Exness REST API instead
-- ❌ Slightly higher latency
-
-**Workaround:**
-- Configure Exness REST API credentials in Settings
-- Trades execute via REST API (not MT5 terminal)
-- For best of both: Run MT5 locally + cloud frontend
-
-### Hybrid Approach (Recommended)
-
-1. **Backend:** Run locally on Windows machine (MT5 available)
-2. **Frontend:** Deploy to Vercel (cloud access)
-3. **Expose Backend:** Use ngrok or Cloudflare Tunnel
-   ```bash
-   # Install ngrok
-   ngrok http 8000
-   
-   # Use ngrok URL in Vercel env vars
-   NEXT_PUBLIC_API_URL=https://abc123.ngrok.io
-   ```
-
-**Result:** MT5 execution + cloud-accessible frontend
 
 ---
 
@@ -1190,9 +1019,7 @@ Your deployment is successful when:
 - [✅] Test trade executed (paper mode)
 - [✅] Mobile access works
 - [✅] Multi-broker routing functional
-- [✅] Exness account linked (if using Forex/CFD)
 - [✅] Trading caps configured (risk management active)
-- [✅] MT5 connection shows "Connected" (local Windows hosting)
 
 ---
 
@@ -1203,8 +1030,7 @@ Your deployment is successful when:
 3. **Configure notifications** (WhatsApp, Discord, etc.)
 4. **Set up alerts** (UptimeRobot + Sentry)
 5. **Configure trading caps** (protect your portfolio)
-6. **Link Exness account** (for Forex/CFD trading)
-7. **Switch to live trading** when ready (uncheck Paper Trading)
+6. **Switch to live trading** when ready (uncheck Paper Trading)
 
 ---
 

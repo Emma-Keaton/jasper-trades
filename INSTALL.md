@@ -44,11 +44,8 @@ Edit `backend/.env` with your API keys:
 # Get your key from: https://build.nvidia.com/
 NVIDIA_API_KEY=nvapi-your-key-here
 
-# Alpaca Paper Trading (Free, no account minimum)
-# Sign up: https://alpaca.markets/
-ALPACA_API_KEY=PK_xxxxx
-ALPACA_API_SECRET=xxxxx
-ALPACA_PAPER=true
+#  Paper Trading (Free, no account minimum)
+# Sign up: https://.markets/
 
 # Optional: Binance for crypto
 BINANCE_API_KEY=

@@ -31,10 +31,9 @@ Auto-routes trades by asset class:
 
 | Asset Class | Broker |
 |-------------|--------|
-| Stocks/Equities | Alpaca |
+| Stocks/Equities (US + Nigerian NGX) | Trove Finance |
 | Crypto | Binance |
-| Forex/CFD | Exness (MT5) |
-| Futures/Forex | IBKR |
+| Forex/CFD | Not supported |
 | Solana Tokens | Solana broker |
 
 ### 📊 Free Market Data
@@ -75,7 +74,7 @@ Auto-routes trades by asset class:
 ### Backend (FastAPI + Python 3.11+)
 - ✅ Real-time trading engine
 - ✅ 4-stage AI agent pipeline
-- ✅ Multi-broker integration (Alpaca, Binance, Exness, IBKR)
+- ✅ Multi-broker integration (Binance, cTrader)
 - ✅ Risk management & circuit breakers
 - ✅ WhatsApp/Discord/Email notifications
 - ✅ Free market data providers
@@ -94,7 +93,6 @@ Auto-routes trades by asset class:
 - Email service (SendGrid - 100/day free)
 - Discord bot (two-way chat)
 - WhatsApp service (embedded OpenWA)
-- Exness/MT5 integration
 - Withdrawal service (Tatum blockchain)
 - Circuit breaker system
 - AI chat assistant
@@ -109,7 +107,7 @@ Auto-routes trades by asset class:
 | **Frontend** | Next.js 15, React 19, Tailwind CSS v4, TypeScript |
 | **Backend** | FastAPI, Python 3.11+, SQLAlchemy, SQLite |
 | **AI/LLM** | NVIDIA NIM API (Llama-3.2-3B, Llama-3.3-70B, Nemotron-120B) |
-| **Brokers** | Alpaca, Binance, Exness (MT5), IBKR |
+| **Brokers** | Trove Finance (US + NGX stocks), Binance, Solana |
 | **Market Data** | CoinGecko (free), Alpha Vantage, Finnhub, Twelve Data |
 | **Notifications** | WhatsApp (OpenWA), Discord Bot, SendGrid (email), Slack, Telegram |
 | **Blockchain** | Tatum (USDT transfers), Solana |
@@ -133,8 +131,6 @@ cd jasper-trades
 # Install dependencies
 install.bat
 
-# Optional: Install MT5 (Windows only, for Exness trading)
-# Download from https://www.exness.com/
 ```
 
 ### Configure API Keys
@@ -149,7 +145,6 @@ install.bat
 - **Finnhub** - Real-time stocks (60/min free)
 - **SendGrid** - Email (100/day free)
 - **Discord Bot** - Two-way chat (unlimited free)
-- **Alpaca** - Paper trading (unlimited free)
 
 Configure all keys in **Settings page** after first run!
 
@@ -166,7 +161,6 @@ Configure all keys in **Settings page** after first run!
 See **[DEPLOYMENT.md](DEPLOYMENT.md)** for complete guide including:
 - Step-by-step Vercel/Render setup
 - All free API key signup links
-- Exness/MT5 configuration
 - Discord bot creation
 - SendGrid email setup
 - Trading caps configuration
@@ -216,7 +210,7 @@ start.bat  # Runs both backend & frontend
 ## 🗺️ Roadmap
 
 ### Phase 1 (Current) ✅
-- [x] Multi-broker trading (Alpaca, Binance, Exness)
+- [x] Multi-broker trading (Binance, cTrader)
 - [x] AI chat assistant (WhatsApp, Discord, Email)
 - [x] Risk management (Trading caps, circuit breaker)
 - [x] Free market data (CoinGecko, Alpha Vantage, Finnhub)

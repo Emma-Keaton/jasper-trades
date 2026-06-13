@@ -51,3 +51,7 @@ async def init_db():
 async def close_db():
     """Close database connections."""
     await engine.dispose()
+
+
+# Backward compatibility alias for async_engine
+async_engine = engine

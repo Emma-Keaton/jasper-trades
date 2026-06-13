@@ -28,24 +28,24 @@ This plan breaks down remaining work into prioritized phases with specific tasks
 
 **Goal:** Real broker connectivity for paper and live trading
 
-### 1.1 Alpaca Integration (Priority: Critical)
-**File:** `backend/app/brokers/alpaca_service.py`
+### 1.1  Integration (Priority: Critical)
+**File:** `backend/app/brokers/_service.py`
 
 **Tasks:**
 - [ ] Create `BrokersService` base class with abstract methods
-- [ ] Implement Alpaca service with:
+- [ ] Implement  service with:
   - [ ] Account initialization (paper/live mode)
   - [ ] `submit_order()` - market, limit, stop orders
   - [ ] `cancel_order()` - order cancellation
   - [ ] `get_position()` - current position
   - [ ] `get_account()` - account details
   - [ ] `get_clock()` - market hours
-- [ ] Add order type mapping (Jasper → Alpaca)
-- [ ] Handle Alpaca-specific order types (trail, bracket)
+- [ ] Add order type mapping (Jasper → )
+- [ ] Handle -specific order types (trail, bracket)
 - [ ] Implement retry logic with exponential backoff
-- [ ] Add rate limiting (Alpaca: 200 req/min)
+- [ ] Add rate limiting (: 200 req/min)
 
-**Dependencies:** `alpaca-py` (already in requirements)
+**Dependencies:** `-py` (already in requirements)
 
 **Estimated Effort:** 4-6 hours
 
@@ -76,31 +76,6 @@ This plan breaks down remaining work into prioritized phases with specific tasks
 **Dependencies:** `ccxt` (already in requirements)
 
 **Estimated Effort:** 3-4 hours
-
----
-
-### 1.3 Interactive Brokers Integration (Priority: Medium)
-**File:** `backend/app/brokers/ibkr_service.py`
-
-**Tasks:**
-- [ ] Implement IBKR service using `ib-insync`
-- [ ] Requires IBKR Gateway running locally
-- [ ] Implement:
-  - [ ] Connection management (async)
-  - [ ] `submit_order()` - stocks, options, futures
-  - [ ] `cancel_order()` - order cancellation
-  - [ ] `get_position()` - portfolio positions
-  - [ ] `get_account()` - account values
-- [ ] Handle IBKR-specific concepts:
-  - [ ] Contract objects (Stock, Option, Future)
-  - [ ] Order types (MKT, LMT, STP, etc.)
-  - [ ] Smart routing
-
-**Dependencies:** `ib-insync`, running IBKR TWS/Gateway
-
-**Estimated Effort:** 6-8 hours
-
-**Note:** Most complex broker due to IBKR's architecture
 
 ---
 
@@ -191,7 +166,7 @@ This plan breaks down remaining work into prioritized phases with specific tasks
 **Tasks:**
 - [ ] Create `ValuationService` class
 - [ ] Implement price fetching:
-  - [ ] Stocks: Alpaca API or yfinance
+  - [ ] Stocks:  API or yfinance
   - [ ] Crypto: CCXT (Binance, Coinbase)
   - [ ] Forex: CCXT or free API
 - [ ] Implement:
@@ -362,7 +337,7 @@ This plan breaks down remaining work into prioritized phases with specific tasks
 **Tasks:**
 - [ ] Create `MarketDataService` class
 - [ ] Implement data sources:
-  - [ ] **Stocks:** Alpaca (free unlimited), yfinance (fallback)
+  - [ ] **Stocks:**  (free unlimited), yfinance (fallback)
   - [ ] **Crypto:** CCXT (Binance, Coinbase), CoinGecko API (free)
   - [ ] **Forex:** CCXT, Alpha Vantage (free tier)
 - [ ] Implement:
@@ -387,7 +362,7 @@ This plan breaks down remaining work into prioritized phases with specific tasks
 - [ ] Create connector interface
 - [ ] Implement connectors:
   - [ ] `yfinance_connector.py` - Yahoo Finance
-  - [ ] `alpaca_data_connector.py` - Alpaca Market Data
+  - [ ] `_data_connector.py` -  Market Data
   - [ ] `akshare_connector.py` - AKShare (China A-shares, free)
   - [ ] `coingecko_connector.py` - CoinGecko (crypto)
 - [ ] Add connector registry
@@ -624,7 +599,7 @@ This plan breaks down remaining work into prioritized phases with specific tasks
 **Files:** `backend/tests/brokers/`
 
 **Tasks:**
-- [ ] `test_alpaca.py` - Alpaca integration (paper account)
+- [ ] `test_.py` -  integration (paper account)
   - [ ] Submit order (paper trading)
   - [ ] Cancel order
   - [ ] Get position
@@ -759,12 +734,12 @@ This plan breaks down remaining work into prioritized phases with specific tasks
 **Timeline:** 2-3 weeks full-time, 4-6 weeks part-time
 
 **Priority Order:**
-1. **Phase 1:** Broker Integration (Alpaca first for paper trading)
+1. **Phase 1:** Broker Integration (cTrader sandbox/live enabled by default for forex/futures)
 2. **Phase 2:** Portfolio & Positions (core functionality)
 3. **Phase 3:** Signals & Copy Trading (differentiating feature)
 
 ### Quick Wins (Do These First)
-1. **Alpaca paper trading integration** (4-6 hours) - immediate trading capability
+1. **cTrader sandbox/live integration** (4-6 hours) - immediate trading capability
 2. **Portfolio service + valuation** (6-8 hours) - real portfolio data
 3. **Signal service** (4-5 hours) - AI signals working
 
@@ -781,11 +756,11 @@ This plan breaks down remaining work into prioritized phases with specific tasks
 ### Recommended Next Steps
 
 1. **Create `backend/app/brokers/` directory**
-2. **Implement `alpaca_service.py` first** (quickest path to working trades)
-3. **Update `execution.py`** to use real Alpaca service
+2. **Implement `_service.py` first** (quickest path to working trades)
+3. **Update `execution.py`** to use real  service
 4. **Implement `portfolio_service.py`** and `valuation_service.py`
 5. **Update portfolio API** with real data
-6. **Test end-to-end trade flow** with paper trading
+6. **Test end-to-end trade flow** with cTrader sandbox
 
 This gives you a **minimum viable trading system** in ~20 hours of focused work.
 
@@ -818,9 +793,8 @@ backend/
 │   ├── brokers/ (NEW - Phase 1)
 │   │   ├── __init__.py
 │   │   ├── base.py
-│   │   ├── alpaca_service.py
+│   │   ├── _service.py
 │   │   ├── binance_service.py
-│   │   ├── ibkr_service.py
 │   │   └── solana_service.py
 │   ├── services/ (NEW - Phase 2-5)
 │   │   ├── portfolio_service.py
@@ -838,7 +812,7 @@ backend/
 │   │   └── auth.py
 │   └── data_connectors/ (NEW - Phase 4)
 │       ├── base.py
-│       ├── alpaca_data.py
+│       ├── _data.py
 │       ├── yfinance_data.py
 │       ├── akshare_data.py
 │       └── coingecko_data.py
@@ -856,7 +830,7 @@ backend/
 ## Success Criteria
 
 ### MVP (Phases 1-3 Complete)
-- ✅ Can execute paper trades via Alpaca
+- ✅ Can execute trades via paper trading or sandbox/live 
 - ✅ Real portfolio tracking with live positions
 - ✅ AI agents generating signals autonomously
 - ✅ Signal feed viewable and copyable
@@ -873,4 +847,4 @@ backend/
 
 ---
 
-**Status:** Ready to begin implementation. Start with Phase 1.1 (Alpaca Service).
+**Status:** Ready to begin implementation. Start with Phase 1.1 ( Service).

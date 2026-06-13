@@ -1,28 +1,22 @@
 """
 Broker Registry - Factory and registry for all broker services.
-Lazy-loads IBKR to avoid Python 3.14 eventkit compatibility issues
+
+Supports:
+- Trove: US and Nigerian (NGX) stocks
+- cTrader: Forex, CFDs (OAuth copy-trading)
+- CCXT (Binance): Crypto
+- Solana: DeFi, Solana tokens
 """
 from typing import Dict, Any, Optional, List, Type
 import structlog
 
 from app.brokers.base import BaseBrokerService
-from app.brokers.alpaca_service import AlpacaBrokerService
 from app.brokers.ccxt_service import CCXTBrokerService
 from app.brokers.solana_service import SolanaBrokerService
+from app.brokers.ctrader_service import CTraderBrokerService
+from app.brokers.trove_service import TroveBrokerService
 
 logger = structlog.get_logger(__name__)
-
-
-def _get_ibkr_class():
-    """Lazy load IBKR service to avoid event loop issues at import time"""
-    try:
-        from app.brokers.ibkr_service import IBKRBrokerService
-        return IBKRBrokerService
-    except RuntimeError as e:
-        if "event loop" in str(e):
-            logger.warning("IBKR service unavailable (eventkit Python 3.14 issue)")
-            return None
-        raise
 
 
 class BrokerRegistry:
@@ -173,14 +167,6 @@ def initialize_brokers(config: Optional[Dict[str, Any]] = None) -> BrokerRegistr
     # Configuration
     config = config or {}
 
-    # Initialize Alpaca
-    if config.get("alpaca", {}).get("enabled", True):
-        try:
-            alpaca = AlpacaBrokerService(config.get("alpaca", {}))
-            registry.register("alpaca", alpaca)
-        except Exception as e:
-            logger.warning(f"Failed to initialize Alpaca: {e}")
-
     # Initialize CCXT (crypto)
     if config.get("ccxt", {}).get("enabled", True):
         try:
@@ -191,18 +177,6 @@ def initialize_brokers(config: Optional[Dict[str, Any]] = None) -> BrokerRegistr
         except Exception as e:
             logger.warning(f"Failed to initialize CCXT: {e}")
 
-    # Initialize IBKR (lazy-loaded to avoid eventkit issues)
-    if config.get("ibkr", {}).get("enabled", False):
-        try:
-            IBKRClass = _get_ibkr_class()
-            if IBKRClass:
-                ibkr = IBKRClass(config.get("ibkr", {}))
-                registry.register("ibkr", ibkr)
-            else:
-                logger.warning("IBKR service not available (Python 3.14 eventkit issue)")
-        except Exception as e:
-            logger.warning(f"Failed to initialize IBKR: {e}")
-
     # Initialize Solana
     if config.get("solana", {}).get("enabled", False):
         try:
@@ -210,6 +184,31 @@ def initialize_brokers(config: Optional[Dict[str, Any]] = None) -> BrokerRegistr
             registry.register("solana", solana)
         except Exception as e:
             logger.warning(f"Failed to initialize Solana: {e}")
+
+    # Initialize cTrader (OAuth copy-trading)
+    if config.get("ctrader", {}).get("enabled", True):  # Enable by default
+        try:
+            # Create a placeholder cTrader broker instance (will be updated with user tokens on connect)
+            ctrader = CTraderBrokerService(sandbox=config.get("ctrader", {}).get("sandbox", True))
+            registry.register("ctrader", ctrader)
+            logger.info("Initialized cTrader broker service placeholder")
+        except Exception as e:
+            logger.warning(f"Failed to initialize cTrader: {e}")
+
+    # Initialize Trove (Nigerian/US stocks)
+    if config.get("trove", {}).get("enabled", False):  # Disabled by default, enable via Settings
+        try:
+            trove_config = config.get("trove", {})
+            trove = TroveBrokerService(
+                api_key=trove_config.get("api_key"),
+                base_url=trove_config.get("base_url"),
+                sandbox=trove_config.get("sandbox", True),
+                account_id=trove_config.get("account_id"),
+            )
+            registry.register("trove", trove)
+            logger.info("Initialized Trove broker service")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Trove: {e}")
 
     return registry
 
@@ -233,20 +232,46 @@ def get_broker_for_asset(asset_class: str) -> Optional[BaseBrokerService]:
     """
     Get the appropriate broker for an asset class.
 
+    Broker Routing Strategy (IBKR removed - not suitable for Nigerian users):
+    
+    | Asset Class          | Broker     | Reason                                      |
+    |---------------------|------------|---------------------------------------------|
+    | Stocks/Equities     | Trove      | US + Nigerian (NGX) stocks, fractional      |
+    | Options             | Trove      | US options via Trove                        |
+    | Forex/CFD           | cTrader    | Multi-broker OAuth (FxPro, etc.)        |
+    | Futures             | cTrader    | CFD futures via cTrader brokers             |
+    | Crypto              | Binance    | Spot and futures via CCXT                   |
+    | DeFi/Solana         | Solana     | SPL tokens, DeFi protocols                  |
+
     Args:
-        asset_class: One of "stocks", "crypto", "options", "futures", "defi"
+        asset_class: One of "stocks", "equities", "options", "forex", "futures", 
+                     "crypto", "defi", "solana"
 
     Returns:
         Broker instance or None if not found
     """
     asset_to_broker = {
-        "stocks": "alpaca",
-        "equities": "alpaca",
-        "crypto": "binance",  # or ccxt
-        "options": "alpaca",  # or ibkr
-        "futures": "ibkr",
+        # Trove - US and Nigerian markets
+        "stocks": "trove",
+        "equities": "trove",
+        "us-stocks": "trove",
+        "ngx": "trove",  # Nigerian Stock Exchange
+        "options": "trove",  # US options via Trove
+        
+        # cTrader - Forex, CFDs, Futures
+        "forex": "ctrader",
+        "fx": "ctrader",
+        "futures": "ctrader",  # CFD futures
+        "cfds": "ctrader",
+        
+        # Binance - Crypto
+        "crypto": "binance",
+        "cryptocurrency": "binance",
+        
+        # Solana - DeFi, SPL tokens
         "defi": "solana",
         "solana": "solana",
+        "spl": "solana",
     }
 
     broker_name = asset_to_broker.get(asset_class.lower())
@@ -254,3 +279,42 @@ def get_broker_for_asset(asset_class: str) -> Optional[BaseBrokerService]:
         return broker_registry.get(broker_name)
 
     return None
+
+
+def get_broker_for_symbol(symbol: str) -> Optional[BaseBrokerService]:
+    """
+    Auto-detect broker based on symbol format.
+
+    Symbol Patterns:
+    - AAPL, TSLA, DANGCEM.LAGOS → Trove (stocks)
+    - GBPUSD, EURUSD → cTrader (forex)
+    - BTC/USDT, ETHUSDT → Binance (crypto)
+    - SOL, USDC → Solana (DeFi)
+
+    Args:
+        symbol: Trading symbol
+
+    Returns:
+        Appropriate broker instance
+    """
+    symbol_upper = symbol.upper()
+
+    # Forex pairs (6 characters, e.g., GBPUSD)
+    if len(symbol_upper) == 6 and symbol_upper.endswith(("USD", "NGN", "EUR", "GBP", "JPY")):
+        return broker_registry.get("ctrader")
+
+    # Crypto symbols
+    if any(x in symbol_upper for x in ["BTC", "ETH", "USDT", "USDC", "BNB"]):
+        if "/" in symbol_upper or symbol_upper.endswith(("USDT", "USDC")):
+            return broker_registry.get("binance")
+        # Pure SOL tokens → Solana
+        if symbol_upper in ["SOL", "USDC", "RAY", "SRM", "MNGO"]:
+            return broker_registry.get("solana")
+
+    # Stock symbols (default to Trove)
+    # NGX symbols often have .LAGOS suffix
+    if "." in symbol_upper or symbol_upper.replace(".", "").isalpha():
+        return broker_registry.get("trove")
+
+    # Default: Trove for anything that looks like a stock ticker
+    return broker_registry.get("trove")
