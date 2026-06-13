@@ -53,15 +53,21 @@ class CTraderOAuthService:
         # Default sandbox for backward compatibility
         self.default_sandbox = os.getenv("CTRADER_SANDBOX", "true").lower() == "true"
 
-        # Validate configuration
-        if not all([self.client_id, self.client_secret, self.redirect_uri, self.encryption_key]):
-            raise ValueError(
-                "Missing cTrader OAuth configuration. "
-                "Set CTRADER_CLIENT_ID, CTRADER_CLIENT_SECRET, CTRADER_REDIRECT_URI, CTRADER_ENCRYPTION_KEY"
-            )
+        # Initialize Fernet encryption only if key is available
+        self.encryptor = None
+        if self.encryption_key:
+            self.encryptor = Fernet(self.encryption_key.encode())
 
-        # Initialize Fernet encryption
-        self.encryptor = Fernet(self.encryption_key.encode())
+        # Check if configured (don't raise error, just track state)
+        self._is_configured = all([self.client_id, self.client_secret, self.redirect_uri, self.encryption_key])
+
+    def _ensure_configured(self):
+        """Raise error if not configured - call this before using OAuth features."""
+        if not self._is_configured:
+            raise ValueError(
+                "cTrader OAuth not configured. "
+                "Set CTRADER_CLIENT_ID, CTRADER_CLIENT_SECRET, CTRADER_REDIRECT_URI, CTRADER_ENCRYPTION_KEY in Render dashboard"
+            )
 
     # === Public Methods ===
 
@@ -79,6 +85,8 @@ class CTraderOAuthService:
         Returns:
             str: Full authorization URL (redirect user to this)
         """
+        self._ensure_configured()
+        
         # Use user's mode if provided, otherwise fall back to default
         sandbox = is_sandbox if is_sandbox is not None else self.default_sandbox
         auth_url = self.SANDBOX_AUTH_URL if sandbox else self.LIVE_AUTH_URL
@@ -207,6 +215,7 @@ class CTraderOAuthService:
         Uses Fernet symmetric encryption (AES-128).
         The encryption key must be stored securely in environment variables.
         """
+        self._ensure_configured()
         token_bytes = token.encode('utf-8')
         encrypted = self.encryptor.encrypt(token_bytes)
         return encrypted.decode('utf-8')
@@ -218,6 +227,7 @@ class CTraderOAuthService:
         Only call this in memory when making API calls.
         Never log or expose decrypted tokens.
         """
+        self._ensure_configured()
         try:
             encrypted_bytes = encrypted_token.encode('utf-8')
             decrypted = self.encryptor.decrypt(encrypted_bytes)
