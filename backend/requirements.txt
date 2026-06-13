@@ -13,7 +13,6 @@ aiosqlite==0.20.0
 duckdb>=0.9.2
 
 # Broker APIs
--py>=0.25.0
 ccxt>=4.5.0
 
 # cTrader OpenAPI (OAuth 2.0 for multi-tenant copy trading)
