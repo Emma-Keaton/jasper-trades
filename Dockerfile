@@ -1,4 +1,5 @@
 # Unified Dockerfile - Backend + Frontend + OpenWA (Monorepo)
+# For split deployment: Backend on Render, Frontend on Vercel
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -39,22 +40,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Install Node.js dependencies for frontend
-RUN cd frontend && npm ci
-
-# Build frontend with static export
-RUN cd frontend && NEXT_TELEMETRY_DISABLED=1 npm run build
-
-# Copy frontend static export to backend/static
-RUN mkdir -p /app/backend/static && \
-    cp -r /app/frontend/out/* /app/backend/static/ && \
-    echo "Frontend static files copied to backend/static"
-
-# OpenWA for WhatsApp is optional. To enable, install @open-wa/wa-automate in the backend directory.
-# RUN cd/backend && npm install @open-wa/wa-automate
-
 # Create data directories
 RUN mkdir -p /app/backend/data/sqlite /app/backend/data/logs /app/backend/data/models
+
+# Create empty static folder (frontend served separately on Vercel)
+RUN mkdir -p /app/backend/static && echo "Backend-only mode - frontend served on Vercel" > /app/backend/static/index.html
+
+# OpenWA for WhatsApp is optional. To enable, install @open-wa/wa-automate in the backend directory.
+# RUN cd backend && npm install @open-wa/wa-automate
 
 # Expose port (use PORT env variable from Render)
 EXPOSE 8080
