@@ -46,8 +46,8 @@ RUN mkdir -p /app/backend/data/sqlite /app/backend/data/logs /app/backend/data/m
 # Create empty static folder (frontend served separately on Vercel)
 RUN mkdir -p /app/backend/static && echo "Backend-only mode - frontend served on Vercel" > /app/backend/static/index.html
 
-# OpenWA for WhatsApp is optional. To enable, install @open-wa/wa-automate in the backend directory.
-# RUN cd backend && npm install @open-wa/wa-automate
+# Install OpenWA for WhatsApp notifications
+RUN cd backend && npm init -y && npm install @open-wa/wa-automate
 
 # Expose port (use PORT env variable from Render)
 EXPOSE 8080
