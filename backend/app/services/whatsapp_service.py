@@ -1,12 +1,26 @@
 """
 WhatsApp Notification Service using OpenWA
 Sends trade notifications to user's phone via WhatsApp
+
+All messages are sent from "Jasper Trades"
 """
 import httpx
 import structlog
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from pathlib import Path
 import json
+from datetime import datetime
+
+from app.services.whatsapp_templates import (
+    format_trade_executed,
+    format_trade_closed,
+    format_daily_summary,
+    format_portfolio_summary,
+    format_positions_list,
+    format_recent_trades,
+    format_welcome_message,
+    format_verification_code,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -173,6 +187,78 @@ class WhatsAppService:
         """Send system alert (low balance, agent error, etc.)"""
         return await self.send_message(message, f"⚠️ {title}")
     
+    async def send_trade_notification(self, trade_data: Dict) -> bool:
+        """Send trade execution notification using template."""
+        formatted_message = format_trade_executed(trade_data)
+        return await self.send_message(formatted_message)
+    
+    async def send_trade_closure(self, trade_data: Dict) -> bool:
+        """Send trade closure notification using template."""
+        formatted_message = format_trade_closed(trade_data)
+        return await self.send_message(formatted_message)
+    
+    async def send_daily_summary(self, summary_data: Dict) -> bool:
+        """Send daily summary notification using template."""
+        formatted_message = format_daily_summary(summary_data)
+        return await self.send_message(formatted_message)
+    
+    async def send_portfolio_update(self, phone_number: str, summary_data: Dict) -> bool:
+        """Send portfolio update to specific phone number."""
+        # Temporarily override phone number
+        original_phone = self.phone_number
+        self.phone_number = phone_number
+        
+        formatted_message = format_portfolio_summary(summary_data)
+        success = await self.send_message(formatted_message)
+        
+        # Restore original
+        self.phone_number = original_phone
+        return success
+    
+    async def send_positions_list(self, phone_number: str, positions: List[Dict]) -> bool:
+        """Send positions list to specific phone number."""
+        original_phone = self.phone_number
+        self.phone_number = phone_number
+        
+        formatted_message = format_positions_list(positions)
+        success = await self.send_message(formatted_message)
+        
+        self.phone_number = original_phone
+        return success
+    
+    async def send_recent_trades(self, phone_number: str, trades: List[Dict]) -> bool:
+        """Send recent trades to specific phone number."""
+        original_phone = self.phone_number
+        self.phone_number = phone_number
+        
+        formatted_message = format_recent_trades(trades)
+        success = await self.send_message(formatted_message)
+        
+        self.phone_number = original_phone
+        return success
+    
+    async def send_welcome_message(self, phone_number: str, summary_time: str = "8:00 PM WAT") -> bool:
+        """Send welcome message when user first connects."""
+        original_phone = self.phone_number
+        self.phone_number = phone_number
+        
+        formatted_message = format_welcome_message(summary_time)
+        success = await self.send_message(formatted_message)
+        
+        self.phone_number = original_phone
+        return success
+    
+    async def send_verification_code(self, phone_number: str, code: str, expires_minutes: int = 10) -> bool:
+        """Send verification code for phone number verification."""
+        original_phone = self.phone_number
+        self.phone_number = phone_number
+        
+        formatted_message = format_verification_code(code, expires_minutes)
+        success = await self.send_message(formatted_message)
+        
+        self.phone_number = original_phone
+        return success
+
     async def test_connection(self) -> bool:
         """Test WhatsApp connection with a test message"""
         test_message = (

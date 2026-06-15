@@ -36,7 +36,9 @@ class SchedulerService:
             "expire_signals": 3600,  # 1 hour
             "calculate_pnl": 86400,  # 24 hours
             "cleanup": 86400,  # 24 hours
+            "daily_summary": 86400,  # 24 hours - runs at 8 PM WAT (7 PM UTC)
         }
+        self._daily_summary_time = "19:00"  # 7 PM UTC = 8 PM WAT
 
     async def start(self):
         """Start all scheduled tasks."""
@@ -62,6 +64,10 @@ class SchedulerService:
 
         self._tasks["calculate_pnl"] = asyncio.create_task(
             self._run_periodic("calculate_pnl", self._calculate_pnl)
+        )
+
+        self._tasks["daily_summary"] = asyncio.create_task(
+            self._run_daily_at_time("daily_summary", self._send_daily_summaries, self._daily_summary_time)
         )
 
         logger.info(f"Started {len(self._tasks)} scheduled tasks")
@@ -105,6 +111,49 @@ class SchedulerService:
             except Exception as e:
                 logger.error(f"Scheduled task error ({name}): {e}")
                 await asyncio.sleep(10)  # Wait before retry on error
+
+    async def _run_daily_at_time(self, name: str, func: Callable[[], Awaitable[None]], time_str: str):
+        """Run a function daily at a specific time (HH:MM format)."""
+        if not self._running:
+            return
+
+        # Parse target time
+        try:
+            hour, minute = map(int, time_str.split(":"))
+        except ValueError:
+            logger.error(f"Invalid time format for {name}: {time_str}")
+            return
+
+        logger.info(f"Scheduled task {name} to run daily at {time_str} UTC")
+
+        while self._running:
+            try:
+                now = datetime.utcnow()
+                target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+                # If target time already passed today, schedule for tomorrow
+                if now >= target:
+                    target = target + timedelta(days=1)
+
+                # Calculate sleep duration
+                sleep_seconds = (target - now).total_seconds()
+
+                logger.debug(f"Next {name} run in {sleep_seconds:.0f}s at {target}")
+
+                await asyncio.sleep(sleep_seconds)
+
+                if not self._running:
+                    break
+
+                logger.info(f"Running scheduled task: {name}")
+                await func()
+
+            except asyncio.CancelledError:
+                logger.debug(f"Task cancelled: {name}")
+                break
+            except Exception as e:
+                logger.error(f"Scheduled task error ({name}): {e}")
+                await asyncio.sleep(60)  # Wait 1 min before retry
 
     # ========== Scheduled Jobs ==========
 
@@ -195,6 +244,65 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Error calculating PnL: {e}")
+
+    async def _send_daily_summaries(self):
+        """Generate and send daily summaries at 8 PM WAT (7 PM UTC)."""
+        try:
+            from app.services.daily_summary_service import DailySummaryService
+            from app.models import Portfolio, WhatsappUser
+            from sqlalchemy import select
+
+            db = self.db_session_factory()
+            
+            # Get yesterday's date (summary is for completed trading day)
+            yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            logger.info(f"Generating daily summaries for {yesterday}")
+
+            # Get all portfolios
+            portfolio_query = select(Portfolio)
+            portfolios_result = await db.execute(portfolio_query)
+            portfolios = list(portfolios_result.scalars().all())
+
+            summaries_generated = 0
+            summaries_sent = 0
+
+            for portfolio in portfolios:
+                # Generate summary for this portfolio
+                summary_service = DailySummaryService(db)
+                summary = await summary_service.generate_summary(
+                    portfolio_id=portfolio.id,
+                    device_id=portfolio.device_id,
+                    date=yesterday,
+                )
+
+                if summary:
+                    summaries_generated += 1
+                    
+                    # Check if user wants daily summary
+                    user_query = select(WhatsappUser).where(
+                        WhatsappUser.device_id == portfolio.device_id,
+                        WhatsappUser.daily_summary_enabled == True,
+                    )
+                    user_result = await db.execute(user_query)
+                    user = user_result.scalar_one_or_none()
+
+                    if user and user.is_verified:
+                        # Send immediately
+                        success = await summary_service.send_summary(summary)
+                        if success:
+                            summaries_sent += 1
+
+            await db.close()
+
+            logger.info(
+                f"Daily summaries complete",
+                generated=summaries_generated,
+                sent=summaries_sent,
+            )
+
+        except Exception as e:
+            logger.error(f"Error sending daily summaries: {e}", exc_info=True)
 
     # ========== Task Status ==========
 

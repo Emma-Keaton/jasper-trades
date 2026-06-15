@@ -315,7 +315,7 @@ export default function DashboardTab({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-[#94A3B8] font-mono min-w-[600px]">
+            <table className="w-full text-left text-xs text-[#94A3B8] font-mono">
               <thead>
                 <tr className="border-b border-[#475569] text-[#94A3B8] font-bold uppercase tracking-wide text-[10px] select-none h-8">
                   <th className="pb-2">Symbol</th>

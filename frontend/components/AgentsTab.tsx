@@ -11,6 +11,9 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { AgentState, Toast } from '@/app/page';
+import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
+import { SwarmPanel, LearningPanel, EnsemblePanel } from '@/components/panels/IntelligencePanel';
+import { CheckpointPanel } from '@/components/panels/CheckpointPanel';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -435,8 +438,41 @@ export default function AgentsTab({
           )}
 
         </div>
-      </div>
 
+        {/* AI Intelligence Panels */}
+        <CollapsibleSection
+          title="Swarm Intelligence"
+          subtitle="Multi-agent collaborative analysis"
+          storageKey="agents-swarm-open"
+        >
+          <SwarmPanel />
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          title="Ensemble Predictions"
+          subtitle="Multi-model consensus forecasting"
+          storageKey="agents-ensemble-open"
+        >
+          <EnsemblePanel />
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          title="RL Learning Patterns"
+          subtitle="Reinforcement learning insights from experience"
+          storageKey="agents-learning-open"
+        >
+          <LearningPanel />
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          title="Checkpoint System"
+          subtitle="Save and restore agent states"
+          storageKey="agents-checkpoint-open"
+        >
+          <CheckpointPanel />
+        </CollapsibleSection>
+
+      </div>
     </div>
   );
 }

@@ -14,6 +14,9 @@ import {
   Info
 } from 'lucide-react';
 import { Toast } from '@/app/page';
+import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
+import { QuantLibPanel } from '@/components/panels/QuantLibPanel';
+import { PolymarketPanel } from '@/components/panels/PolymarketPanel';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -429,9 +432,9 @@ export default function BacktestTab({
               <span className="text-xs text-[#94A3B8] font-mono mt-0.5">Click cells to display quantitative parameters details</span>
             </div>
 
-            <div className="flex flex-col gap-2 font-mono text-[11px] overflow-x-auto">
-              <div className="min-w-[650px] flex flex-col gap-1.5">
-                <div className="flex items-center select-none text-[#94A3B8] font-bold pb-1 text-center font-mono">
+            <div className="flex flex-col gap-2 font-mono text-[11px]">
+              <div className="overflow-x-auto">
+                <div className="min-w-max flex flex-col gap-1.5">
                   <span className="w-14 text-left">Year</span>
                   {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map(m => (
                     <span key={m} className="flex-1">{m}</span>
@@ -503,6 +506,24 @@ export default function BacktestTab({
               <Play className="w-4 h-4 rotate-90" /> SAVE STRATEGY
             </button>
           </div>
+
+          {/* QuantLib Tools Panel */}
+          <CollapsibleSection
+            title="QuantLib Tools"
+            subtitle="Options pricing, risk metrics, and performance analysis"
+            storageKey="backtest-quantlib-open"
+          >
+            <QuantLibPanel />
+          </CollapsibleSection>
+
+          {/* Polymarket Panel */}
+          <CollapsibleSection
+            title="Polymarket"
+            subtitle="Prediction markets and event contracts"
+            storageKey="backtest-polymarket-open"
+          >
+            <PolymarketPanel />
+          </CollapsibleSection>
 
         </div>
       )}

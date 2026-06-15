@@ -11,6 +11,9 @@ import {
   Trash2
 } from 'lucide-react';
 import { Toast } from '@/app/page';
+import StockSelector from '@/components/StockSelector';
+import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
+import { DebatePanel } from '@/components/panels/CheckpointPanel';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -160,7 +163,7 @@ export default function SignalsTab({
             <select
               value={selectedAgent}
               onChange={(e) => setSelectedAgent(e.target.value)}
-              className="h-9 bg-[#0F172A] border border-[#475569] rounded-lg px-2.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#3B82F6]"
+              className="h-11 bg-[#0F172A] border border-[#475569] rounded-lg px-2.5 text-sm text-[#F8FAFC] font-mono focus:outline-none focus:border-[#3B82F6] touch-none"
             >
               <option value="all">All Active Agents</option>
               <option value="director">Director Agent</option>
@@ -171,16 +174,12 @@ export default function SignalsTab({
 
           <div className="flex flex-col gap-1.5">
             <label className="text-xs text-[#94A3B8] font-mono leading-none">Specific Asset Symbol</label>
-            <select
-              value={selectedAsset}
-              onChange={(e) => setSelectedAsset(e.target.value)}
-              className="h-9 bg-[#0F172A] border border-[#475569] rounded-lg px-2.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#3B82F6]"
-            >
-              <option value="all">Full Market Index</option>
-              <option value="nvda">NVIDIA Corp (NVDA)</option>
-              <option value="aapl">Apple Inc (AAPL)</option>
-              <option value="tsla">Tesla Inc (TSLA)</option>
-            </select>
+            <StockSelector
+              value={selectedAsset === 'all' ? undefined : selectedAsset}
+              onChange={(symbol) => setSelectedAsset(symbol || 'all')}
+              placeholder="Full Market Index"
+              filterByExchange="all"
+            />
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -188,7 +187,7 @@ export default function SignalsTab({
             <select
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
-              className="h-9 bg-[#0F172A] border border-[#475569] rounded-lg px-2.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#3B82F6]"
+              className="h-11 bg-[#0F172A] border border-[#475569] rounded-lg px-2.5 text-sm text-[#F8FAFC] font-mono focus:outline-none focus:border-[#3B82F6] touch-none"
             >
               <option value="all">All Signals</option>
               <option value="buy">BUY Operations</option>
@@ -199,12 +198,12 @@ export default function SignalsTab({
 
           <div className="flex flex-col gap-1.5">
             <span className="text-xs text-[#94A3B8] font-mono leading-none">Minimum Confidence Score</span>
-            <div className="flex items-center gap-1.5 h-9 bg-[#0F172A] border border-[#475569] rounded-lg px-2 text-xs">
+            <div className="flex items-center gap-1.5 min-h-[44px] bg-[#0F172A] border border-[#475569] rounded-lg px-2 text-xs">
               {[50, 60, 70, 80].map(score => (
                 <button
                   key={score}
                   onClick={() => setMinConfidence(minConfidence === score ? 0 : score)}
-                  className={`flex-1 py-1 rounded text-[10px] font-mono font-bold transition outline-none ${
+                  className={`flex-1 py-2.5 rounded text-sm font-mono font-bold transition outline-none touch-none ${
                     minConfidence === score ? 'bg-[#3B82F6] text-white' : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#334155]'
                   }`}
                 >
@@ -360,6 +359,15 @@ export default function SignalsTab({
           </div>
         )}
       </div>
+
+      {/* Debate Protocol Panel */}
+      <CollapsibleSection
+        title="Debate Protocol"
+        subtitle="Multi-agent signal analysis via bull/bear debate"
+        storageKey="signals-debate-open"
+      >
+        <DebatePanel />
+      </CollapsibleSection>
 
     </div>
   );

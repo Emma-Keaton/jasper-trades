@@ -14,6 +14,8 @@ import TroveSettings from './settings/TroveSettings';
 import CurrencyToggle from './settings/CurrencyToggle';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
+import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
+import { SystemStatusPanel } from '@/components/panels/SystemStatusPanel';
 
 interface ApiSettings {
   nvidia_api_key: string;
@@ -28,6 +30,12 @@ interface WhatsAppSettings {
   openwa_url: string;
   configured: boolean;
   chat_enabled?: boolean;
+  // New fields for verification and preferences
+  is_verified?: boolean;
+  trade_notifications_enabled?: boolean;
+  daily_summary_enabled?: boolean;
+  summary_time_wat?: string;  // Format: "20:00"
+  ai_explanations_enabled?: boolean;
 }
 
 interface DiscordSettings {
@@ -81,6 +89,11 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     openwa_url: 'http://localhost:3001',
     configured: false,
     chat_enabled: true,
+    is_verified: false,
+    trade_notifications_enabled: true,
+    daily_summary_enabled: true,
+    summary_time_wat: '20:00',
+    ai_explanations_enabled: true,
   });
 
   const [discord, setDiscord] = useState<DiscordSettings>({
@@ -162,6 +175,14 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   const [testing, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { valid: boolean; message: string }>>({});
   const [whatsappTestStatus, setWhatsappTestStatus] = useState<{testing: boolean; success?: boolean; message?: string}>({ testing: false });
+  const [whatsappRequestStatus, setWhatsappRequestStatus] = useState<{
+    requesting: boolean;
+    verifying: boolean;
+    codeSent: boolean;
+    success?: boolean;
+    message?: string;
+  }>({ requesting: false, verifying: false, codeSent: false });
+  const [verificationCode, setVerificationCode] = useState('');
   const [portfolioId, setPortfolioId] = useState<number | null>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -387,16 +408,139 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   const testWhatsapp = async () => {
     setWhatsappTestStatus({ testing: true });
     try {
-      const res = await fetch(`${API_URL}/api/v1/whatsapp/test`, { method: 'POST' });
+      const res = await fetch(`${API_URL}/api/v1/settings/whatsapp/test`, {
+        method: 'POST',
+        headers: { 'X-Device-ID': localStorage.getItem('device_id')! },
+      });
       const data = await res.json();
       if (res.ok && data.success) {
-        setWhatsappTestStatus({ testing: false, success: true, message: 'Test message sent!' });
+        setWhatsappTestStatus({ testing: false, success: true, message: 'Test message sent! Check your WhatsApp.' });
         setTimeout(() => setWhatsappTestStatus({ testing: false }), 3000);
       } else {
-        setWhatsappTestStatus({ testing: false, success: false, message: data.detail || 'Failed' });
+        setWhatsappTestStatus({ testing: false, success: false, message: data.detail || 'Failed to send test' });
       }
     } catch (error) {
       setWhatsappTestStatus({ testing: false, success: false, message: 'Connection failed' });
+    }
+  };
+
+  const requestVerification = async () => {
+    if (!whatsapp.phone_number) {
+      setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: 'Please enter your phone number' });
+      return;
+    }
+
+    setWhatsappRequestStatus({ requesting: true, verifying: false, codeSent: false });
+    try {
+      const res = await fetch(`${API_URL}/api/v1/settings/whatsapp/verify/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
+        body: JSON.stringify({ phone_number: whatsapp.phone_number }),
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.success) {
+        setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: true, success: true, message: `Verification code sent to ${whatsapp.phone_number.slice(0, 5)}***` });
+      } else {
+        setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: data.detail || 'Failed to send code' });
+      }
+    } catch (error) {
+      setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: 'Failed to send verification code' });
+    }
+  };
+
+  const confirmVerification = async () => {
+    if (!verificationCode || verificationCode.length !== 6) {
+      setWhatsappRequestStatus(prev => ({ ...prev, verifying: false, success: false, message: 'Please enter a 6-digit code' }));
+      return;
+    }
+
+    setWhatsappRequestStatus(prev => ({ ...prev, verifying: true }));
+    try {
+      const res = await fetch(`${API_URL}/api/v1/settings/whatsapp/verify/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
+        body: JSON.stringify({ phone_number: whatsapp.phone_number, verification_code: verificationCode }),
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.success) {
+        setWhatsapp({ ...whatsapp, is_verified: true });
+        setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: false, success: true, message: 'WhatsApp verified successfully!' });
+        setVerificationCode('');
+        loadWhatsAppPreferences();
+        triggerToast('success', 'Verified', 'WhatsApp number verified successfully');
+      } else {
+        setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: true, success: false, message: data.detail || 'Invalid or expired code' });
+      }
+    } catch (error) {
+      setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: true, success: false, message: 'Verification failed' });
+    }
+  };
+
+  const saveWhatsAppPreferences = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/settings/whatsapp/preferences`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
+        body: JSON.stringify({
+          trade_notifications_enabled: whatsapp.trade_notifications_enabled,
+          daily_summary_enabled: whatsapp.daily_summary_enabled,
+          summary_time_wat: whatsapp.summary_time_wat || '20:00',
+          chat_enabled: whatsapp.chat_enabled,
+          ai_explanations_enabled: whatsapp.ai_explanations_enabled,
+        }),
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.success) {
+        triggerToast('success', 'Preferences Saved', 'WhatsApp notification preferences updated');
+        await saveWhatsappLegacy();
+      } else {
+        triggerToast('error', 'Failed', data.detail || 'Could not save preferences');
+      }
+    } catch (error) {
+      triggerToast('error', 'Failed', 'Could not save WhatsApp preferences');
+    }
+  };
+
+  const saveWhatsappLegacy = async () => {
+    try {
+      await fetch(`${API_URL}/api/v1/settings/notifications/whatsapp/configure`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
+        body: JSON.stringify({
+          phone_number: whatsapp.phone_number,
+          openwa_url: whatsapp.openwa_url,
+          enabled: whatsapp.trade_notifications_enabled,
+          chat_enabled: whatsapp.chat_enabled,
+        }),
+      });
+    } catch (error) {
+      // Ignore legacy errors
+    }
+  };
+
+  const loadWhatsAppPreferences = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/settings/whatsapp/status`, {
+        headers: { 'X-Device-ID': localStorage.getItem('device_id')! },
+      });
+      const data = await res.json();
+      
+      if (data.is_configured && data.is_verified) {
+        setWhatsapp(prev => ({
+          ...prev,
+          is_verified: true,
+          trade_notifications_enabled: data.preferences?.trade_notifications_enabled ?? true,
+          daily_summary_enabled: data.preferences?.daily_summary_enabled ?? true,
+          summary_time_wat: data.preferences?.summary_time_wat ?? '20:00',
+          chat_enabled: data.preferences?.chat_enabled ?? true,
+          ai_explanations_enabled: data.preferences?.ai_explanations_enabled ?? true,
+        }));
+      }
+    } catch (error) {
+      // Ignore errors
     }
   };
 
@@ -500,36 +644,150 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
           {/* WhatsApp */}
           <div className="border-t border-[#475569] pt-4 mt-4">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <MessageCircle className="w-5 h-5 text-[#25D366]" />
-                <h3 className="text-md font-semibold text-white">WhatsApp</h3>
+                <h3 className="text-md font-semibold text-white">WhatsApp Notifications</h3>
               </div>
-              {whatsapp.configured && (
-                <span className={`text-xs px-2 py-1 rounded ${whatsapp.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}`}>
-                  {whatsapp.enabled ? 'Enabled' : 'Disabled'}
+              {whatsapp.is_verified && (
+                <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Verified
                 </span>
               )}
             </div>
-            <div className="space-y-3">
-              <input type="tel" value={whatsapp.phone_number} onChange={(e) => setWhatsapp({...whatsapp, phone_number: e.target.value})} placeholder="+1 234 567 8900" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-              <input type="url" value={whatsapp.openwa_url} onChange={(e) => setWhatsapp({...whatsapp, openwa_url: e.target.value})} placeholder="OpenWA URL (http://localhost:3001)" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
+
+            {/* Phone Number Verification */}
+            <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
+              <label className="text-xs text-gray-400 mb-2 block">Step 1: Verify Phone Number</label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="tel"
+                  value={whatsapp.phone_number}
+                  onChange={(e) => setWhatsapp({...whatsapp, phone_number: e.target.value})}
+                  placeholder="+234 123 456 7890"
+                  className="flex-1 bg-[#1E293B] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                />
+                <button
+                  onClick={requestVerification}
+                  disabled={whatsappRequestStatus.requesting || whatsapp.is_verified}
+                  className="px-4 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-md text-sm disabled:opacity-50 whitespace-nowrap"
+                >
+                  {whatsappRequestStatus.requesting ? 'Sending...' : whatsapp.is_verified ? 'Verified ✓' : 'Send Code'}
+                </button>
+              </div>
+              
+              {/* Verification Code Input */}
+              {!whatsapp.is_verified && whatsappRequestStatus.codeSent && (
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="text"
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    placeholder="Enter 6-digit code"
+                    maxLength={6}
+                    className="flex-1 bg-[#1E293B] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                  />
+                  <button
+                    onClick={confirmVerification}
+                    disabled={whatsappRequestStatus.verifying}
+                    className="px-4 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm disabled:opacity-50"
+                  >
+                    {whatsappRequestStatus.verifying ? 'Verifying...' : 'Verify'}
+                  </button>
+                </div>
+              )}
+              {whatsappRequestStatus.message && (
+                <p className={`text-xs mt-2 ${whatsappRequestStatus.success ? 'text-green-400' : 'text-red-400'}`}>
+                  {whatsappRequestStatus.message}
+                </p>
+              )}
             </div>
-            <div className="flex items-center gap-2 mt-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={whatsapp.enabled} onChange={(e) => setWhatsapp({...whatsapp, enabled: e.target.checked})} className="w-4 h-4" />
-                <span className="text-sm text-gray-300">Enable notifications</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer ml-4">
-                <input type="checkbox" checked={whatsapp.chat_enabled} onChange={(e) => setWhatsapp({...whatsapp, chat_enabled: e.target.checked})} className="w-4 h-4" />
-                <span className="text-sm text-gray-300">Enable 2-way chat</span>
-              </label>
-            </div>
-            <div className="flex gap-2 mt-3">
-              <button onClick={saveWhatsapp} className="flex-1 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-md text-sm">Save</button>
-              <button onClick={testWhatsapp} disabled={!whatsapp.configured} className="flex-1 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm disabled:opacity-50">Test</button>
-            </div>
-            {whatsappTestStatus.message && <p className={`text-xs mt-2 ${whatsappTestStatus.success ? 'text-green-400' : 'text-red-400'}`}>{whatsappTestStatus.message}</p>}
+
+            {/* Notification Preferences */}
+            {whatsapp.is_verified && (
+              <>
+                <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
+                  <label className="text-xs text-gray-400 mb-3 block">Step 2: Notification Preferences</label>
+                  
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={whatsapp.trade_notifications_enabled}
+                        onChange={(e) => setWhatsapp({...whatsapp, trade_notifications_enabled: e.target.checked})}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-gray-300">📈 Trade executions (real-time)</span>
+                    </label>
+                    
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={whatsapp.daily_summary_enabled}
+                        onChange={(e) => setWhatsapp({...whatsapp, daily_summary_enabled: e.target.checked})}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-gray-300">📊 Daily summary at 8:00 PM WAT</span>
+                    </label>
+                    
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={whatsapp.chat_enabled}
+                        onChange={(e) => setWhatsapp({...whatsapp, chat_enabled: e.target.checked})}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-gray-300">💬 2-way chat (ask about portfolio)</span>
+                    </label>
+                    
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={whatsapp.ai_explanations_enabled}
+                        onChange={(e) => setWhatsapp({...whatsapp, ai_explanations_enabled: e.target.checked})}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-gray-300">🤖 AI trade explanations</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Daily Summary Schedule */}
+                <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
+                  <label className="text-xs text-gray-400 mb-2 block">Daily Summary Schedule</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="time"
+                      value={whatsapp.summary_time_wat || '20:00'}
+                      onChange={(e) => setWhatsapp({...whatsapp, summary_time_wat: e.target.value})}
+                      className="bg-[#1E293B] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                    />
+                    <span className="text-xs text-gray-400">WAT (West Africa Time)</span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2">
+                  <button onClick={saveWhatsAppPreferences} className="flex-1 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-md text-sm">
+                    Save Preferences
+                  </button>
+                  <button onClick={testWhatsapp} className="flex-1 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm">
+                    Test Connection
+                  </button>
+                </div>
+                {whatsappTestStatus.message && (
+                  <p className={`text-xs mt-2 ${whatsappTestStatus.success ? 'text-green-400' : 'text-red-400'}`}>
+                    {whatsappTestStatus.message}
+                  </p>
+                )}
+              </>
+            )}
+
+            {!whatsapp.is_verified && (
+              <div className="text-xs text-gray-400 mt-3">
+                💡 <strong>How it works:</strong> Enter your phone number, receive a verification code via WhatsApp, then configure your notification preferences. All messages are sent from "Jasper Trades".
+              </div>
+            )}
           </div>
 
           {/* Discord */}
@@ -948,6 +1206,16 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           </button>
         </div>
       </div>
+
+      {/* System Status Panel */}
+      <CollapsibleSection
+        title="System Status"
+        subtitle="Real-time monitoring of backend services"
+        storageKey="settings-system-open"
+      >
+        <SystemStatusPanel />
+      </CollapsibleSection>
+
     </div>
   );
 }

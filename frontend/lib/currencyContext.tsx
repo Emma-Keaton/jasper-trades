@@ -252,3 +252,22 @@ export function useCurrency() {
   }
   return context;
 }
+
+/**
+ * Hook for formatting monetary values with automatic currency conversion.
+ * Use this in components to display any monetary value.
+ * 
+ * Example:
+ * const { formatMoney } = useCurrencyFormatter();
+ * <div>{formatMoney(100000)}</div> // Shows $100,000.00 or ₦153,846,153.85
+ */
+export function useCurrencyFormatter() {
+  const { convertAmount, formatCurrency, currency } = useCurrency();
+
+  const formatMoney = useCallback((amount: number, sourceCurrency: Currency = 'USD'): string => {
+    const converted = convertAmount(amount, sourceCurrency, currency);
+    return formatCurrency(converted, currency);
+  }, [convertAmount, formatCurrency, currency]);
+
+  return { formatMoney, currentCurrency: currency };
+}

@@ -309,5 +309,221 @@ export const settingsAPI = {
     }),
 };
 
+// ============ QUANTLIB APIs (17 endpoints) ============
+export const quantlibAPI = {
+  getModules: () => apiRequest<any[]>('/api/v1/quantlib/modules'),
+  getBlackScholes: (data: any) =>
+    apiRequest('/api/v1/quantlib/options/black-scholes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getGreeks: (data: any) =>
+    apiRequest('/api/v1/quantlib/options/greeks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getBinomialTree: (data: any) =>
+    apiRequest('/api/v1/quantlib/options/binomial-tree', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getMonteCarloVaR: (data: any) =>
+    apiRequest('/api/v1/quantlib/risk/monte-carlo-var', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getHistoricalVaR: (data: any) =>
+    apiRequest('/api/v1/quantlib/risk/historical-var', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getParametricVaR: (data: any) =>
+    apiRequest('/api/v1/quantlib/risk/parametric-var', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getCVaR: (data: any) =>
+    apiRequest('/api/v1/quantlib/risk/cvar', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getMaxDrawdown: (data: any) =>
+    apiRequest('/api/v1/quantlib/risk/max-drawdown', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getSharpe: (data: any) =>
+    apiRequest('/api/v1/quantlib/performance/sharpe', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getSortino: (data: any) =>
+    apiRequest('/api/v1/quantlib/performance/sortino', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getTreynor: (data: any) =>
+    apiRequest('/api/v1/quantlib/performance/treynor', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getInformationRatio: (data: any) =>
+    apiRequest('/api/v1/quantlib/performance/information', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getCalmar: (data: any) =>
+    apiRequest('/api/v1/quantlib/performance/calmar', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getSterling: (data: any) =>
+    apiRequest('/api/v1/quantlib/performance/sterling', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getBurke: (data: any) =>
+    apiRequest('/api/v1/quantlib/performance/burke', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getMonteCarloSimulation: (data: any) =>
+    apiRequest('/api/v1/quantlib/simulation/monte-carlo', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getHistoricalVolatility: (data: any) =>
+    apiRequest('/api/v1/quantlib/volatility/historical', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getStatus: () => apiRequest<any>('/api/v1/quantlib/status'),
+};
+
+// ============ POLYMARKET APIs (10 endpoints) ============
+export const polymarketAPI = {
+  search: (query: string) =>
+    apiRequest<any>(`/api/v1/polymarket/search?q=${encodeURIComponent(query)}`),
+  getMarket: (slug: string) =>
+    apiRequest<any>(`/api/v1/polymarket/market/${encodeURIComponent(slug)}`),
+  getByCondition: (conditionId: string) =>
+    apiRequest<any>(`/api/v1/polymarket/market/by-condition/${encodeURIComponent(conditionId)}`),
+  getOrderbook: (tokenId: string) =>
+    apiRequest<any>(`/api/v1/polymarket/orderbook/${encodeURIComponent(tokenId)}`),
+  getPrice: (tokenId: string) =>
+    apiRequest<any>(`/api/v1/polymarket/price/${encodeURIComponent(tokenId)}`),
+  analyze: (slug: string) =>
+    apiRequest<any>(`/api/v1/polymarket/analyze/${encodeURIComponent(slug)}`),
+  getTrending: () => apiRequest<any[]>('/api/v1/polymarket/trending'),
+  getByCategory: (category: string) =>
+    apiRequest<any[]>(`/api/v1/polymarket/category/${encodeURIComponent(category)}`),
+  getStatus: () => apiRequest<any>('/api/v1/polymarket/status'),
+  refreshCache: () =>
+    apiRequest('/api/v1/polymarket/cache/refresh', { method: 'POST' }),
+};
+
+// ============ SWARM APIs (6 endpoints) ============
+export const swarmAPI = {
+  run: (data: any) =>
+    apiRequest('/api/v1/swarm/run', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  get: (runId: string) => apiRequest<any>(`/api/v1/swarm/${runId}`),
+  list: () => apiRequest<any[]>('/api/v1/swarm/list'),
+  retry: (runId: string) =>
+    apiRequest(`/api/v1/swarm/${runId}/retry`, { method: 'POST' }),
+  reapStale: () => apiRequest('/api/v1/swarm/reap-stale', { method: 'POST' }),
+  getStatus: () => apiRequest<any>('/api/v1/swarm/status'),
+};
+
+// ============ LEARNING APIs (7 endpoints) ============
+export const learningAPI = {
+  getStatus: () => apiRequest<any>('/api/v1/learning/status'),
+  predict: (data: any) =>
+    apiRequest('/api/v1/learning/predict', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getWinningPatterns: () => apiRequest<any>('/api/v1/learning/patterns/winning'),
+  getLosingPatterns: () => apiRequest<any>('/api/v1/learning/patterns/losing'),
+  getExperiences: () => apiRequest<any[]>('/api/v1/learning/experiences'),
+  getFeatureImportance: () => apiRequest<any>('/api/v1/learning/feature-importance'),
+  retrain: () => apiRequest('/api/v1/learning/retrain', { method: 'POST' }),
+  deleteExperiences: () =>
+    apiRequest('/api/v1/learning/experiences', { method: 'DELETE' }),
+};
+
+// ============ CHECKPOINT APIs (8 endpoints) ============
+export const checkpointAPI = {
+  enable: (ticker: string) =>
+    apiRequest(`/api/v1/checkpoint/enable`, {
+      method: 'POST',
+      body: JSON.stringify({ ticker }),
+    }),
+  disable: (ticker: string) =>
+    apiRequest(`/api/v1/checkpoint/disable`, {
+      method: 'POST',
+      body: JSON.stringify({ ticker }),
+    }),
+  getStatus: (ticker: string) =>
+    apiRequest<any>(`/api/v1/checkpoint/status/${ticker}`),
+  list: () => apiRequest<any[]>('/api/v1/checkpoint/list'),
+  clear: (ticker: string) =>
+    apiRequest(`/api/v1/checkpoint/clear/${ticker}`, { method: 'POST' }),
+  clearAll: () => apiRequest('/api/v1/checkpoint/clear-all', { method: 'POST' }),
+  resume: (ticker: string) =>
+    apiRequest(`/api/v1/checkpoint/resume/${ticker}`, { method: 'POST' }),
+  save: (data: any) =>
+    apiRequest('/api/v1/checkpoint/save', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  cleanup: () => apiRequest('/api/v1/checkpoint/cleanup', { method: 'POST' }),
+  getStatusAll: () => apiRequest<any>('/api/v1/checkpoint/status'),
+};
+
+// ============ ENSEMBLE APIs (6 endpoints) ============
+export const ensembleAPI = {
+  predict: (data: any) =>
+    apiRequest('/api/v1/ensemble/predict', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getModels: () => apiRequest<any[]>('/api/v1/ensemble/models'),
+  updateAccuracy: (data: any) =>
+    apiRequest('/api/v1/ensemble/accuracy/update', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getPerformance: () => apiRequest<any>('/api/v1/ensemble/performance'),
+  getStatus: () => apiRequest<any>('/api/v1/ensemble/status'),
+  compare: () => apiRequest<any>('/api/v1/ensemble/compare'),
+};
+
+// ============ DEBATE APIs (4 endpoints) ============
+export const debateAPI = {
+  analyze: (data: any) =>
+    apiRequest('/api/v1/debate/analyze', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  recordOutcome: (data: any) =>
+    apiRequest('/api/v1/debate/outcome/record', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getWinRate: (ticker: string) =>
+    apiRequest<any>(`/api/v1/debate/win-rate/${ticker}`),
+  getStatus: () => apiRequest<any>('/api/v1/debate/status'),
+};
+
+// ============ SYSTEM APIs (3 endpoints) ============
+export const systemAPI = {
+  getKronosStats: () => apiRequest<any>('/api/v1/system/kronos/stats'),
+  getStatus: () => apiRequest<any>('/api/v1/system/status'),
+  getMarketData: () => apiRequest<any>('/api/v1/system/market-data'),
+};
+
 // Export API URL for use in components
 export { API_URL };

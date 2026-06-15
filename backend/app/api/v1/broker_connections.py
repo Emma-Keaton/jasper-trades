@@ -41,12 +41,17 @@ def get_device_id(x_device_id: Optional[str] = Header(None)) -> str:
 
 
 @router.get("/connect")
-async def connect_ctrader():
+async def connect_ctrader(
+    mode: str = Query(default="sandbox", description="Trading mode: sandbox or live"),
+):
     """
     Get cTrader OAuth authorization URL.
 
     Frontend calls this, then redirects user to the URL.
     User will be redirected to cTrader's secure login page.
+    
+    Args:
+        mode: Trading mode - 'sandbox' for demo, 'live' for real trading
     """
     if not oauth_service.client_id:
         raise HTTPException(
@@ -54,10 +59,13 @@ async def connect_ctrader():
             detail="cTrader OAuth not configured. Set CTRADER_CLIENT_ID in environment."
         )
 
-    auth_url = oauth_service.get_authorization_url()
+    # Determine if sandbox mode
+    is_sandbox = mode.lower() == "sandbox"
+    auth_url = oauth_service.get_authorization_url(is_sandbox=is_sandbox)
 
     return {
         "authorization_url": auth_url,
+        "mode": "sandbox" if is_sandbox else "live",
         "message": "Redirect user to this URL to connect cTrader account"
     }
 

@@ -147,3 +147,35 @@ async def _migrate_portfolios():
                 logger.info(f"✓ Added column: {column_name} ({column_type}) to portfolios")
             except Exception as e:
                 logger.warning(f"Could not add column {column_name} to portfolios: {e}")
+
+
+async def _migrate_whatsapp_users():
+    """Add missing columns to whatsapp_users table if needed."""
+    
+    # Define expected columns and their types
+    expected_columns = {
+        'device_id': "TEXT NOT NULL",
+        'phone_number': 'TEXT NOT NULL',
+        'trade_notifications_enabled': 'BOOLEAN DEFAULT 1',
+        'daily_summary_enabled': 'BOOLEAN DEFAULT 1',
+        'summary_time_wat': "TEXT DEFAULT '20:00'",
+        'chat_enabled': 'BOOLEAN DEFAULT 1',
+        'ai_explanations_enabled': 'BOOLEAN DEFAULT 1',
+        'is_verified': 'BOOLEAN DEFAULT 0',
+        'verification_code': 'TEXT',
+        'verification_expires_at': 'TIMESTAMP',
+        'last_active_at': 'TIMESTAMP',
+    }
+    
+    existing_columns = await get_existing_columns('whatsapp_users')
+    
+    for column_name, column_type in expected_columns.items():
+        if column_name not in existing_columns:
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text(f"ALTER TABLE whatsapp_users ADD COLUMN {column_name} {column_type}")
+                    )
+                logger.info(f"✓ Added column: {column_name} ({column_type}) to whatsapp_users")
+            except Exception as e:
+                logger.warning(f"Could not add column {column_name} to whatsapp_users: {e}")

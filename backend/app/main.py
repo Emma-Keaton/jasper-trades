@@ -42,10 +42,11 @@ except ImportError:
 from app.api.v1 import trading, agents, signals, portfolio, health, system, learning, risk, circuit_breaker, chat
 from app.api.websocket import streams as websocket_streams
 from app.api.v1 import settings as api_settings_router
-from app.api.v1 import alpha_factors, backtest, withdrawal
+from app.api.v1 import alpha_factors, backtest, withdrawal, symbols
 from app.api.v1 import heartbeat, polymarket, debate, ensemble, swarm, quantlib, checkpoint, notify
 from app.api.v1 import trading_caps
 from app.api.v1 import settings_extensions
+from app.api.v1 import whatsapp_settings
 from app.api.v1 import broker_connections
 from app.api.v1 import copytrade
 from app.api.v1 import forex  # Trove forex conversion
@@ -286,11 +287,13 @@ app.include_router(checkpoint.router, tags=["checkpoint"])
 app.include_router(notify.router, tags=["notify"])
 app.include_router(trading_caps.router, prefix="/api/v1", tags=["trading-caps"])
 app.include_router(settings_extensions.router, prefix="/api/v1", tags=["settings-extensions"])
+app.include_router(whatsapp_settings.router, prefix="/api/v1", tags=["whatsapp-settings"])
 app.include_router(broker_connections.router, prefix="/api/v1", tags=["brokers"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(copytrade.router, tags=["Copy Trading"])
 app.include_router(forex.router, tags=["forex"])  # Trove forex conversion
 app.include_router(banks.router, prefix="/api/v1", tags=["banks"])  # Nigerian bank list
+app.include_router(symbols.router, prefix="/api/v1", tags=["symbols"])  # Symbol listing (US + NGX)
 
 
 @app.get("/")

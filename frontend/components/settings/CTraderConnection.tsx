@@ -70,7 +70,8 @@ export default function CTraderConnection({ onConnected }: CTraderConnectionProp
     setConnecting(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/v1/ctrader/connect`);
+      const mode = isLiveMode ? 'live' : 'sandbox';
+      const res = await fetch(`${API_URL}/api/v1/ctrader/connect?mode=${mode}`);
       const data = await res.json();
       if (data.authorization_url) {
         window.location.href = data.authorization_url;

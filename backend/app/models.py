@@ -566,3 +566,71 @@ class TradingCap(Base):
 
     # Relationships
     portfolio = relationship("Portfolio", backref="trading_caps")
+
+
+class DailySummary(Base):
+    """Daily trade summary for WhatsApp notifications."""
+    __tablename__ = "daily_summaries"
+
+    id = Column(Integer, primary_key=True)
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False)
+    device_id = Column(String(255), nullable=False, index=True)  # Device fingerprint for user lookup
+    phone_number = Column(String, nullable=False, index=True)  # WhatsApp number to send summary to
+    
+    # Summary date (the day this summary covers)
+    summary_date = Column(String, nullable=False, index=True)  # ISO format: "2026-06-15"
+    
+    # Performance metrics
+    total_pnl = Column(Float, default=0.0)  # Total PnL for the day
+    total_pnl_percent = Column(Float, default=0.0)  # Total PnL % for the day
+    total_trades = Column(Integer, default=0)  # Number of trades executed
+    wins = Column(Integer, default=0)  # Winning trades
+    losses = Column(Integer, default=0)  # Losing trades
+    breakeven = Column(Integer, default=0)  # Breakeven trades
+    win_rate = Column(Float, default=0.0)  # Win rate percentage
+    
+    # Trade details (stored as JSON for quick access)
+    best_trade = Column(JSON, nullable=True)  # {symbol, pnl, pnl_percent, action, shares}
+    worst_trade = Column(JSON, nullable=True)  # {symbol, pnl, pnl_percent, action, shares}
+    
+    # Agent performance breakdown
+    agent_stats = Column(JSON, nullable=True)  # [{agent_name, trades, wins, pnl}]
+    
+    # Top symbols traded
+    top_symbols = Column(JSON, nullable=True)  # [{symbol, trades, pnl}]
+    
+    # Delivery status
+    summary_sent = Column(Boolean, default=False)
+    sent_at = Column(DateTime, nullable=True)
+    send_time_wat = Column(String, default="20:00")  # WAT time to send (e.g., "20:00" for 8 PM WAT)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class WhatsappUser(Base):
+    """WhatsApp user configuration."""
+    __tablename__ = "whatsapp_users"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, unique=True, index=True)  # Device fingerprint
+    phone_number = Column(String, nullable=False)  # WhatsApp number (with country code)
+    
+    # Notification preferences
+    trade_notifications_enabled = Column(Boolean, default=True)  # Send trade execution alerts
+    daily_summary_enabled = Column(Boolean, default=True)  # Send daily summary
+    summary_time_wat = Column(String, default="20:00")  # WAT time for daily summary
+    
+    # Chat preferences
+    chat_enabled = Column(Boolean, default=True)  # Enable 2-way chat
+    ai_explanations_enabled = Column(Boolean, default=True)  # Allow AI decision explanations
+    
+    # Status
+    is_verified = Column(Boolean, default=False)  # Phone number verified
+    verification_code = Column(String, nullable=True)  # Temporary verification code
+    verification_expires_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_active_at = Column(DateTime, nullable=True)  # Last WhatsApp interaction
