@@ -47,7 +47,13 @@ RUN mkdir -p /app/backend/data/sqlite /app/backend/data/logs /app/backend/data/m
 RUN mkdir -p /app/backend/static && echo "Backend-only mode - frontend served on Vercel" > /app/backend/static/index.html
 
 # Install OpenWA for WhatsApp notifications
-RUN cd backend && npm init -y && npm install @open-wa/wa-automate
+RUN echo "Installing OpenWA for WhatsApp..." \
+    && cd backend \
+    && npm init -y \
+    && npm install @open-wa/wa-automate --legacy-peer-deps --no-audit --no-fund \
+    && cd .. \
+    && echo "✅ OpenWA installed" \
+    && ls -la backend/node_modules/@open-wa/
 
 # Expose port (use PORT env variable from Render)
 EXPOSE 8080
