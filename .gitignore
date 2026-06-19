@@ -22,7 +22,6 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
 # Build outputs
 *.log
 *.pot
@@ -33,7 +32,6 @@ wheels/
 htmlcov/
 .tox/
 .nox/
-
 # IDE
 .vscode/
 .idea/
@@ -41,28 +39,23 @@ htmlcov/
 *.swo
 *~
 .DS_Store
-
 # Environment variables
 .env
 .env.local
 .env.*.local
 *.env
-
 # Next.js
 .next/
 out/
-
 # Production
 dist/
 build/
-
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
 .nox/
-
 # Logs
 logs/
 *.log
@@ -70,25 +63,27 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-
 # Database
 *.db
 *.sqlite
 *.sqlite3
 *.duckdb
-
 # Temporary files
 tmp/
 temp/
 *.tmp
 *.temp
-
 # OS
 .DS_Store
 Thumbs.db
 Desktop.ini
-
 # Deployment
 *.pem
 *.key
 !.env.example
+
+# managed
+**.data.json
+**.node-persist**
+**_IGNORE_**
+# end managed
