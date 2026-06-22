@@ -1,16 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Key, Shield, Server, Check, X, RefreshCw, MessageCircle, Bell, Mail, Send, DollarSign, Hash, Smartphone, TrendingUp, Plane } from 'lucide-react';
+import { Save, Key, Shield, Server, Check, X, RefreshCw, MessageCircle, DollarSign, TrendingUp, Plane, Bell, Send } from 'lucide-react';
 import { Toast } from '@/app/page';
 import { SkeletonCard, SkeletonText } from './Skeleton';
 import TradingCapsSection from './TradingCapsSection';
 import PayoutSection from './PayoutSection';
 import MarketDataSection from './settings/MarketDataSection';
-import EmailServiceSection from './settings/EmailServiceSection';
-import DiscordBotSection from './settings/DiscordBotSection';
 import CTraderConnection from './settings/CTraderConnection';
 import TroveSettings from './settings/TroveSettings';
+import AKShareSettings from './settings/AKShareSettings';
 import CurrencyToggle from './settings/CurrencyToggle';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
@@ -24,10 +23,10 @@ interface ApiSettings {
   colab_kronos_url: string;
 }
 
-interface WhatsAppSettings {
-  phone_number: string;
+interface TelegramSettings {
+  chat_id: string;
   enabled: boolean;
-  openwa_url: string;
+  bot_token: string;
   configured: boolean;
   chat_enabled?: boolean;
   // New fields for verification and preferences
@@ -38,35 +37,6 @@ interface WhatsAppSettings {
   ai_explanations_enabled?: boolean;
 }
 
-interface DiscordSettings {
-  webhook_url: string;
-  enabled: boolean;
-  configured: boolean;
-}
-
-interface SlackSettings {
-  webhook_url: string;
-  enabled: boolean;
-  configured: boolean;
-}
-
-interface EmailSettings {
-  smtp_server: string;
-  smtp_port: number;
-  username: string;
-  password: string;
-  from_email: string;
-  to_emails: string[];
-  enabled: boolean;
-  configured: boolean;
-}
-
-interface TelegramSettings {
-  bot_token: string;
-  chat_id: string;
-  enabled: boolean;
-  configured: boolean;
-}
 
 interface SettingsTabProps {
   triggerToast: (type: Toast['type'], title: string, message: string) => void;
@@ -83,10 +53,10 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     colab_kronos_url: '',
   });
 
-  const [whatsapp, setWhatsapp] = useState<WhatsAppSettings>({
-    phone_number: '',
-    enabled: false,
-    openwa_url: 'http://localhost:3001',
+  const [telegram, setTelegram] = useState<TelegramSettings>({
+    bot_token: '',
+    chat_id: '',
+    enabled: true,
     configured: false,
     chat_enabled: true,
     is_verified: false,
@@ -94,36 +64,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     daily_summary_enabled: true,
     summary_time_wat: '20:00',
     ai_explanations_enabled: true,
-  });
-
-  const [discord, setDiscord] = useState<DiscordSettings>({
-    webhook_url: '',
-    enabled: false,
-    configured: false,
-  });
-
-  const [slack, setSlack] = useState<SlackSettings>({
-    webhook_url: '',
-    enabled: false,
-    configured: false,
-  });
-
-  const [email, setEmail] = useState<EmailSettings>({
-    smtp_server: '',
-    smtp_port: 587,
-    username: '',
-    password: '',
-    from_email: '',
-    to_emails: [],
-    enabled: false,
-    configured: false,
-  });
-
-  const [telegram, setTelegram] = useState<TelegramSettings>({
-    bot_token: '',
-    chat_id: '',
-    enabled: false,
-    configured: false,
   });
 
   const [payoutSettings, setPayoutSettings] = useState({
@@ -154,28 +94,14 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     coingecko_enabled: true,
   });
 
-  const [sendgrid, setSendgrid] = useState({
-    api_key: '',
-    from_email: '',
-    enabled: false,
-  });
-
-  const [discordBot, setDiscordBot] = useState({
-    bot_token: '',
-    guild_id: '',
-    channel_id: '',
-    enabled: false,
-    chat_enabled: false,
-  });
-
   const [deviceInfo, setDeviceInfo] = useState('');
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<string>(initialTab);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { valid: boolean; message: string }>>({});
-  const [whatsappTestStatus, setWhatsappTestStatus] = useState<{testing: boolean; success?: boolean; message?: string}>({ testing: false });
-  const [whatsappRequestStatus, setWhatsappRequestStatus] = useState<{
+  const [telegramTestStatus, setTelegramTestStatus] = useState<{testing: boolean; success?: boolean; message?: string}>({ testing: false });
+  const [telegramRequestStatus, setTelegramRequestStatus] = useState<{
     requesting: boolean;
     verifying: boolean;
     codeSent: boolean;
@@ -184,6 +110,23 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   }>({ requesting: false, verifying: false, codeSent: false });
   const [verificationCode, setVerificationCode] = useState('');
   const [portfolioId, setPortfolioId] = useState<number | null>(null);
+
+  // Polymarket state
+  const [polymarket, setPolymarket] = useState({
+    connected: false,
+    api_key: '',
+    api_secret: '',
+    wallet_address: '',
+    balance: 0,
+    equity: 0,
+    ai_trading_enabled: false,
+    copytrading_enabled: false,
+    loading: false,
+    message: '',
+    success: false,
+    leaders: [] as any[],
+  });
+  const [showLeaders, setShowLeaders] = useState(false);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -222,34 +165,13 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       }
 
       // Load notification settings from unified settings endpoint
-      if (data.discord_config) {
-        setDiscord({ webhook_url: data.discord_config.webhook_url || '', enabled: data.discord_config.enabled, configured: !!data.discord_config.webhook_url });
-      }
-      if (data.slack_config) {
-        setSlack({ webhook_url: data.slack_config.webhook_url || '', enabled: data.slack_config.enabled, configured: !!data.slack_config.webhook_url });
-      }
-      if (data.email_config) {
-        setEmail({ 
-          smtp_server: data.email_config.smtp_server || '',
-          smtp_port: data.email_config.smtp_port || 587,
-          username: data.email_config.username || '',
-          password: data.email_config.password || '',
-          from_email: data.email_config.from_email || '',
-          to_emails: data.email_config.to_emails || [],
-          enabled: data.email_config.enabled || false,
-          configured: !!data.email_config.smtp_server 
-        });
-      }
       if (data.telegram_config) {
-        setTelegram({ bot_token: data.telegram_config.bot_token || '', chat_id: data.telegram_config.chat_id || '', enabled: data.telegram_config.enabled, configured: !!data.telegram_config.bot_token });
-      }
-      if (data.whatsapp_config) {
-        setWhatsapp({ 
-          phone_number: data.whatsapp_config.phone_number || '',
-          openwa_url: data.whatsapp_config.openwa_url || 'http://localhost:3001',
-          enabled: data.whatsapp_config.enabled || false,
-          chat_enabled: data.whatsapp_config.chat_enabled || true,
-          configured: !!data.whatsapp_config.phone_number 
+        setTelegram({ 
+          chat_id: data.telegram_config.chat_id || '',
+          bot_token: data.telegram_config.bot_token || '',
+          enabled: data.telegram_config.enabled || false,
+          chat_enabled: data.telegram_config.chat_enabled || true,
+          configured: !!data.telegram_config.chat_id 
         });
       }
 
@@ -308,66 +230,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     }
   };
 
-  const saveDiscord = async () => {
-    try {
-      const deviceId = localStorage.getItem('device_id');
-      await fetch(`${API_URL}/api/v1/settings/notifications/discord/configure`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId! },
-        body: JSON.stringify({ webhook_url: discord.webhook_url, enabled: discord.enabled }),
-      });
-      setDiscord({ ...discord, configured: true });
-      triggerToast('success', 'Discord Configured', 'Discord notifications enabled.');
-    } catch (error) {
-      triggerToast('error', 'Failed', 'Could not configure Discord.');
-    }
-  };
-
-  const saveSlack = async () => {
-    try {
-      const deviceId = localStorage.getItem('device_id');
-      await fetch(`${API_URL}/api/v1/settings/notifications/slack/configure`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId! },
-        body: JSON.stringify({ webhook_url: slack.webhook_url, enabled: slack.enabled }),
-      });
-      setSlack({ ...slack, configured: true });
-      triggerToast('success', 'Slack Configured', 'Slack notifications enabled.');
-    } catch (error) {
-      triggerToast('error', 'Failed', 'Could not configure Slack.');
-    }
-  };
-
-  const saveEmail = async () => {
-    try {
-      const deviceId = localStorage.getItem('device_id');
-      await fetch(`${API_URL}/api/v1/settings/notifications/email/configure`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId! },
-        body: JSON.stringify(email),
-      });
-      setEmail({ ...email, configured: true });
-      triggerToast('success', 'Email Configured', 'Email notifications enabled.');
-    } catch (error) {
-      triggerToast('error', 'Failed', 'Could not configure Email.');
-    }
-  };
-
-  const saveTelegram = async () => {
-    try {
-      const deviceId = localStorage.getItem('device_id');
-      await fetch(`${API_URL}/api/v1/settings/notifications/telegram/configure`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId! },
-        body: JSON.stringify(telegram),
-      });
-      setTelegram({ ...telegram, configured: true });
-      triggerToast('success', 'Telegram Configured', 'Telegram notifications enabled.');
-    } catch (error) {
-      triggerToast('error', 'Failed', 'Could not configure Telegram.');
-    }
-  };
-
   const savePaymentGateways = async () => {
     try {
       const deviceId = localStorage.getItem('device_id') || 'unknown';
@@ -385,135 +247,135 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     }
   };
 
-  const saveWhatsapp = async () => {
+  const saveTelegram = async () => {
     try {
       const deviceId = localStorage.getItem('device_id');
-      await fetch(`${API_URL}/api/v1/settings/notifications/whatsapp/configure`, {
+      await fetch(`${API_URL}/api/v1/settings/telegram/configure`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId! },
         body: JSON.stringify({
-          phone_number: whatsapp.phone_number,
-          openwa_url: whatsapp.openwa_url,
-          enabled: whatsapp.enabled,
-          chat_enabled: whatsapp.chat_enabled,
+          chat_id: telegram.chat_id,
+          bot_token: telegram.bot_token,
+          enabled: telegram.enabled,
+          chat_enabled: telegram.chat_enabled,
         }),
       });
-      setWhatsapp({ ...whatsapp, configured: true });
-      triggerToast('success', 'WhatsApp Configured', 'WhatsApp notifications enabled.');
+      setTelegram({ ...telegram, configured: true });
+      triggerToast('success', 'Telegram Configured', 'Telegram notifications enabled.');
     } catch (error) {
-      triggerToast('error', 'Failed', 'Could not configure WhatsApp.');
+      triggerToast('error', 'Failed', 'Could not configure Telegram.');
     }
   };
 
-  const testWhatsapp = async () => {
-    setWhatsappTestStatus({ testing: true });
+  const testTelegram = async () => {
+    setTelegramTestStatus({ testing: true });
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/whatsapp/test`, {
+      const res = await fetch(`${API_URL}/api/v1/settings/telegram/test`, {
         method: 'POST',
         headers: { 'X-Device-ID': localStorage.getItem('device_id')! },
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setWhatsappTestStatus({ testing: false, success: true, message: 'Test message sent! Check your WhatsApp.' });
-        setTimeout(() => setWhatsappTestStatus({ testing: false }), 3000);
+        setTelegramTestStatus({ testing: false, success: true, message: 'Test message sent! Check your Telegram.' });
+        setTimeout(() => setTelegramTestStatus({ testing: false }), 3000);
       } else {
-        setWhatsappTestStatus({ testing: false, success: false, message: data.detail || 'Failed to send test' });
+        setTelegramTestStatus({ testing: false, success: false, message: data.detail || 'Failed to send test' });
       }
     } catch (error) {
-      setWhatsappTestStatus({ testing: false, success: false, message: 'Connection failed' });
+      setTelegramTestStatus({ testing: false, success: false, message: 'Connection failed' });
     }
   };
 
   const requestVerification = async () => {
-    if (!whatsapp.phone_number) {
-      setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: 'Please enter your phone number' });
+    if (!telegram.chat_id) {
+      setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: 'Please enter your chat ID' });
       return;
     }
 
-    setWhatsappRequestStatus({ requesting: true, verifying: false, codeSent: false });
+    setTelegramRequestStatus({ requesting: true, verifying: false, codeSent: false });
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/whatsapp/verify/request`, {
+      const res = await fetch(`${API_URL}/api/v1/settings/telegram/verify/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
-        body: JSON.stringify({ phone_number: whatsapp.phone_number }),
+        body: JSON.stringify({ chat_id: telegram.chat_id }),
       });
       const data = await res.json();
       
       if (res.ok && data.success) {
-        setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: true, success: true, message: `Verification code sent to ${whatsapp.phone_number.slice(0, 5)}***` });
+        setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: true, success: true, message: `Verification code sent to ${telegram.chat_id.slice(0, 5)}***` });
       } else {
-        setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: data.detail || 'Failed to send code' });
+        setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: data.detail || 'Failed to send code' });
       }
     } catch (error) {
-      setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: 'Failed to send verification code' });
+      setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: 'Failed to send verification code' });
     }
   };
 
   const confirmVerification = async () => {
     if (!verificationCode || verificationCode.length !== 6) {
-      setWhatsappRequestStatus(prev => ({ ...prev, verifying: false, success: false, message: 'Please enter a 6-digit code' }));
+      setTelegramRequestStatus(prev => ({ ...prev, verifying: false, success: false, message: 'Please enter a 6-digit code' }));
       return;
     }
 
-    setWhatsappRequestStatus(prev => ({ ...prev, verifying: true }));
+    setTelegramRequestStatus(prev => ({ ...prev, verifying: true }));
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/whatsapp/verify/confirm`, {
+      const res = await fetch(`${API_URL}/api/v1/settings/telegram/verify/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
-        body: JSON.stringify({ phone_number: whatsapp.phone_number, verification_code: verificationCode }),
+        body: JSON.stringify({ chat_id: telegram.chat_id, verification_code: verificationCode }),
       });
       const data = await res.json();
       
       if (res.ok && data.success) {
-        setWhatsapp({ ...whatsapp, is_verified: true });
-        setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: false, success: true, message: 'WhatsApp verified successfully!' });
+        setTelegram({ ...telegram, is_verified: true });
+        setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: false, success: true, message: 'Telegram verified successfully!' });
         setVerificationCode('');
-        loadWhatsAppPreferences();
-        triggerToast('success', 'Verified', 'WhatsApp number verified successfully');
+        loadTelegramPreferences();
+        triggerToast('success', 'Verified', 'Telegram number verified successfully');
       } else {
-        setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: true, success: false, message: data.detail || 'Invalid or expired code' });
+        setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: true, success: false, message: data.detail || 'Invalid or expired code' });
       }
     } catch (error) {
-      setWhatsappRequestStatus({ requesting: false, verifying: false, codeSent: true, success: false, message: 'Verification failed' });
+      setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: true, success: false, message: 'Verification failed' });
     }
   };
 
-  const saveWhatsAppPreferences = async () => {
+  const saveTelegramPreferences = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/whatsapp/preferences`, {
+      const res = await fetch(`${API_URL}/api/v1/settings/telegram/preferences`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
         body: JSON.stringify({
-          trade_notifications_enabled: whatsapp.trade_notifications_enabled,
-          daily_summary_enabled: whatsapp.daily_summary_enabled,
-          summary_time_wat: whatsapp.summary_time_wat || '20:00',
-          chat_enabled: whatsapp.chat_enabled,
-          ai_explanations_enabled: whatsapp.ai_explanations_enabled,
+          trade_notifications_enabled: telegram.trade_notifications_enabled,
+          daily_summary_enabled: telegram.daily_summary_enabled,
+          summary_time_wat: telegram.summary_time_wat || '20:00',
+          chat_enabled: telegram.chat_enabled,
+          ai_explanations_enabled: telegram.ai_explanations_enabled,
         }),
       });
       const data = await res.json();
       
       if (res.ok && data.success) {
-        triggerToast('success', 'Preferences Saved', 'WhatsApp notification preferences updated');
-        await saveWhatsappLegacy();
+        triggerToast('success', 'Preferences Saved', 'Telegram notification preferences updated');
+        await saveTelegramLegacy();
       } else {
         triggerToast('error', 'Failed', data.detail || 'Could not save preferences');
       }
     } catch (error) {
-      triggerToast('error', 'Failed', 'Could not save WhatsApp preferences');
+      triggerToast('error', 'Failed', 'Could not save Telegram preferences');
     }
   };
 
-  const saveWhatsappLegacy = async () => {
+  const saveTelegramLegacy = async () => {
     try {
-      await fetch(`${API_URL}/api/v1/settings/notifications/whatsapp/configure`, {
+      await fetch(`${API_URL}/api/v1/settings/telegram/configure`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
         body: JSON.stringify({
-          phone_number: whatsapp.phone_number,
-          openwa_url: whatsapp.openwa_url,
-          enabled: whatsapp.trade_notifications_enabled,
-          chat_enabled: whatsapp.chat_enabled,
+          chat_id: telegram.chat_id,
+          bot_token: telegram.bot_token,
+          enabled: telegram.trade_notifications_enabled,
+          chat_enabled: telegram.chat_enabled,
         }),
       });
     } catch (error) {
@@ -521,15 +383,15 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     }
   };
 
-  const loadWhatsAppPreferences = async () => {
+  const loadTelegramPreferences = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/whatsapp/status`, {
+      const res = await fetch(`${API_URL}/api/v1/settings/telegram/status`, {
         headers: { 'X-Device-ID': localStorage.getItem('device_id')! },
       });
       const data = await res.json();
       
       if (data.is_configured && data.is_verified) {
-        setWhatsapp(prev => ({
+        setTelegram(prev => ({
           ...prev,
           is_verified: true,
           trade_notifications_enabled: data.preferences?.trade_notifications_enabled ?? true,
@@ -541,6 +403,209 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       }
     } catch (error) {
       // Ignore errors
+    }
+  };
+
+  // ============ Polymarket Functions ============
+
+  const checkPolymarketConnection = async () => {
+    try {
+      const deviceId = localStorage.getItem('device_id');
+      const res = await fetch(`${API_URL}/api/v1/polymarket/connection/status`, {
+        headers: { 'X-Device-ID': deviceId! },
+      });
+      const data = await res.json();
+
+      if (data.connected) {
+        setPolymarket(prev => ({
+          ...prev,
+          connected: true,
+          wallet_address: data.wallet_address || '',
+          balance: data.account_balance || 0,
+          equity: data.account_equity || 0,
+          ai_trading_enabled: data.ai_trading_enabled || false,
+          copytrading_enabled: data.copytrading_enabled || false,
+        }));
+      } else {
+        setPolymarket(prev => ({ ...prev, connected: false }));
+      }
+    } catch (error) {
+      console.error('Failed to check Polymarket connection:', error);
+    }
+  };
+
+  const connectPolymarket = async () => {
+    if (!polymarket.api_key || !polymarket.api_secret) {
+      setPolymarket(prev => ({ ...prev, message: 'Please enter both API key and secret', success: false }));
+      return;
+    }
+
+    setPolymarket(prev => ({ ...prev, loading: true, message: '' }));
+
+    try {
+      const deviceId = localStorage.getItem('device_id');
+      const res = await fetch(`${API_URL}/api/v1/polymarket/connection/configure`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-ID': deviceId!,
+        },
+        body: JSON.stringify({
+          api_key: polymarket.api_key,
+          api_secret: polymarket.api_secret,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setPolymarket(prev => ({
+          ...prev,
+          connected: true,
+          wallet_address: data.wallet_address || '',
+          loading: false,
+          message: 'Polymarket account connected successfully!',
+          success: true,
+        }));
+        refreshBalance();
+      } else {
+        setPolymarket(prev => ({
+          ...prev,
+          loading: false,
+          message: data.detail || 'Failed to connect',
+          success: false,
+        }));
+      }
+    } catch (error) {
+      setPolymarket(prev => ({
+        ...prev,
+        loading: false,
+        message: 'Failed to connect Polymarket account',
+        success: false,
+      }));
+    }
+  };
+
+  const disconnectPolymarket = async () => {
+    if (!confirm('Are you sure you want to disconnect your Polymarket account?')) return;
+
+    try {
+      const deviceId = localStorage.getItem('device_id');
+      const res = await fetch(`${API_URL}/api/v1/polymarket/connection`, {
+        method: 'DELETE',
+        headers: { 'X-Device-ID': deviceId! },
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setPolymarket(prev => ({
+          ...prev,
+          connected: false,
+          api_key: '',
+          api_secret: '',
+          wallet_address: '',
+          balance: 0,
+          equity: 0,
+          message: 'Account disconnected',
+          success: true,
+          leaders: [],
+        }));
+        setShowLeaders(false);
+      } else {
+        setPolymarket(prev => ({
+          ...prev,
+          message: data.detail || 'Failed to disconnect',
+          success: false,
+        }));
+      }
+    } catch (error) {
+      setPolymarket(prev => ({
+        ...prev,
+        message: 'Failed to disconnect',
+        success: false,
+      }));
+    }
+  };
+
+  const refreshBalance = async () => {
+    try {
+      const deviceId = localStorage.getItem('device_id');
+      const res = await fetch(`${API_URL}/api/v1/polymarket/account/balance`, {
+        headers: { 'X-Device-ID': deviceId! },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setPolymarket(prev => ({
+          ...prev,
+          balance: data.balance || 0,
+          equity: data.equity || 0,
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to refresh balance:', error);
+    }
+  };
+
+  const loadLeaders = async () => {
+    try {
+      const deviceId = localStorage.getItem('device_id');
+      const res = await fetch(`${API_URL}/api/v1/polymarket/leaders?limit=10`, {
+        headers: { 'X-Device-ID': deviceId! },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setPolymarket(prev => ({ ...prev, leaders: data.leaders || [] }));
+        setShowLeaders(true);
+      }
+    } catch (error) {
+      console.error('Failed to load leaders:', error);
+    }
+  };
+
+  const followLeader = async (leaderId: string, leaderName: string) => {
+    try {
+      const deviceId = localStorage.getItem('device_id');
+      const res = await fetch(`${API_URL}/api/v1/polymarket/leader/${leaderId}/follow`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-ID': deviceId!,
+        },
+        body: JSON.stringify({
+          leader_name: leaderName,
+          allocation_weight: 0.5,
+          min_confidence: 0.7,
+          max_copy_amount: 50.0,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setPolymarket(prev => ({
+          ...prev,
+          leaders: prev.leaders.map((l: any) =>
+            l.leader_id === leaderId ? { ...l, is_following: true } : l
+          ),
+          message: `Now following ${leaderName}`,
+          success: true,
+        }));
+      } else {
+        setPolymarket(prev => ({
+          ...prev,
+          message: data.detail || 'Failed to follow leader',
+          success: false,
+        }));
+      }
+    } catch (error) {
+      setPolymarket(prev => ({
+        ...prev,
+        message: 'Failed to follow leader',
+        success: false,
+      }));
     }
   };
 
@@ -600,6 +665,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
   useEffect(() => {
     fetchSettings();
+    checkPolymarketConnection();
   }, []);
 
   if (loading) {
@@ -631,53 +697,96 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       )}
 
       <div className="space-y-6">
-        {/* Notification Channels Header */}
+        {/* Notification Channels - Telegram */}
         <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
           <div className="flex items-center gap-2 mb-3">
             <Bell className="w-5 h-5 text-[#F59E0B]" />
-            <h2 className="text-lg font-semibold text-white">Multi-Channel Notifications</h2>
+            <h2 className="text-lg font-semibold text-white">Telegram Notifications</h2>
           </div>
           <p className="text-xs text-gray-400 mb-4">
-            Receive trade alerts, signals, and system notifications on multiple channels.
-            Configure all channels below - enable/disable individually.
+            Receive trade alerts, daily summaries, and 2-way chat via Telegram.
+            Verify your chat ID and configure your notification preferences below.
           </p>
 
-          {/* WhatsApp */}
+          {/* Telegram */}
           <div className="border-t border-[#475569] pt-4 mt-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <MessageCircle className="w-5 h-5 text-[#25D366]" />
-                <h3 className="text-md font-semibold text-white">WhatsApp Notifications</h3>
+                <h3 className="text-md font-semibold text-white">Telegram Notifications</h3>
               </div>
-              {whatsapp.is_verified && (
+              {telegram.is_verified && (
                 <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 flex items-center gap-1">
                   <Check className="w-3 h-3" /> Verified
                 </span>
               )}
             </div>
 
-            {/* Phone Number Verification */}
+            {/* Setup Instructions */}
+            <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#25D366]/30">
+              <h4 className="text-sm font-semibold text-white mb-2">📱 Setup in 3 Steps:</h4>
+              <ol className="text-xs text-gray-400 space-y-2">
+                <li className="flex items-start gap-2">
+                  <span className="text-[#25D366] font-bold">1.</span>
+                  <span>Click "Open on Telegram" below to start @jasper_trades_bot</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-[#25D366] font-bold">2.</span>
+                  <span>Enter your Telegram chat ID above and click "Send Code"</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-[#25D366] font-bold">3.</span>
+                  <span>Check Telegram for the 6-digit code and enter it here</span>
+                </li>
+              </ol>
+              <p className="text-xs text-gray-500 mt-3 italic">
+                💡 Your chat ID links your Telegram to this device's trading accounts. You'll only see YOUR trades and portfolio.
+              </p>
+            </div>
+
+            {/* Open on Telegram Button */}
+            <div className="mb-4 p-3 bg-gradient-to-r from-[#25D366]/10 to-[#25D366]/5 rounded-lg border border-[#25D366]/30">
+              <div className="flex items-start gap-3">
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-white mb-1">🤖 Start Jasper Trades Bot</h4>
+                  <p className="text-xs text-gray-400 mb-2">
+                    Click below to open Telegram and start the bot. You'll receive a verification code there.
+                  </p>
+                  <a
+                    href="https://t.me/jasper_trades_bot"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-md text-sm transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
+                    Open on Telegram
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Chat ID Verification */}
             <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
-              <label className="text-xs text-gray-400 mb-2 block">Step 1: Verify Phone Number</label>
+              <label className="text-xs text-gray-400 mb-2 block">Step 1: Verify Chat ID</label>
               <div className="flex gap-2 mb-2">
                 <input
                   type="tel"
-                  value={whatsapp.phone_number}
-                  onChange={(e) => setWhatsapp({...whatsapp, phone_number: e.target.value})}
+                  value={telegram.chat_id}
+                  onChange={(e) => setTelegram({...telegram, chat_id: e.target.value})}
                   placeholder="+234 123 456 7890"
                   className="flex-1 bg-[#1E293B] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
                 />
                 <button
                   onClick={requestVerification}
-                  disabled={whatsappRequestStatus.requesting || whatsapp.is_verified}
+                  disabled={telegramRequestStatus.requesting || telegram.is_verified}
                   className="px-4 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-md text-sm disabled:opacity-50 whitespace-nowrap"
                 >
-                  {whatsappRequestStatus.requesting ? 'Sending...' : whatsapp.is_verified ? 'Verified ✓' : 'Send Code'}
+                  {telegramRequestStatus.requesting ? 'Sending...' : telegram.is_verified ? 'Verified ✓' : 'Send Code'}
                 </button>
               </div>
               
               {/* Verification Code Input */}
-              {!whatsapp.is_verified && whatsappRequestStatus.codeSent && (
+              {!telegram.is_verified && telegramRequestStatus.codeSent && (
                 <div className="mt-2 flex gap-2">
                   <input
                     type="text"
@@ -689,22 +798,22 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   />
                   <button
                     onClick={confirmVerification}
-                    disabled={whatsappRequestStatus.verifying}
+                    disabled={telegramRequestStatus.verifying}
                     className="px-4 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm disabled:opacity-50"
                   >
-                    {whatsappRequestStatus.verifying ? 'Verifying...' : 'Verify'}
+                    {telegramRequestStatus.verifying ? 'Verifying...' : 'Verify'}
                   </button>
                 </div>
               )}
-              {whatsappRequestStatus.message && (
-                <p className={`text-xs mt-2 ${whatsappRequestStatus.success ? 'text-green-400' : 'text-red-400'}`}>
-                  {whatsappRequestStatus.message}
+              {telegramRequestStatus.message && (
+                <p className={`text-xs mt-2 ${telegramRequestStatus.success ? 'text-green-400' : 'text-red-400'}`}>
+                  {telegramRequestStatus.message}
                 </p>
               )}
             </div>
 
             {/* Notification Preferences */}
-            {whatsapp.is_verified && (
+            {telegram.is_verified && (
               <>
                 <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
                   <label className="text-xs text-gray-400 mb-3 block">Step 2: Notification Preferences</label>
@@ -713,8 +822,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={whatsapp.trade_notifications_enabled}
-                        onChange={(e) => setWhatsapp({...whatsapp, trade_notifications_enabled: e.target.checked})}
+                        checked={telegram.trade_notifications_enabled}
+                        onChange={(e) => setTelegram({...telegram, trade_notifications_enabled: e.target.checked})}
                         className="w-4 h-4"
                       />
                       <span className="text-sm text-gray-300">📈 Trade executions (real-time)</span>
@@ -723,8 +832,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={whatsapp.daily_summary_enabled}
-                        onChange={(e) => setWhatsapp({...whatsapp, daily_summary_enabled: e.target.checked})}
+                        checked={telegram.daily_summary_enabled}
+                        onChange={(e) => setTelegram({...telegram, daily_summary_enabled: e.target.checked})}
                         className="w-4 h-4"
                       />
                       <span className="text-sm text-gray-300">📊 Daily summary at 8:00 PM WAT</span>
@@ -733,8 +842,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={whatsapp.chat_enabled}
-                        onChange={(e) => setWhatsapp({...whatsapp, chat_enabled: e.target.checked})}
+                        checked={telegram.chat_enabled}
+                        onChange={(e) => setTelegram({...telegram, chat_enabled: e.target.checked})}
                         className="w-4 h-4"
                       />
                       <span className="text-sm text-gray-300">💬 2-way chat (ask about portfolio)</span>
@@ -743,8 +852,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={whatsapp.ai_explanations_enabled}
-                        onChange={(e) => setWhatsapp({...whatsapp, ai_explanations_enabled: e.target.checked})}
+                        checked={telegram.ai_explanations_enabled}
+                        onChange={(e) => setTelegram({...telegram, ai_explanations_enabled: e.target.checked})}
                         className="w-4 h-4"
                       />
                       <span className="text-sm text-gray-300">🤖 AI trade explanations</span>
@@ -758,8 +867,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   <div className="flex items-center gap-3">
                     <input
                       type="time"
-                      value={whatsapp.summary_time_wat || '20:00'}
-                      onChange={(e) => setWhatsapp({...whatsapp, summary_time_wat: e.target.value})}
+                      value={telegram.summary_time_wat || '20:00'}
+                      onChange={(e) => setTelegram({...telegram, summary_time_wat: e.target.value})}
                       className="bg-[#1E293B] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
                     />
                     <span className="text-xs text-gray-400">WAT (West Africa Time)</span>
@@ -768,124 +877,193 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
                 {/* Action Buttons */}
                 <div className="flex gap-2">
-                  <button onClick={saveWhatsAppPreferences} className="flex-1 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-md text-sm">
+                  <button onClick={saveTelegramPreferences} className="flex-1 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-md text-sm">
                     Save Preferences
                   </button>
-                  <button onClick={testWhatsapp} className="flex-1 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm">
+                  <button onClick={testTelegram} className="flex-1 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm">
                     Test Connection
                   </button>
                 </div>
-                {whatsappTestStatus.message && (
-                  <p className={`text-xs mt-2 ${whatsappTestStatus.success ? 'text-green-400' : 'text-red-400'}`}>
-                    {whatsappTestStatus.message}
+                {telegramTestStatus.message && (
+                  <p className={`text-xs mt-2 ${telegramTestStatus.success ? 'text-green-400' : 'text-red-400'}`}>
+                    {telegramTestStatus.message}
                   </p>
                 )}
               </>
             )}
 
-            {!whatsapp.is_verified && (
+            {!telegram.is_verified && (
               <div className="text-xs text-gray-400 mt-3">
-                💡 <strong>How it works:</strong> Enter your phone number, receive a verification code via WhatsApp, then configure your notification preferences. All messages are sent from "Jasper Trades".
+                💡 <strong>How it works:</strong> Enter your chat ID, receive a verification code via Telegram, then configure your notification preferences. All messages are sent from "Jasper Trades".
               </div>
             )}
           </div>
 
-          {/* Discord */}
-          <div className="border-t border-[#475569] pt-4 mt-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Hash className="w-5 h-5 text-[#5865F2]" />
-                <h3 className="text-md font-semibold text-white">Discord</h3>
-              </div>
-              {discord.configured && <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400">Configured</span>}
+          {/* Polymarket Account Connection */}
+          <div className="mt-6 p-4 bg-[#1E293B] rounded-lg border border-[#475569]">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp className="w-5 h-5 text-purple-400" />
+              <h2 className="text-lg font-semibold text-white">Polymarket (Prediction Markets)</h2>
             </div>
-            <input type="url" value={discord.webhook_url} onChange={(e) => setDiscord({...discord, webhook_url: e.target.value})} placeholder="Discord Webhook URL" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-            <div className="flex items-center gap-2 mt-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={discord.enabled} onChange={(e) => setDiscord({...discord, enabled: e.target.checked})} className="w-4 h-4" />
-                <span className="text-sm text-gray-300">Enable notifications</span>
-              </label>
-            </div>
-            <div className="flex gap-2 mt-3">
-              <button onClick={saveDiscord} className="flex-1 py-2 bg-[#5865F2] hover:bg-[#4752C4] text-white rounded-md text-sm">Save</button>
-              <button onClick={() => testNotification('Discord')} disabled={!discord.configured} className="flex-1 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm disabled:opacity-50">Test</button>
-            </div>
-          </div>
 
-          {/* Slack */}
-          <div className="border-t border-[#475569] pt-4 mt-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Send className="w-5 h-5 text-[#E01E5A]" />
-                <h3 className="text-md font-semibold text-white">Slack</h3>
-              </div>
-              {slack.configured && <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400">Configured</span>}
-            </div>
-            <input type="url" value={slack.webhook_url} onChange={(e) => setSlack({...slack, webhook_url: e.target.value})} placeholder="Slack Webhook URL" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-            <div className="flex items-center gap-2 mt-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={slack.enabled} onChange={(e) => setSlack({...slack, enabled: e.target.checked})} className="w-4 h-4" />
-                <span className="text-sm text-gray-300">Enable notifications</span>
-              </label>
-            </div>
-            <div className="flex gap-2 mt-3">
-              <button onClick={saveSlack} className="flex-1 py-2 bg-[#E01E5A] hover:bg-[#C4194F] text-white rounded-md text-sm">Save</button>
-              <button onClick={() => testNotification('Slack')} disabled={!slack.configured} className="flex-1 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm disabled:opacity-50">Test</button>
-            </div>
-          </div>
+            {!polymarket.connected ? (
+              <>
+                <p className="text-sm text-gray-300 mb-3">
+                  Connect your Polymarket account for AI-powered prediction market trading and copytrading.
+                </p>
+                
+                <div className="space-y-3 mb-3">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">API Key</label>
+                    <input
+                      type="password"
+                      value={polymarket.api_key}
+                      onChange={(e) => setPolymarket({...polymarket, api_key: e.target.value})}
+                      placeholder="Enter your Polymarket API key"
+                      className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">API Secret</label>
+                    <input
+                      type="password"
+                      value={polymarket.api_secret}
+                      onChange={(e) => setPolymarket({...polymarket, api_secret: e.target.value})}
+                      placeholder="Enter your API secret"
+                      className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                    />
+                  </div>
+                </div>
 
-          {/* Email */}
-          <div className="border-t border-[#475569] pt-4 mt-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Mail className="w-5 h-5 text-[#0EA5E9]" />
-                <h3 className="text-md font-semibold text-white">Email</h3>
-              </div>
-              {email.configured && <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400">Configured</span>}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <input type="text" value={email.smtp_server} onChange={(e) => setEmail({...email, smtp_server: e.target.value})} placeholder="SMTP Server" className="col-span-2 bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-              <input type="number" value={email.smtp_port} onChange={(e) => setEmail({...email, smtp_port: parseInt(e.target.value)})} placeholder="587" className="bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-              <input type="text" value={email.username} onChange={(e) => setEmail({...email, username: e.target.value})} placeholder="Username" className="bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-              <input type="password" value={email.password} onChange={(e) => setEmail({...email, password: e.target.value})} placeholder="Password" className="col-span-2 bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-              <input type="email" value={email.from_email} onChange={(e) => setEmail({...email, from_email: e.target.value})} placeholder="From Email" className="bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-              <input type="text" value={email.to_emails.join(', ')} onChange={(e) => setEmail({...email, to_emails: e.target.value.split(',').map(s => s.trim())})} placeholder="To Emails (comma-separated)" className="col-span-2 bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={email.enabled} onChange={(e) => setEmail({...email, enabled: e.target.checked})} className="w-4 h-4" />
-                <span className="text-sm text-gray-300">Enable notifications</span>
-              </label>
-            </div>
-            <div className="flex gap-2 mt-3">
-              <button onClick={saveEmail} className="flex-1 py-2 bg-[#0EA5E9] hover:bg-[#0C8BC7] text-white rounded-md text-sm">Save</button>
-              <button onClick={() => testNotification('Email')} disabled={!email.configured} className="flex-1 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm disabled:opacity-50">Test</button>
-            </div>
-          </div>
+                <div className="mb-3 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
+                  <p className="text-xs text-gray-400 mb-2">🔐 Security Features:</p>
+                  <ul className="text-xs text-gray-400 space-y-1">
+                    <li>• Credentials encrypted with AES-128 before storage</li>
+                    <li>• Only you can access your API keys</li>
+                    <li>• AI can trade automatically (when enabled)</li>
+                    <li>• Copytrade top Polymarket leaders</li>
+                  </ul>
+                </div>
 
-          {/* Telegram */}
-          <div className="border-t border-[#475569] pt-4 mt-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Bell className="w-5 h-5 text-[#229ED9]" />
-                <h3 className="text-md font-semibold text-white">Telegram</h3>
-              </div>
-              {telegram.configured && <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400">Configured</span>}
-            </div>
-            <input type="text" value={telegram.bot_token} onChange={(e) => setTelegram({...telegram, bot_token: e.target.value})} placeholder="Bot Token" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-            <input type="text" value={telegram.chat_id} onChange={(e) => setTelegram({...telegram, chat_id: e.target.value})} placeholder="Chat ID" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm mt-2" />
-            <div className="flex items-center gap-2 mt-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={telegram.enabled} onChange={(e) => setTelegram({...telegram, enabled: e.target.checked})} className="w-4 h-4" />
-                <span className="text-sm text-gray-300">Enable notifications</span>
-              </label>
-            </div>
-            <div className="flex gap-2 mt-3">
-              <button onClick={saveTelegram} className="flex-1 py-2 bg-[#229ED9] hover:bg-[#1E8EC4] text-white rounded-md text-sm">Save</button>
-              <button onClick={() => testNotification('Telegram')} disabled={!telegram.configured} className="flex-1 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm disabled:opacity-50">Test</button>
-            </div>
+                <button
+                  onClick={connectPolymarket}
+                  disabled={polymarket.loading || !polymarket.api_key || !polymarket.api_secret}
+                  className="w-full py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-sm font-medium"
+                >
+                  {polymarket.loading ? 'Connecting...' : 'Connect Polymarket Account'}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="mb-3 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-green-400 flex items-center gap-2">
+                      <Check className="w-4 h-4" />
+                      Connected
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      Wallet: {polymarket.wallet_address?.slice(0, 6)}...{polymarket.wallet_address?.slice(-4)}
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-400">Balance:</span>
+                      <p className="text-white font-medium">${polymarket.balance?.toLocaleString() || '0.00'}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Equity:</span>
+                      <p className="text-white font-medium">${polymarket.equity?.toLocaleString() || '0.00'}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => setShowLeaders(!showLeaders)}
+                      className="flex-1 py-1.5 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-xs"
+                    >
+                      {showLeaders ? 'Hide Leaders' : 'Browse Leaders'} ({polymarket.leaders?.length || 0})
+                    </button>
+                    <button
+                      onClick={refreshBalance}
+                      className="px-3 py-1.5 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-xs"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                {/* Copytrading Leaders Section */}
+                {showLeaders && polymarket.leaders && polymarket.leaders.length > 0 && (
+                  <div className="mb-3">
+                    <h3 className="text-sm font-medium text-white mb-2">Top Polymarket Leaders</h3>
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {polymarket.leaders.map((leader: any) => (
+                        <div key={leader.leader_id} className="p-2 bg-[#0F172A] rounded border border-[#475569]">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm text-white">{leader.leader_name}</p>
+                              <p className="text-xs text-gray-400">
+                                Win Rate: {(leader.win_rate * 100).toFixed(1)}% | PnL: ${leader.total_pnl.toLocaleString()}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => followLeader(leader.leader_id, leader.leader_name)}
+                              disabled={leader.is_following}
+                              className={`px-3 py-1 text-xs rounded-md ${
+                                leader.is_following
+                                  ? 'bg-green-600/20 text-green-400 cursor-default'
+                                  : 'bg-purple-600 hover:bg-purple-700 text-white'
+                              }`}
+                            >
+                              {leader.is_following ? '✓ Following' : 'Follow'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* AI Trading Settings */}
+                <div className="mb-3 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={polymarket.ai_trading_enabled}
+                      onChange={(e) => setPolymarket({...polymarket, ai_trading_enabled: e.target.checked})}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-300">🤖 Enable AI trading</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={polymarket.copytrading_enabled}
+                      onChange={(e) => setPolymarket({...polymarket, copytrading_enabled: e.target.checked})}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-300">📊 Enable copytrading leaders</span>
+                  </label>
+                </div>
+
+                <button
+                  onClick={disconnectPolymarket}
+                  className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm"
+                >
+                  Disconnect Account
+                </button>
+              </>
+            )}
+
+            {polymarket.message && (
+              <p className={`text-xs mt-2 ${polymarket.success ? 'text-green-400' : 'text-red-400'}`}>
+                {polymarket.message}
+              </p>
+            )}
           </div>
-        </section>
 
         {/* API Keys Section */}
         <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]" data-tour="api-keys-section">
@@ -924,6 +1102,11 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         {/* Trove API - US & Nigerian Stocks */}
         <div data-tour="trove-section">
           <TroveSettings triggerToast={triggerToast} />
+        </div>
+
+        {/* AKShare - Chinese Stocks */}
+        <div data-tour="akshare-section">
+          <AKShareSettings triggerToast={triggerToast} />
         </div>
 
         {/* Currency Toggle - USD/NGN */}
@@ -972,16 +1155,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         {/* Market Data Providers */}
         <div data-tour="market-data-section">
           <MarketDataSection marketData={marketData} setMarketData={setMarketData} triggerToast={triggerToast} />
-        </div>
-
-        {/* Email Service (SendGrid) */}
-        <div data-tour="email-section">
-          <EmailServiceSection email={sendgrid} setEmail={setSendgrid} triggerToast={triggerToast} />
-        </div>
-
-        {/* Discord Bot */}
-        <div data-tour="discord-section">
-          <DiscordBotSection discord={discordBot} setDiscord={setDiscordBot} triggerToast={triggerToast} />
         </div>
 
         {/* Auto-Payout Settings */}
@@ -1205,7 +1378,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
             <Save className="w-5 h-5" /> Save All Settings
           </button>
         </div>
-      </div>
+      </section>
+    </div>
 
       {/* System Status Panel */}
       <CollapsibleSection

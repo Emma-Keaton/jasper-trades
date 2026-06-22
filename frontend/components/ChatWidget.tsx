@@ -35,7 +35,10 @@ export default function ChatWidget() {
 
   const fetchHistory = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/v1/whatsapp/history?limit=20`);
+      // Get device ID from localStorage or generate one
+      const deviceId = localStorage.getItem('device_id') || 'web-user';
+      
+      const res = await fetch(`${API_URL}/api/v1/chat/history?device_id=${deviceId}&limit=20`);
       if (res.ok) {
         const data = await res.json();
         setMessages(data.messages || []);
@@ -60,12 +63,17 @@ export default function ChatWidget() {
     setIsTyping(true);
 
     try {
-      // Send to backend (which will process with AI and respond)
-      const res = await fetch(`${API_URL}/api/v1/whatsapp/webhook`, {
+      // Get device ID from localStorage
+      const deviceId = localStorage.getItem('device_id') || 'web-user';
+      
+      // Send to backend general chat endpoint
+      const res = await fetch(`${API_URL}/api/v1/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Device-ID': deviceId,
+        },
         body: JSON.stringify({
-          phone: 'user',  // Would use actual phone in production
           message: inputText,
         }),
       });

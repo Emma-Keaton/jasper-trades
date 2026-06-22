@@ -1,6 +1,6 @@
 """
 Trading endpoints - Execute trades, get positions, view history.
-Sends WhatsApp notifications for trade executions
+Sends Telegram notifications for trade executions
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,6 @@ from app.services.valuation_service import ValuationService
 from app.services.circuit_breaker import get_circuit_breaker
 from app.agents import agent_registry
 from app.brokers import broker_registry
-from app.services.whatsapp_service import whatsapp_service
 
 logger = structlog.get_logger(__name__)
 
@@ -141,8 +140,14 @@ async def execute_trade(
             await db.commit()
             await db.refresh(trade)
 
-            # Send WhatsApp notification
-            asyncio.create_task(_send_trade_whatsapp(trade, side, quantity, symbol))
+            # Send Telegram notification (async, non-blocking)
+            from app.config import settings
+            if settings.TELEGRAM_BOT_TOKEN:
+                asyncio.create_task(_send_trade_telegram_notification(
+                    trade, 
+                    "default_device",  # TODO: Get from request headers
+                    db
+                ))
 
             return {
                 "status": "success",
@@ -414,22 +419,43 @@ async def get_trade_details(
     }
 
 
-async def _send_trade_whatsapp(trade: Trade, side: str, quantity: float, symbol: str):
-    """Send WhatsApp notification for executed trade"""
-    if not whatsapp_service.enabled:
+async def _send_trade_telegram_notification(trade: Trade, device_id: str, db: AsyncSession):
+    """Send Telegram notification for executed trade"""
+    from app.services.telegram_bot_service import get_telegram_bot_service
+    from app.models import TelegramUser
+    from sqlalchemy import select
+    import structlog
+    logger = structlog.get_logger(__name__)
+    
+    if not settings.TELEGRAM_BOT_TOKEN:
+        return
+    
+    # Get user's chat_id from database
+    result = await db.execute(
+        select(TelegramUser).where(
+            TelegramUser.device_id == device_id,
+            TelegramUser.is_verified == True,
+            TelegramUser.trade_notifications_enabled == True
+        )
+    )
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        logger.debug(f"No verified Telegram user found for device {device_id[:8]}***")
         return
     
     trade_data = {
-        "action": side.upper(),
-        "symbol": symbol,
-        "shares": quantity,
+        "action": "BUY" if trade.side == "buy" else "SELL",
+        "symbol": trade.symbol,
+        "shares": trade.quantity,
         "price": trade.price or 0,
-        "total": quantity * (trade.price or 0),
+        "total": trade.quantity * (trade.price or 0),
         "agent": trade.agent_name or "AI",
-        "order_type": trade.order_type or "MARKET",
         "timestamp": trade.created_at.strftime("%Y-%m-%d %H:%M") if trade.created_at else "Now"
     }
-    await whatsapp_service.notify_trade_executed(trade_data)
+    
+    bot_service = get_telegram_bot_service(settings.TELEGRAM_BOT_TOKEN)
+    await bot_service.send_trade_notification(user.chat_id, trade_data)
 
 
 @router.get("/brokers/status")

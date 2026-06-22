@@ -1,6 +1,6 @@
 """
 Trade Monitor - Tracks closed trades and stores experiences for learning
-Sends WhatsApp notifications for trade events
+Sends Telegram notifications for trade events
 """
 import structlog
 from datetime import datetime
@@ -11,7 +11,7 @@ from app.database import async_session
 from app.models import Trade
 from app.services.experience_buffer import ExperienceBuffer, Experience
 from app.services.pattern_analyzer import PatternAnalyzer
-from app.services.whatsapp_service import whatsapp_service
+from app.services.telegram_service import telegram_service
 
 logger = structlog.get_logger(__name__)
 

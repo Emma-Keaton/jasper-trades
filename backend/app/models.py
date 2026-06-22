@@ -233,6 +233,16 @@ class DeviceSettings(Base):
     trove_account_id = Column(String, nullable=True)  # Primary Trove account ID
     trove_sandbox = Column(Boolean, default=True)  # True = Sandbox, False = Live
 
+    # AKShare (Chinese stocks - JSON config)
+    # Structure: {
+    #   "enabled": true,
+    #   "paper_trading": true,
+    #   "initial_capital": 1000000,
+    #   "currency": "CNY",
+    #   "connected": false
+    # }
+    akshare_config = Column(String, nullable=True)  # JSON string
+
     # Currency preferences
     default_currency = Column(String(3), default="USD")  # "USD" or "NGN"
     currency_conversion_enabled = Column(Boolean, default=True)  # Enable automatic currency conversion
@@ -569,13 +579,13 @@ class TradingCap(Base):
 
 
 class DailySummary(Base):
-    """Daily trade summary for WhatsApp notifications."""
+    """Daily trade summary for Telegram notifications."""
     __tablename__ = "daily_summaries"
 
     id = Column(Integer, primary_key=True)
     portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False)
     device_id = Column(String(255), nullable=False, index=True)  # Device fingerprint for user lookup
-    phone_number = Column(String, nullable=False, index=True)  # WhatsApp number to send summary to
+    chat_id = Column(String, nullable=False, index=True)  # Telegram chat ID to send summary to
     
     # Summary date (the day this summary covers)
     summary_date = Column(String, nullable=False, index=True)  # ISO format: "2026-06-15"
@@ -609,28 +619,28 @@ class DailySummary(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class WhatsappUser(Base):
-    """WhatsApp user configuration."""
-    __tablename__ = "whatsapp_users"
+class TelegramUser(Base):
+    """Telegram user configuration."""
+    __tablename__ = "telegram_users"
 
     id = Column(Integer, primary_key=True)
     device_id = Column(String(255), nullable=False, unique=True, index=True)  # Device fingerprint
-    phone_number = Column(String, nullable=False)  # WhatsApp number (with country code)
-    
+    chat_id = Column(String, nullable=False)  # Telegram chat ID
+
     # Notification preferences
     trade_notifications_enabled = Column(Boolean, default=True)  # Send trade execution alerts
     daily_summary_enabled = Column(Boolean, default=True)  # Send daily summary
     summary_time_wat = Column(String, default="20:00")  # WAT time for daily summary
-    
+
     # Chat preferences
     chat_enabled = Column(Boolean, default=True)  # Enable 2-way chat
     ai_explanations_enabled = Column(Boolean, default=True)  # Allow AI decision explanations
-    
+
     # Status
-    is_verified = Column(Boolean, default=False)  # Phone number verified
+    is_verified = Column(Boolean, default=False)  # Chat ID verified
     verification_code = Column(String, nullable=True)  # Temporary verification code
     verification_expires_at = Column(DateTime, nullable=True)
-    
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_active_at = Column(DateTime, nullable=True)  # Last WhatsApp interaction
+    last_active_at = Column(DateTime, nullable=True)  # Last Telegram interaction

@@ -249,7 +249,7 @@ class SchedulerService:
         """Generate and send daily summaries at 8 PM WAT (7 PM UTC)."""
         try:
             from app.services.daily_summary_service import DailySummaryService
-            from app.models import Portfolio, WhatsappUser
+            from app.models import Portfolio, TelegramUser
             from sqlalchemy import select
 
             db = self.db_session_factory()
@@ -280,9 +280,9 @@ class SchedulerService:
                     summaries_generated += 1
                     
                     # Check if user wants daily summary
-                    user_query = select(WhatsappUser).where(
-                        WhatsappUser.device_id == portfolio.device_id,
-                        WhatsappUser.daily_summary_enabled == True,
+                    user_query = select(TelegramUser).where(
+                        TelegramUser.device_id == portfolio.device_id,
+                        TelegramUser.daily_summary_enabled == True,
                     )
                     user_result = await db.execute(user_query)
                     user = user_result.scalar_one_or_none()

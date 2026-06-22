@@ -1,120 +1,119 @@
 """
-WhatsApp Chat + Configuration API
-Receive messages, process with AI, send responses
-Configure and test WhatsApp notifications
+General Chat API - AI-powered assistant
+Answers questions about portfolio, trades, signals using real backend data
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional, List
 import structlog
 from datetime import datetime
+from sqlalchemy import select
 
 from app.database import get_db
-from app.models import ChatMessage
-from app.services.whatsapp_service import whatsapp_service
-from app.services.chat_ai import get_chat_ai
+from app.models import ChatMessage, Portfolio, Trade, Position, TelegramUser
+from app.nvidia_nim import nvidia_client
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-class WebhookMessage(BaseModel):
-    """Incoming WhatsApp message from OpenWA webhook."""
-    phone: str
+class ChatRequest(BaseModel):
+    """Chat message request"""
     message: str
-    timestamp: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
     response: str
-    success: bool = True
+    intent: Optional[str] = None
 
 
-class WhatsAppConfig(BaseModel):
-    phone_number: str
-    enabled: bool = True
-    openwa_url: Optional[str] = "http://localhost:3001"
+class ChatHistoryResponse(BaseModel):
+    messages: List[dict]
+    count: int
 
 
-class TestMessageRequest(BaseModel):
-    message: str = "Test message from Jasper Trades"
-
-
-@router.post("/webhook")
-async def whatsapp_webhook(
-    data: WebhookMessage,
+@router.post("/", response_model=ChatResponse)
+async def chat_message(
+    request: ChatRequest,
+    device_id: str = Header(None, alias="X-Device-ID"),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Receive incoming WhatsApp message from OpenWA.
-    This endpoint is called by OpenWA when a message arrives.
+    Process chat message from user.
+    Fetches real portfolio, trades, and signals data based on intent.
     """
-    logger.info(f"WhatsApp webhook received", phone=data.phone, message=data.message[:50])
+    if not device_id:
+        device_id = "anonymous"
+    
+    logger.info(f"Chat received from {device_id}", message=request.message[:50])
 
     try:
         # Store incoming message
         chat_msg = ChatMessage(
-            phone_number=data.phone,
-            message=data.message,
+            phone_number=device_id,
+            message=request.message,
             direction="incoming",
             message_type="text",
         )
         db.add(chat_msg)
         await db.commit()
 
-        # Get AI response
-        chat_ai = get_chat_ai(db)
-        response_text = await chat_ai.handle_message(data.phone, data.message)
+        # Detect intent and fetch real data
+        intent = detect_intent(request.message)
+        logger.info(f"Detected intent: {intent}")
+
+        # Route to handler based on intent
+        if intent == "portfolio":
+            response_text = await handle_portfolio_intent(device_id, db)
+        elif intent == "trades":
+            response_text = await handle_trades_intent(device_id, db)
+        elif intent == "signals":
+            response_text = await handle_signals_intent(device_id, db)
+        elif intent == "balance":
+            response_text = await handle_balance_intent(device_id, db)
+        else:
+            # General AI chat using NVIDIA NIM
+            response_text = await handle_general_chat(request.message, device_id, db)
 
         # Store AI response
-        ai_msg = ChatMessage(
-            phone_number=data.phone,
+        ai_response = ChatMessage(
+            phone_number=device_id,
             message=response_text,
             direction="outgoing",
             message_type="ai_response",
-            intent=chat_ai._detect_intent(data.message),
+            intent=intent,
         )
-        db.add(ai_msg)
+        db.add(ai_response)
         await db.commit()
 
-        # Send response via WhatsApp
-        success = await whatsapp_service.send_message(data.phone, response_text)
-
-        if success:
-            return {"success": True, "response": response_text}
-        else:
-            logger.error("Failed to send WhatsApp response")
-            return {"success": False, "error": "Failed to send message"}
+        return ChatResponse(response=response_text, intent=intent)
 
     except Exception as e:
-        logger.error(f"WhatsApp webhook error: {e}")
+        logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
 
 
-@router.get("/history")
+@router.get("/history", response_model=ChatHistoryResponse)
 async def get_chat_history(
-    phone: Optional[str] = None,
+    device_id: Optional[str] = None,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get chat history."""
-    from sqlalchemy import select
-
+    """Get chat history for device."""
     query = select(ChatMessage).order_by(ChatMessage.created_at.desc()).limit(limit)
 
-    if phone:
-        query = query.where(ChatMessage.phone_number == phone)
+    if device_id:
+        query = query.where(ChatMessage.phone_number == device_id)
 
     result = await db.execute(query)
-    messages = list(result.scalars().all())
+    messages = result.scalars().all()
 
-    return {
-        "messages": [
+    return ChatHistoryResponse(
+        messages=[
             {
                 "id": m.id,
-                "phone": m.phone_number,
                 "message": m.message,
                 "direction": m.direction,
                 "type": m.message_type,
@@ -122,114 +121,232 @@ async def get_chat_history(
             }
             for m in messages
         ],
-        "count": len(messages),
-    }
-
-
-@router.post("/send")
-async def send_chat_message(
-    phone: str,
-    message: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """Send a WhatsApp message (manual or programmatic)."""
-    try:
-        # Store message
-        chat_msg = ChatMessage(
-            phone_number=phone,
-            message=message,
-            direction="outgoing",
-            message_type="text",
-        )
-        db.add(chat_msg)
-        await db.commit()
-
-        # Send via WhatsApp service
-        success = await whatsapp_service.send_message(phone, message)
-
-        return {
-            "success": success,
-            "message": "Message sent" if success else "Failed to send",
-        }
-
-    except Exception as e:
-        logger.error(f"Send message error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/config")
-async def get_config():
-    """Get WhatsApp configuration."""
-    return whatsapp_service.get_status()
-
-
-@router.delete("/clear/{phone}")
-async def clear_chat_history(
-    phone: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """Clear chat history for a phone number."""
-    from sqlalchemy import delete
-
-    stmt = delete(ChatMessage).where(ChatMessage.phone_number == phone)
-    await db.execute(stmt)
-    await db.commit()
-
-    return {"success": True, "message": f"Cleared history for {phone}"}
-
-
-# ============ Legacy Configuration Endpoints ============
-
-@router.get("/status")
-async def get_whatsapp_status():
-    """Get WhatsApp notification status"""
-    return whatsapp_service.get_status()
-
-
-@router.post("/configure")
-async def configure_whatsapp(config: WhatsAppConfig):
-    """Configure WhatsApp (legacy - use /api/v1/settings/notifications/whatsapp/configure)"""
-    if not config.phone_number or len(config.phone_number) < 7:
-        raise HTTPException(status_code=400, detail="Invalid phone number")
-
-    whatsapp_service.configure(
-        phone_number=config.phone_number,
-        enabled=config.enabled,
-        openwa_url=config.openwa_url
+        count=len(messages),
     )
 
-    return {
-        "success": True,
-        "message": "WhatsApp configured successfully",
-        "phone_number": whatsapp_service.phone_number[:5] + "***"
-    }
+
+# ============ REAL Intent Handlers ============
+
+def detect_intent(message: str) -> str:
+    """Detect user intent from message"""
+    msg_lower = message.lower()
+    
+    if any(word in msg_lower for word in ['portfolio', 'holdings', 'positions', 'balance']):
+        return "portfolio"
+    if any(word in msg_lower for word in ['trades', 'bought', 'sold', 'bought', 'transactions']):
+        return "trades"
+    if any(word in msg_lower for word in ['signal', 'buy', 'sell', 'recommend', 'should i']):
+        return "signals"
+    if any(word in msg_lower for word in ['pnl', 'profit', 'loss', 'return', 'performance']):
+        return "balance"
+    
+    return "general"
 
 
-@router.post("/test")
-async def test_whatsapp(request: Optional[TestMessageRequest] = None):
-    """Send test WhatsApp message"""
-    if not whatsapp_service.enabled or not whatsapp_service.phone_number:
-        raise HTTPException(status_code=400, detail="WhatsApp not configured")
+async def handle_portfolio_intent(device_id: str, db: AsyncSession) -> str:
+    """Handle portfolio query - fetches REAL data"""
+    from app.services.portfolio_service import PortfolioService
+    
+    portfolio_service = PortfolioService(db)
+    
+    # Get user's portfolio
+    portfolios = await portfolio_service.get_portfolios()
+    if not portfolios:
+        return "📊 *Portfolio Not Found*\n\nYou don't have any portfolios yet. Create one to start trading!"
+    
+    portfolio = portfolios[0]  # Use first portfolio
+    summary = await portfolio_service.get_portfolio_summary(portfolio.id)
+    
+    # Get positions
+    positions = await portfolio_service.get_all_positions(portfolio.id)
+    
+    # Format response
+    holdings_text = "\n".join([
+        f"• {p.symbol}: {p.quantity} @ ${p.average_entry_price:.2f}"
+        for p in positions[:10]  # Show top 10
+    ]) if positions else "No open positions"
+    
+    total_value = summary.get('total_value', 0)
+    cash = summary.get('cash', 0)
+    pnl = summary.get('unrealized_pnl', 0)
+    pnl_percent = summary.get('unrealized_pnl_percent', 0)
+    
+    emoji = "✅" if pnl >= 0 else "❌"
+    
+    return (
+        f"💼 *Your Portfolio*\n\n"
+        f"{emoji} Total Value: **${total_value:,.2f}**\n"
+        f"💵 Cash: ${cash:,.2f}\n"
+        f"📈 Positions: {len(positions)}\n"
+        f"📊 PnL: ${pnl:+,.2f} ({pnl_percent:+.2f}%)\n\n"
+        f"*Holdings:*\n{holdings_text}\n\n"
+        f"Data as of {datetime.utcnow().strftime('%H:%M UTC')}"
+    )
 
-    success = await whatsapp_service.test_connection()
-    if success:
-        return {"success": True, "message": "Test message sent!"}
-    else:
-        raise HTTPException(status_code=500, detail="Failed to send test message")
+
+async def handle_trades_intent(device_id: str, db: AsyncSession) -> str:
+    """Handle trades query - fetches REAL data"""
+    from app.services.portfolio_service import PortfolioService
+    
+    portfolio_service = PortfolioService(db)
+    
+    # Get user's portfolio
+    portfolios = await portfolio_service.get_portfolios()
+    if not portfolios:
+        return "📜 *No Trades*\nYou don't have any portfolios yet."
+    
+    portfolio = portfolios[0]
+    
+    # Get recent trades (last 20)
+    from sqlalchemy import select
+    result = await db.execute(
+        select(Trade)
+        .where(Trade.portfolio_id == portfolio.id)
+        .order_by(Trade.created_at.desc())
+        .limit(20)
+    )
+    trades = list(result.scalars().all())
+    
+    if not trades:
+        return "📜 *Recent Trades*\n\nNo trades yet. Ready to make your first trade!"
+    
+    # Format recent trades
+    trades_text = "\n".join([
+        f"{'✅' if t.status == 'FILLED' else '⏳'} {t.action} {t.quantity} {t.symbol} @ ${t.avg_execution_price:.2f} - ${t.quantity * t.avg_execution_price:.2f} ({t.status})"
+        for t in trades[:10]  # Show last 10
+    ])
+    
+    total_trades = len(trades)
+    filled_trades = sum(1 for t in trades if t.status == 'FILLED')
+    
+    return (
+        f"📜 *Recent Trades (Last 24h)*\n\n"
+        f"{trades_text}\n\n"
+        f"Total: {total_trades} trades ({filled_trades} filled)"
+    )
 
 
-@router.post("/disable")
-async def disable_whatsapp():
-    """Disable WhatsApp notifications"""
-    whatsapp_service.configure(phone_number=whatsapp_service.phone_number, enabled=False)
-    return {"success": True, "message": "WhatsApp notifications disabled"}
+async def handle_signals_intent(device_id: str, db: AsyncSession) -> str:
+    """Handle signals query - fetches REAL signals"""
+    from app.services.signal_service import SignalService
+    
+    signal_service = SignalService()
+    
+    # Get active signals (this would need DB too but simplified for now)
+    from sqlalchemy import select
+    from app.models import Signal
+    
+    result = await db.execute(
+        select(Signal)
+        .where(Signal.status == 'active')
+        .order_by(Signal.created_at.desc())
+        .limit(10)
+    )
+    signals = list(result.scalars().all())
+    
+    if not signals:
+        return (
+            "📡 *Market Signals*\n\n"
+            f"No active signals right now.\n\n"
+            f"🤖 AI is analyzing markets 24/7.\n"
+            f"Check back soon for new opportunities!"
+        )
+    
+    # Format signals
+    signals_text = "\n".join([
+        f"{'🟢' if s.action == 'BUY' else '🔴'} **{s.symbol}** - {s.action}\n"
+        f"  Confidence: {s.confidence:.0%} | {s.reason[:60]}..."
+        for s in signals[:5]
+    ])
+    
+    return (
+        f"📡 *Active Trading Signals*\n\n"
+        f"{signals_text}\n\n"
+        f"⚠️ These are AI suggestions. Always do your own research!"
+    )
 
 
-@router.post("/enable")
-async def enable_whatsapp():
-    """Enable WhatsApp notifications"""
-    if not whatsapp_service.phone_number:
-        raise HTTPException(status_code=400, detail="No phone number configured")
+async def handle_balance_intent(device_id: str, db: AsyncSession) -> str:
+    """Handle balance/PnL query - fetches REAL data"""
+    from app.services.portfolio_service import PortfolioService
+    
+    portfolio_service = PortfolioService(db)
+    
+    portfolios = await portfolio_service.get_portfolios()
+    if not portfolios:
+        return "📊 *No Portfolio*\n\nCreate a portfolio to track your PnL!"
+    
+    portfolio = portfolios[0]
+    pnl_data = await portfolio_service.get_pnl(portfolio.id)
+    
+    realized_pnl = pnl_data.get('realized_pnl', 0)
+    unrealized_pnl = await portfolio_service.get_unrealized_pnl(portfolio.id)
+    total_pnl = realized_pnl + unrealized_pnl
+    
+    emoji = "✅" if total_pnl >= 0 else "❌"
+    
+    return (
+        f"📊 *Your Performance*\n\n"
+        f"{emoji} Total PnL: **${total_pnl:+,.2f}**\n\n"
+        f"💰 Realized: ${realized_pnl:+,.2f}\n"
+        f"📈 Unrealized: ${unrealized_pnl:+,.2f}\n\n"
+        f"Keep up the great work! 🚀"
+    )
 
-    whatsapp_service.configure(phone_number=whatsapp_service.phone_number, enabled=True)
-    return {"success": True, "message": "WhatsApp notifications enabled"}
+
+async def handle_general_chat(message: str, device_id: str, db: AsyncSession) -> str:
+    """Handle general chat using NVIDIA NIM AI"""
+    
+    # Use NVIDIA NIM for real AI responses
+    try:
+        # Build context-aware prompt
+        context = f"""You are Jasper Trades AI assistant. Help users with trading questions.
+
+User message: {message}
+
+Provide helpful, accurate responses about:
+- Portfolio management
+- Trading strategies  
+- Market analysis
+- Risk management
+
+Be concise and friendly. Use emojis where appropriate."""
+        
+        response = await nvidia_client.chat(
+            model="meta/llama-3.3-70b-instruct",
+            messages=[{"role": "user", "content": context}],
+            temperature=0.7,
+            max_tokens=500,
+        )
+        
+        return response.get('choices', [{}])[0].get('message', {}).get('content', str(response))
+        
+    except Exception as e:
+        logger.error(f"NVIDIA NIM error: {e}")
+        
+        # Fallback to simple keyword responses
+        if "hello" in message.lower() or "hi" in message.lower():
+            return "👋 Hello! I'm your Jasper Trades AI assistant. Ask me about your portfolio, trades, or market analysis!"
+        
+        if "thank" in message.lower():
+            return "You're welcome! Happy trading! 📈"
+        
+        if "help" in message.lower():
+            return (
+                "📖 *How I can help:*\n\n"
+                f"• Ask about your portfolio: \"What's my balance?\"\n"
+                f"• Check trades: \"Show me recent trades\"\n"
+                f"• Get signals: \"Should I buy AAPL?\"\n"
+                f"• Check PnL: \"What's my profit/loss?\"\n\n"
+                f"Just ask naturally!"
+            )
+        
+        return (
+            f"Thanks for your message!\n\n"
+            f"I'm processing your request. For specific queries, try:\n"
+            f"• \"Show my portfolio\"\n"
+            f"• \"What trades did I make today?\"\n"
+            f"• \"Give me a trading signal for AAPL\"\n"
+            f"• \"What's my PnL?\""
+        )
+

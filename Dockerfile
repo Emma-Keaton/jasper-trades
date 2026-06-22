@@ -1,10 +1,10 @@
-# Unified Dockerfile - Backend + Frontend + OpenWA (Monorepo)
+# Unified Dockerfile - Backend + Frontend (Monorepo)
 # For split deployment: Backend on Render, Frontend on Vercel
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies (Python + Node.js + Chromium for OpenWA)
+# Install system dependencies (Python + Node.js)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
@@ -15,23 +15,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
-    # Chromium dependencies for OpenWA
-    && apt-get install -y \
-        chromium \
-        libnss3 \
-        libatk-bridge2.0-0 \
-        libdrm2 \
-        libxkbcommon0 \
-        libxcomposite1 \
-        libxdamage1 \
-        libxfixes3 \
-        libxrandr2 \
-        libgbm1 \
-        libasound2 \
-        libpango-1.0-0 \
-        libcairo2 \
     && rm -rf /var/lib/apt/lists/* \
-    && chromium --version
+    && node --version
 
 # Install Python dependencies
 COPY backend/requirements.txt /app/
@@ -45,15 +30,6 @@ RUN mkdir -p /app/backend/data/sqlite /app/backend/data/logs /app/backend/data/m
 
 # Create empty static folder (frontend served separately on Vercel)
 RUN mkdir -p /app/backend/static && echo "Backend-only mode - frontend served on Vercel" > /app/backend/static/index.html
-
-# Install OpenWA for WhatsApp notifications
-RUN echo "Installing OpenWA for WhatsApp..." \
-    && cd backend \
-    && npm init -y \
-    && npm install @open-wa/wa-automate --legacy-peer-deps --no-audit --no-fund \
-    && cd .. \
-    && echo "✅ OpenWA installed" \
-    && ls -la backend/node_modules/@open-wa/
 
 # Expose port (use PORT env variable from Render)
 EXPOSE 8080

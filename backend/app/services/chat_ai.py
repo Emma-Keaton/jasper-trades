@@ -1,6 +1,6 @@
 """
 Chat AI Service
-Conversational AI assistant for WhatsApp chat
+Conversational AI assistant for Telegram chat
 Handles user queries about portfolio, trades, risk, and market
 
 Enhanced with:
@@ -17,7 +17,7 @@ import re
 
 from app.nvidia_nim import nvidia_client
 from app.services.portfolio_service import PortfolioService
-from app.services.whatsapp_service import whatsapp_service
+from app.services.telegram_service import telegram_service
 
 logger = structlog.get_logger(__name__)
 
@@ -46,7 +46,7 @@ class ChatAI:
 
     async def handle_message(self, phone: str, text: str) -> str:
         """
-        Handle incoming WhatsApp message.
+        Handle incoming Telegram message.
 
         Args:
             phone: User's phone number

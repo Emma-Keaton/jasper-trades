@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Key, CheckCircle, AlertCircle, Loader2, ExternalLink, Shield } from 'lucide-react';
+import { Key, CheckCircle, AlertCircle, Loader2, ExternalLink, Shield, CheckCircle2, XCircle } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -28,6 +28,7 @@ export default function TroveSettings({ triggerToast }: TroveSettingsProps) {
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'checking' | 'connected'>('disconnected');
 
   const getDeviceId = () => {
     let deviceId = localStorage.getItem('device_id');
@@ -58,9 +59,30 @@ export default function TroveSettings({ triggerToast }: TroveSettingsProps) {
           trove_sandbox: data.trove_sandbox ?? true,
           trove_base_url: data.trove_base_url || 'https://sandbox.api.trovefinance.com/v1',
         }));
+        
+        // Check backend connectivity when enabled
+        if (data.trove_enabled && data.trove_api_key) {
+          setConnectionStatus('checking');
+          try {
+            const testRes = await fetch(`${API_URL}/api/v1/trove/status`, {
+              headers: { 'X-Device-ID': deviceId },
+            });
+            if (testRes.ok) {
+              const test = await testRes.json();
+              setConnectionStatus(test.connected ? 'connected' : 'disconnected');
+            } else {
+              setConnectionStatus('disconnected');
+            }
+          } catch {
+            setConnectionStatus('disconnected');
+          }
+        } else {
+          setConnectionStatus('disconnected');
+        }
       }
     } catch (e) {
       console.error('Failed to load Trove settings:', e);
+      setConnectionStatus('disconnected');
     } finally {
       setLoading(false);
     }

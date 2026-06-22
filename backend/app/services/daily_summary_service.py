@@ -10,8 +10,8 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import DailySummary, WhatsappUser, Trade, Portfolio
-from app.services.whatsapp_service import whatsapp_service
+from app.models import DailySummary, TelegramUser, Trade, Portfolio
+from app.services.telegram_service import telegram_service
 
 logger = structlog.get_logger(__name__)
 
@@ -80,22 +80,22 @@ class DailySummaryService:
         if stats['total_trades'] == 0:
             return None
         
-        # Get user's WhatsApp number
-        user_query = select(WhatsappUser).where(
-            WhatsappUser.device_id == device_id
+        # Get user's Telegram chat ID
+        user_query = select(TelegramUser).where(
+            TelegramUser.device_id == device_id
         )
         user_result = await self.db.execute(user_query)
         user = user_result.scalar_one_or_none()
         
-        if not user or not user.phone_number:
-            logger.warning(f"No WhatsApp user found for device {device_id}")
+        if not user or not user.chat_id:
+            logger.warning(f"No Telegram user found for device {device_id}")
             return None
         
         # Create summary record
         summary = DailySummary(
             portfolio_id=portfolio_id,
             device_id=device_id,
-            phone_number=user.phone_number,
+            chat_id=user.chat_id,
             summary_date=date,
             total_pnl=stats['total_pnl'],
             total_pnl_percent=stats['total_pnl_percent'],
@@ -234,7 +234,7 @@ class DailySummaryService:
     
     async def send_summary(self, summary: DailySummary) -> bool:
         """
-        Send daily summary via WhatsApp.
+        Send daily summary via Telegram.
         
         Args:
             summary: DailySummary object
@@ -242,7 +242,7 @@ class DailySummaryService:
         Returns:
             True if sent successfully
         """
-        if not summary.phone_number:
+        if not summary.chat_id:
             logger.error("No phone number in summary")
             return False
         
@@ -250,7 +250,7 @@ class DailySummaryService:
         message = self._format_summary_message(summary)
         
         # Send via WhatsApp
-        success = await whatsapp_service.send_message(summary.phone_number, message)
+        success = await telegram_service.send_daily_summary(summary.chat_id, message)
         
         if success:
             # Update summary record
@@ -261,7 +261,7 @@ class DailySummaryService:
             logger.info(
                 f"Daily summary sent",
                 summary_id=summary.id,
-                phone=summary.phone_number[:5] + "***"
+                phone=summary.chat_id[:5] + "***"
             )
         else:
             logger.error(f"Failed to send daily summary", summary_id=summary.id)

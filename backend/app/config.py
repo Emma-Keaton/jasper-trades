@@ -67,9 +67,22 @@ class Settings(BaseSettings):
     # Copy Trading
     GITHUB_TOKEN: Optional[str] = None
 
-    # Security
-    SECRET_KEY: str = "change-this-in-production"
-    API_AUTH_KEY: str = "jasper-auth-key-change-me"
+    # Security - CRITICAL: Must be changed in production
+    SECRET_KEY: str = "change-this-in-production"  # Generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
+    API_AUTH_KEY: str = "jasper-auth-key-change-me"  # Generate secure random key for production
+    
+    # Environment
+    ENVIRONMENT: str = "development"  # "development" | "production"
+    
+    # Rate Limiting (Production Security)
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60
+    RATE_LIMIT_BURST: int = 100
+    
+    # Security Headers
+    SECURITY_HSTS_ENABLED: bool = True
+    SECURE_COOKIES: bool = True
+    CSRF_PROTECTION_ENABLED: bool = False  # Enable when frontend implements CSRF tokens
 
     # CORS - Frontend URLs
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:8080"
@@ -101,6 +114,9 @@ class Settings(BaseSettings):
 
     # WhatsApp Integration - Use database settings
     WHATSAPP_SERVICE_URL: str = "http://localhost:2785"  # Default OpenWA URL
+
+    # Telegram Bot
+    TELEGRAM_BOT_TOKEN: Optional[str] = None  # Bot token from BotFather
 
     @property
     def cors_origins_list(self) -> List[str]:

@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 import structlog
 
-from app.services.whatsapp_service import whatsapp_service
+from app.services.telegram_service import telegram_service
 from app.api.websocket.streams import publish_risk_update
 
 logger = structlog.get_logger(__name__)
@@ -41,7 +41,7 @@ class CircuitBreakerService:
     
     Actions:
     - Blocks trade executions when halted
-    - Sends WhatsApp alerts on state changes
+    - Sends Telegram alerts on state changes
     - Logs all halt/resume events
     """
     
@@ -139,7 +139,7 @@ class CircuitBreakerService:
             triggered_by=self.halted_by,
         )
         
-        # Send WhatsApp alert
+        # Send Telegram alert
         import asyncio
         asyncio.create_task(self._send_halt_alert(reason))
         
@@ -163,7 +163,7 @@ class CircuitBreakerService:
         
         logger.info("Circuit breaker RESUMED - trading allowed")
         
-        # Send WhatsApp alert
+        # Send Telegram alert
         import asyncio
         asyncio.create_task(self._send_resume_alert())
         
@@ -235,7 +235,7 @@ class CircuitBreakerService:
         }
     
     async def _send_halt_alert(self, reason: str):
-        """Send WhatsApp alert on trading halt."""
+        """Send Telegram alert on trading halt."""
         message = (
             f"⚠️ *TRADING HALTED*\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -247,10 +247,10 @@ class CircuitBreakerService:
             f"Trading will remain halted until manual override."
         )
         
-        await whatsapp_service.send_message(message, "⚠️ TRADING HALTED")
+        await telegram_service.send_message(message, "⚠️ TRADING HALTED")
     
     async def _send_resume_alert(self):
-        """Send WhatsApp alert on trading resume."""
+        """Send Telegram alert on trading resume."""
         message = (
             f"✅ *TRADING RESUMED*\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -260,7 +260,7 @@ class CircuitBreakerService:
             f"⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC"
         )
         
-        await whatsapp_service.send_message(message, "✅ RESUMED")
+        await telegram_service.send_message(message, "✅ RESUMED")
     
     async def _broadcast_state_change(self, old_state: CircuitState):
         """Broadcast state change to WebSocket clients."""

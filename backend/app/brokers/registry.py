@@ -6,6 +6,7 @@ Supports:
 - cTrader: Forex, CFDs (OAuth copy-trading)
 - CCXT (Binance): Crypto
 - Solana: DeFi, Solana tokens
+- AKShare: Chinese A-shares and B-shares
 """
 from typing import Dict, Any, Optional, List, Type
 import structlog
@@ -15,6 +16,7 @@ from app.brokers.ccxt_service import CCXTBrokerService
 from app.brokers.solana_service import SolanaBrokerService
 from app.brokers.ctrader_service import CTraderBrokerService
 from app.brokers.trove_service import TroveBrokerService
+from app.brokers.akshare_service import AKShareBrokerService
 
 logger = structlog.get_logger(__name__)
 
@@ -210,6 +212,21 @@ def initialize_brokers(config: Optional[Dict[str, Any]] = None) -> BrokerRegistr
         except Exception as e:
             logger.warning(f"Failed to initialize Trove: {e}")
 
+    # Initialize AKShare (Chinese A-shares/B-shares)
+    # Enabled by default for paper trading
+    if config.get("akshare", {}).get("enabled", True):  # Enabled by default
+        try:
+            akshare_config = config.get("akshare", {})
+            akshare = AKShareBrokerService(
+                paper_trading=akshare_config.get("paper_trading", True),
+                initial_capital=akshare_config.get("initial_capital", 1000000.0),
+                currency=akshare_config.get("currency", "CNY")
+            )
+            registry.register("akshare", akshare)
+            logger.info("Initialized AKShare broker service (paper trading)")
+        except Exception as e:
+            logger.warning(f"Failed to initialize AKShare: {e}")
+
     return registry
 
 
@@ -287,6 +304,8 @@ def get_broker_for_symbol(symbol: str) -> Optional[BaseBrokerService]:
 
     Symbol Patterns:
     - AAPL, TSLA, DANGCEM.LAGOS → Trove (stocks)
+    - 600000, 000001, 688xxx, 300xxx → AKShare (China A-shares)
+    - 900xxx, 200xxx → AKShare (China B-shares)
     - GBPUSD, EURUSD → cTrader (forex)
     - BTC/USDT, ETHUSDT → Binance (crypto)
     - SOL, USDC → Solana (DeFi)
@@ -298,6 +317,17 @@ def get_broker_for_symbol(symbol: str) -> Optional[BaseBrokerService]:
         Appropriate broker instance
     """
     symbol_upper = symbol.upper()
+
+    # Chinese stocks - 6 digit codes
+    if symbol.isdigit() and len(symbol) == 6:
+        if symbol.startswith(("600", "601", "603", "605", "688")):  # SSE
+            return broker_registry.get("akshare")
+        elif symbol.startswith(("000", "001", "002", "003", "300", "301")):  # SZSE
+            return broker_registry.get("akshare")
+        elif symbol.startswith(("900",)):  # SSE B-shares
+            return broker_registry.get("akshare")
+        elif symbol.startswith(("200",)):  # SZSE B-shares
+            return broker_registry.get("akshare")
 
     # Forex pairs (6 characters, e.g., GBPUSD)
     if len(symbol_upper) == 6 and symbol_upper.endswith(("USD", "NGN", "EUR", "GBP", "JPY")):

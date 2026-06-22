@@ -33,7 +33,7 @@ The migration system:
 
 **Columns Added to `device_settings`:**
 - Market data APIs (alphavantage, finnhub, twelvedata, etc.)
-- Notification configs (discord, slack, email, telegram, whatsapp)
+- Notification configs (discord, slack, email, telegram, telegram)
 - Email service (sendgrid)
 - Discord bot config
 - Tatum API key for payouts

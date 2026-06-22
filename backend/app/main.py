@@ -26,7 +26,6 @@ from app.nvidia_nim import nvidia_client
 from app.brokers import broker_registry, initialize_brokers
 from app.services import init_scheduler, get_scheduler
 from app.services.market_data_service import market_data_service
-from app.services.embedded_openwa import embedded_openwa, get_embedded_openwa
 from app.services.forex_polling_service import start_forex_polling, stop_forex_polling
 
 # Kronos integration (optional - 4GB RAM optimized)
@@ -39,18 +38,24 @@ except ImportError:
     configure_torch_cpu = lambda: None  # type: ignore
 
 # Import API routes
-from app.api.v1 import trading, agents, signals, portfolio, health, system, learning, risk, circuit_breaker, chat
+from app.api.v1 import trading, agents, signals, portfolio, health, system, learning, risk, circuit_breaker
 from app.api.websocket import streams as websocket_streams
 from app.api.v1 import settings as api_settings_router
 from app.api.v1 import alpha_factors, backtest, withdrawal, symbols
 from app.api.v1 import heartbeat, polymarket, debate, ensemble, swarm, quantlib, checkpoint, notify
 from app.api.v1 import trading_caps
 from app.api.v1 import settings_extensions
-from app.api.v1 import whatsapp_settings
+from app.api.v1 import telegram_settings
+from app.api.v1 import telegram_webhook
+from app.api.v1 import telegram_chat
+from app.api.v1 import telegram_bot_data
 from app.api.v1 import broker_connections
 from app.api.v1 import copytrade
 from app.api.v1 import forex  # Trove forex conversion
 from app.api.v1 import banks  # Nigerian bank list
+from app.api.v1 import trove  # Trove stocks
+from app.api.v1 import akshare  # AKShare Chinese stocks
+from app.api.v1 import akshare_settings  # AKShare settings
 
 # cTrader OAuth token refresh scheduler
 try:
@@ -161,17 +166,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Market data service startup failed: {e}")
 
-    # Start embedded OpenWA (WhatsApp notifications + chat)
-    try:
-        openwa_started = await embedded_openwa.start()
-        if openwa_started:
-            logger.info(f"Embedded OpenWA started on port {embedded_openwa.port}")
-        else:
-            logger.warning("OpenWA not started. To enable WhatsApp: npm install @open-wa/wa-automate")
-    except Exception as e:
-        logger.warning(f"Embedded OpenWA startup failed: {e}")
+    # Start Telegram Bot (Notifications + 2-Way Chat)
+    if settings.TELEGRAM_BOT_TOKEN:
+        try:
+            from app.services.telegram_bot_service import get_telegram_bot_service
+            bot_service = get_telegram_bot_service(settings.TELEGRAM_BOT_TOKEN)
+            await bot_service.initialize()
+            
+            # Start polling in background (for local dev)
+            asyncio.create_task(bot_service.start_polling())
+            logger.info(f"Telegram Bot started (long polling mode) - @{bot_service.bot.username}")
+        except Exception as e:
+            logger.warning(f"Telegram Bot startup failed: {e}")
+    else:
+        logger.warning("TELEGRAM_BOT_TOKEN not set - Telegram bot disabled")
 
-    # Start auto-payout scheduler (background task for 50% daily profit payouts)
+    # Start auto-payout scheduler
     try:
         from app.services.payout_scheduler import payout_scheduler
         await payout_scheduler.start()
@@ -195,10 +205,34 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Forex polling service startup failed: {e}")
 
+    # Start Telegram Bot
+    if settings.TELEGRAM_BOT_TOKEN:
+        try:
+            from app.services.telegram_bot_service import get_telegram_bot_service
+            bot_service = get_telegram_bot_service(settings.TELEGRAM_BOT_TOKEN)
+            await bot_service.initialize()
+            
+            # Start polling in background (for local dev)
+            asyncio.create_task(bot_service.start_polling())
+            logger.info(f"Telegram Bot started (long polling mode) - @{bot_service.bot.username}")
+        except Exception as e:
+            logger.warning(f"Telegram Bot startup failed: {e}")
+    else:
+        logger.warning("TELEGRAM_BOT_TOKEN not set - Telegram bot disabled")
+
     yield
 
     # Shutdown
     logger.info("Shutting down Jasper Trades...")
+
+    # Stop Telegram Bot
+    try:
+        from app.services.telegram_bot_service import telegram_bot_service
+        if telegram_bot_service and telegram_bot_service.running:
+            await telegram_bot_service.stop_polling()
+            logger.info("Telegram Bot stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping Telegram Bot: {e}")
 
     # Stop scheduler
     if get_scheduler():
@@ -217,12 +251,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Error stopping payout scheduler: {e}")
 
-    # Stop embedded OpenWA
+    # Stop Telegram Bot
     try:
-        await embedded_openwa.stop()
-        logger.info("Embedded OpenWA stopped")
+        from app.services.telegram_bot_service import telegram_bot_service
+        if telegram_bot_service and telegram_bot_service.running:
+            await telegram_bot_service.stop_polling()
+            logger.info("Telegram Bot stopped")
     except Exception as e:
-        logger.warning(f"Error stopping OpenWA: {e}")
+        logger.warning(f"Error stopping Telegram Bot: {e}")
 
     # Stop forex polling service
     try:
@@ -261,6 +297,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Rate limiting middleware (Production security)
+try:
+    from app.middleware.rate_limiter import RateLimitMiddleware
+    app.add_middleware(
+        RateLimitMiddleware,
+        requests_per_minute=settings.RATE_LIMIT_REQUESTS_PER_MINUTE,
+        burst=settings.RATE_LIMIT_BURST,
+        enabled=settings.RATE_LIMIT_ENABLED,
+    )
+    logger.info("Rate limiting middleware enabled")
+except Exception as e:
+    logger.warning(f"Rate limiting middleware not available: {e}")
+
 # Include routers
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(trading.router, prefix="/api/v1/trading", tags=["trading"])
@@ -273,7 +322,13 @@ app.include_router(learning.router, prefix="/api/v1", tags=["self-learning"])
 app.include_router(api_settings_router.router, tags=["settings"])
 app.include_router(withdrawal.router, prefix="/api/v1", tags=["withdrawal"])
 app.include_router(circuit_breaker.router, prefix="/api/v1", tags=["circuit-breaker"])
-app.include_router(chat.router, prefix="/api/v1", tags=["whatsapp"])
+app.include_router(telegram_settings.router, prefix="/api/v1", tags=["telegram-settings"])
+app.include_router(telegram_webhook.router, tags=["telegram-webhook"])
+app.include_router(telegram_chat.router, tags=["telegram-chat"])
+app.include_router(telegram_bot_data.router, tags=["telegram-bot-data"])
+# Old WhatsApp chat router removed - replaced with Telegram
+# app.include_router(chat.router, prefix="/api/v1", tags=["whatsapp"])
+# app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(alpha_factors.router, prefix="/api/v1/alpha-factors", tags=["alpha-factors"])
 app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["backtest"])
 app.include_router(websocket_streams.router, tags=["websocket"])
@@ -287,13 +342,14 @@ app.include_router(checkpoint.router, tags=["checkpoint"])
 app.include_router(notify.router, tags=["notify"])
 app.include_router(trading_caps.router, prefix="/api/v1", tags=["trading-caps"])
 app.include_router(settings_extensions.router, prefix="/api/v1", tags=["settings-extensions"])
-app.include_router(whatsapp_settings.router, prefix="/api/v1", tags=["whatsapp-settings"])
 app.include_router(broker_connections.router, prefix="/api/v1", tags=["brokers"])
-app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(copytrade.router, tags=["Copy Trading"])
 app.include_router(forex.router, tags=["forex"])  # Trove forex conversion
 app.include_router(banks.router, prefix="/api/v1", tags=["banks"])  # Nigerian bank list
 app.include_router(symbols.router, prefix="/api/v1", tags=["symbols"])  # Symbol listing (US + NGX)
+app.include_router(trove.router, prefix="/api/v1", tags=["trove"])  # Trove trading
+app.include_router(akshare.router, prefix="/api/v1", tags=["akshare"])  # AKShare Chinese stocks
+app.include_router(akshare_settings.router, tags=["akshare-settings"])  # AKShare settings
 
 
 @app.get("/")
