@@ -10,7 +10,7 @@ from typing import Optional
 import structlog
 
 from app.database import get_db
-from app.services.akshare_service import get_akshare_service
+from app.brokers.akshare_service import AKShareBrokerService
 
 logger = structlog.get_logger(__name__)
 
@@ -31,7 +31,7 @@ async def get_market_data(
     - 688981 (SSE) - SMIC
     """
     try:
-        service = get_akshare_service()
+        service = AKShareBrokerService()
         
         if not service.is_connected:
             await service.connect()
@@ -65,7 +65,7 @@ async def get_historical_data(
         period: daily, weekly, or monthly
     """
     try:
-        service = get_akshare_service()
+        service = AKShareBrokerService()
         
         data = await service.get_historical_data(symbol, start_date, end_date, period)
         
@@ -92,7 +92,7 @@ async def get_symbols(
         exchange: SSE (Shanghai) or SZSE (Shenzhen)
     """
     try:
-        service = get_akshare_service()
+        service = AKShareBrokerService()
         
         # Fetch all symbols via AKShare
         if market.upper() == "A":
@@ -130,7 +130,7 @@ async def get_symbols(
 async def get_status():
     """Get AKShare service status"""
     try:
-        service = get_akshare_service()
+        service = AKShareBrokerService()
         return service.get_status()
     except Exception as e:
         return {"connected": False, "error": str(e)}
@@ -155,7 +155,7 @@ async def submit_order(
         order_type: market or limit
     """
     try:
-        service = get_akshare_service()
+        service = AKShareBrokerService()
         
         # Determine exchange from symbol
         exchange = "SSE" if symbol.startswith(("6", "9")) else "SZSE"
@@ -188,7 +188,7 @@ async def submit_order(
 async def get_portfolio():
     """Get current portfolio (paper trading positions)"""
     try:
-        service = get_akshare_service()
+        service = AKShareBrokerService()
         
         positions = await service.get_positions()
         account_data = await service.get_account_data()
