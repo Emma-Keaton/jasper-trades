@@ -53,7 +53,7 @@ from app.api.v1 import broker_connections
 from app.api.v1 import copytrade
 from app.api.v1 import forex  # Trove forex conversion
 from app.api.v1 import banks  # Nigerian bank list
-from app.api.v1 import trove  # Trove stocks
+# from app.api.v1 import trove  # Trove stocks - module not implemented yet
 from app.api.v1 import akshare  # AKShare Chinese stocks
 from app.api.v1 import akshare_settings  # AKShare settings
 
