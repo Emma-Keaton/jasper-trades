@@ -278,7 +278,7 @@ class AKShareBrokerService(BaseBrokerService):
 
     async def submit_order(
         self,
-        symbol: string,
+        symbol: str,
         side: str,
         quantity: float,
         price: Optional[float] = None,
