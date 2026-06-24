@@ -142,6 +142,45 @@ class AKShareBrokerService(BaseBrokerService):
         self.is_connected = False
         logger.info("AKShare disconnected")
 
+    async def get_account(self) -> AccountData:
+        """Get account balance (alias for get_account_data)."""
+        return await self.get_account_data()
+
+    async def get_clock(self) -> Dict[str, Any]:
+        """Get market trading hours status."""
+        # China stock market hours: 9:30-11:30, 13:00-15:00 CST
+        now = datetime.now()
+        is_open = (
+            now.hour == 9
+            and now.minute >= 30
+            or now.hour == 10
+            or now.hour == 11
+            and now.minute < 30
+            or now.hour == 13
+            or now.hour == 14
+            or now.hour == 15
+            and now.minute < 0
+        )
+        return {
+            "is_open": is_open,
+            "timezone": "Asia/Shanghai",
+            "next_open": "09:30",
+            "next_close": "15:00",
+        }
+
+    async def get_order_status(self, order_id: str) -> Dict[str, Any]:
+        """Get order status (paper trading - always filled)."""
+        return {
+            "order_id": order_id,
+            "status": "filled",
+            "filled_quantity": 0,
+            "message": "Paper trading mode - order simulated",
+        }
+
+    async def get_position(self, symbol: str) -> Optional[PositionData]:
+        """Get specific position."""
+        return self._positions.get(symbol)
+
     async def get_account_data(self) -> AccountData:
         """
         Get account balance and positions.
