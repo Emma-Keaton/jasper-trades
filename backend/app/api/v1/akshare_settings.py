@@ -10,14 +10,14 @@ from typing import Optional
 
 from app.database import get_db
 from app.models import DeviceSettings
-from app.services.encryption import EncryptionService
+from app.services.encryption import EncryptionHelper
 from app.brokers.akshare_service import get_akshare_service
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/settings/akshare", tags=["AKShare Settings"])
 
-encryption = EncryptionService()
+encryption = EncryptionHelper()
 
 
 @router.get("/")

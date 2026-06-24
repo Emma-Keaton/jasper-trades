@@ -155,8 +155,8 @@ def get_api_key_from_settings(key_name: str, fallback: Optional[str] = None) -> 
                 device_settings = result.scalar_one_or_none()
                 
                 if device_settings:
-                    from app.services.whatsapp_service import EncryptionService
-                    encryption = EncryptionService()
+                    from app.services.encryption import EncryptionHelper
+                    encryption = EncryptionHelper()
                     
                     if key_name == "nvidia_api_key" and device_settings.nvidia_key:
                         return encryption.decrypt(device_settings.nvidia_key)
