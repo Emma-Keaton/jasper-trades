@@ -683,14 +683,14 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 sm:p-8 md:p-10 lg:p-12">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white mb-2">Settings & Configuration</h1>
-        <p className="text-gray-400 text-sm">{deviceInfo} • All keys encrypted before storage</p>
+    <div className="w-full max-w-4xl mx-auto p-3 sm:p-4 md:p-6 lg:p-8 overflow-x-hidden">
+      <div className="mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">Settings & Configuration</h1>
+        <p className="text-gray-400 text-xs sm:text-sm">{deviceInfo} • All keys encrypted before storage</p>
       </div>
 
       {saved && (
-        <div className="mb-6 p-3 bg-green-500/10 border border-green-500/50 rounded-lg flex items-center gap-2">
+        <div className="mb-6 p-3 bg-green-500/10 border border-green-500/50 rounded-lg flex items-center gap-2 overflow-x-auto">
           <Check className="w-5 h-5 text-green-500" />
           <span className="text-green-500 text-sm font-medium">Settings saved!</span>
         </div>
