@@ -286,6 +286,59 @@ class MarketDataService:
             logger.error(f"Alpha Vantage forex error: {e}")
             return {'success': False, 'error': str(e), 'provider': 'alphavantage'}
 
+    # ============ ExchangeRate-API (FREE - No API Key) ============
+
+    async def get_forex_rate_exchangerate(self, from_currency: str, to_currency: str) -> Dict[str, Any]:
+        """
+        Get forex exchange rate from ExchangeRate-API (FREE, no API key).
+        Reliable fallback when Trove/Alpha Vantage are not available.
+        
+        Args:
+            from_currency: Source currency code (e.g., "NGN")
+            to_currency: Target currency code (e.g., "USD")
+            
+        Returns:
+            Exchange rate data with bid/ask prices
+        """
+        try:
+            # ExchangeRate-API open endpoint
+            url = f"https://api.exchangerate-api.com/v4/latest/{from_currency}"
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                data = response.json()
+
+            rates = data.get('rates', {})
+            if to_currency not in rates:
+                return {
+                    'success': False, 
+                    'error': f'Rate for {to_currency} not found', 
+                    'provider': 'exchangerate'
+                }
+
+            rate = rates[to_currency]
+            
+            # Estimate bid/ask from rate (typical spread ~0.1%)
+            bid = rate * 0.999
+            ask = rate * 1.001
+
+            return {
+                'success': True,
+                'data': {
+                    'from_currency': from_currency,
+                    'to_currency': to_currency,
+                    'rate': float(rate),
+                    'bid': float(bid),
+                    'ask': float(ask),
+                },
+                'provider': 'exchangerate'
+            }
+
+        except Exception as e:
+            logger.error(f"ExchangeRate-API error: {e}")
+            return {'success': False, 'error': str(e), 'provider': 'exchangerate'}
+
     async def get_news_sentiment_alphavantage(self, symbol: str) -> Dict[str, Any]:
         """
         Get news sentiment for a stock from Alpha Vantage.
@@ -541,9 +594,28 @@ class MarketDataService:
             except Exception as e:
                 logger.warning(f"Trove forex conversion failed, falling back to Alpha Vantage: {e}")
 
-        # Fallback to Alpha Vantage
+        # Fallback to Alpha Vantage if configured
         if from_currency and to_currency:
-            result = await self.get_forex_rate_alphavantage(from_currency, to_currency)
+            if self.config.get('alphavantage_key'):
+                result = await self.get_forex_rate_alphavantage(from_currency, to_currency)
+                if result.get('success'):
+                    rate = result['data']['rate']
+                    return {
+                        'success': True,
+                        'data': {
+                            'amount': amount,
+                            'from_currency': from_currency,
+                            'to_currency': to_currency,
+                            'converted_amount': amount * rate,
+                            'exchange_rate': rate,
+                            'bid': result['data'].get('bid'),
+                            'ask': result['data'].get('ask'),
+                        },
+                        'provider': 'alphavantage',
+                    }
+
+            # Ultimate fallback: ExchangeRate-API (FREE, no key required)
+            result = await self.get_forex_rate_exchangerate(from_currency, to_currency)
             if result.get('success'):
                 rate = result['data']['rate']
                 return {
@@ -557,7 +629,7 @@ class MarketDataService:
                         'bid': result['data'].get('bid'),
                         'ask': result['data'].get('ask'),
                     },
-                    'provider': 'alphavantage',
+                    'provider': 'exchangerate',
                 }
 
         return {

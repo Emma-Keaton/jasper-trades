@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { X, ArrowUpRight, Wallet, AlertCircle } from 'lucide-react';
 import { Toast } from '@/app/page';
+import { useCurrencyFormatter } from '@/lib/currencyContext';
 
 interface WithdrawModalProps {
   portfolioId: number;
@@ -17,12 +18,13 @@ interface WithdrawalStats {
   auto_payout_total: number;
 }
 
-export default function WithdrawModal({ 
-  portfolioId, 
-  availableBalance, 
+export default function WithdrawModal({
+  portfolioId,
+  availableBalance,
   onClose,
-  triggerToast 
+  triggerToast
 }: WithdrawModalProps) {
+  const { formatMoney } = useCurrencyFormatter();
   const [amount, setAmount] = useState<string>('');
   const [destinationType, setDestinationType] = useState<'crypto_wallet' | 'broker'>('crypto_wallet');
   const [walletAddress, setWalletAddress] = useState('');
@@ -58,14 +60,14 @@ export default function WithdrawModal({
 
   const handleWithdraw = async () => {
     const withdrawAmount = parseFloat(amount);
-    
+
     if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
       triggerToast('error', 'Invalid Amount', 'Please enter a valid amount greater than 0');
       return;
     }
 
     if (withdrawAmount > availableBalance) {
-      triggerToast('error', 'Insufficient Balance', `Available: $${availableBalance.toFixed(2)}`);
+      triggerToast('error', 'Insufficient Balance', `Available: ${formatMoney(availableBalance, 'USD')}`);
       return;
     }
 
@@ -120,7 +122,7 @@ export default function WithdrawModal({
       triggerToast(
         'success',
         'Withdrawal Requested',
-        `Amount: $${withdrawAmount.toFixed(2)} | Fee: $${calculateFee(withdrawAmount).toFixed(2)} | Net: $${calculateNet(withdrawAmount).toFixed(2)}`
+        `Amount: ${formatMoney(withdrawAmount, 'USD')} | Fee: ${formatMoney(calculateFee(withdrawAmount), 'USD')} | Net: ${formatMoney(calculateNet(withdrawAmount), 'USD')}`
       );
 
       onClose();
@@ -155,7 +157,7 @@ export default function WithdrawModal({
           {/* Available Balance */}
           <div className="bg-[#0F172A] rounded-lg p-3 border border-[#475569]">
             <p className="text-xs text-gray-400 mb-1">Available Balance</p>
-            <p className="text-2xl font-bold text-white">${availableBalance.toFixed(2)}</p>
+            <p className="text-2xl font-bold text-white">{formatMoney(availableBalance, 'USD')}</p>
           </div>
 
           {/* Amount Input */}
@@ -189,15 +191,15 @@ export default function WithdrawModal({
             <div className="bg-[#0F172A] rounded-lg p-3 border border-[#475569] space-y-2 text-sm">
               <div className="flex justify-between text-gray-400">
                 <span>Amount:</span>
-                <span className="text-white">${inputAmount.toFixed(2)}</span>
+                <span className="text-white">{formatMoney(inputAmount, 'USD')}</span>
               </div>
               <div className="flex justify-between text-gray-400">
                 <span>Fee (0.1%):</span>
-                <span className="text-white">-${fee.toFixed(2)}</span>
+                <span className="text-white">-{formatMoney(fee, 'USD')}</span>
               </div>
               <div className="flex justify-between font-semibold text-[#10B981] pt-2 border-t border-[#475569]">
                 <span>You'll Receive:</span>
-                <span>${netAmount.toFixed(2)}</span>
+                <span>{formatMoney(netAmount, 'USD')}</span>
               </div>
             </div>
           )}
@@ -257,11 +259,11 @@ export default function WithdrawModal({
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Total Withdrawn:</span>
-                  <span className="text-white font-medium">${stats.total_withdrawn.toFixed(2)}</span>
+                  <span className="text-white font-medium">{formatMoney(stats.total_withdrawn, 'USD')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Auto-Payout Total:</span>
-                  <span className="text-[#10B981] font-medium">${stats.auto_payout_total.toFixed(2)}</span>
+                  <span className="text-[#10B981] font-medium">{formatMoney(stats.auto_payout_total, 'USD')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Pending:</span>

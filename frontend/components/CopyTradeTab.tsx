@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, TrendingUp, ExternalLink, Award } from 'lucide-react';
 import { Toast } from '@/app/page';
+import { useCurrencyFormatter } from '@/lib/currencyContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -47,6 +48,7 @@ interface CopyTrade {
 }
 
 export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
+  const { formatMoney } = useCurrencyFormatter();
   const [traders, setTraders] = useState<Trader[]>([]);
   const [stats, setStats] = useState<CopyTradeStats | null>(null);
   const [copyTrades, setCopyTrades] = useState<CopyTrade[]>([]);
@@ -160,7 +162,7 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
           <div className="flex flex-col gap-1">
             <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Total Copy P&L</span>
             <span className={`text-2xl font-black font-mono ${totalPnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-              ${totalPnl.toFixed(2)}
+              {totalPnl >= 0 ? '+' : ''}{formatMoney(Math.abs(totalPnl), 'USD')}
             </span>
           </div>
           <div className="p-3 bg-[#10B981]/10 text-[#10B981] rounded-xl">
@@ -275,7 +277,7 @@ export default function CopyTradeTab({ triggerToast }: CopyTradeTabProps) {
                   </div>
                 </div>
                 <div className={`text-right font-mono ${trade.pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                  <div>${trade.pnl.toFixed(2)}</div>
+                  <div>{trade.pnl >= 0 ? '+' : ''}{formatMoney(Math.abs(trade.pnl), 'USD')}</div>
                   <div className="text-xs">{trade.pnl_percent.toFixed(2)}%</div>
                 </div>
               </div>

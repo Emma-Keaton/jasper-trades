@@ -36,10 +36,10 @@ export default function CurrencyToggle({ className = '' }: CurrencyToggleProps) 
     return `${minutes}m ago`;
   };
 
-  const inverseRate = exchangeRate > 0 ? (1 / exchangeRate) : 0;
+  const inverseRate = exchangeRate > 0 ? (1 / exchangeRate) : 1527.50; // Fallback to approximate market rate
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
+    <div className={`flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 ${className}`}>
       {/* Toggle Button */}
       <button
         onClick={handleToggle}
@@ -65,9 +65,16 @@ export default function CurrencyToggle({ className = '' }: CurrencyToggleProps) 
       {/* Exchange Rate Display */}
       <div className="flex flex-col">
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-gray-400">
-            1 USD = ₦{inverseRate.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
+          {exchangeRate > 0 ? (
+            <span className="text-gray-400">
+              1 USD = ₦{inverseRate.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          ) : (
+            <span className="text-orange-400 flex items-center gap-1">
+              <RefreshCw className="w-3 h-3" />
+              Fetching live rate...
+            </span>
+          )}
           <button
             onClick={refreshRate}
             disabled={isLoading}
@@ -79,8 +86,12 @@ export default function CurrencyToggle({ className = '' }: CurrencyToggleProps) 
         </div>
         <div className="flex items-center gap-2 text-[10px] text-gray-500">
           <span>Updated {formatLastUpdated()}</span>
-          <span className="w-1 h-1 rounded-full bg-gray-500" />
-          <span>Next: {countdown}s</span>
+          {exchangeRate > 0 && (
+            <>
+              <span className="w-1 h-1 rounded-full bg-gray-500" />
+              <span>Next: {countdown}s</span>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -1,8 +1,8 @@
 ---
 name: currency-conversion-global-integration
-description: Implement global currency conversion (USD/NGN) with real-time forex rates sync and Tungsten-style toggle across all monetary values in Next.js app
+description: Implement global currency conversion (USD/NGN) with live forex rates from ExchangeRate-API and reactive currency toggle across all monetary values
 source: auto-skill
-extracted_at: '2026-06-15'
+extracted_at: '2026-06-24'
 ---
 
 # Global Currency Conversion Integration

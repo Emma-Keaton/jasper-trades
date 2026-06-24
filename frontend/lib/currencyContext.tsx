@@ -52,9 +52,12 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<CurrencyState>(initialState);
   const [wsConnected, setWsConnected] = useState(false);
 
-  // Load currency preference on mount
+  // Load currency preference on mount and fetch initial rate
+  
   useEffect(() => {
     loadCurrencyPreference();
+    // Fetch initial exchange rate on mount
+    refreshRateHelper();
   }, []);
 
   // Connect to WebSocket for real-time rate updates
@@ -144,7 +147,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const refreshRate = useCallback(async () => {
+  const refreshRateHelper = async () => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
@@ -171,6 +174,11 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
         error: e instanceof Error ? e.message : 'Failed to fetch rate',
       }));
     }
+  };
+
+  // Public refreshRate that can be called from components
+  const refreshRate = useCallback(async () => {
+    await refreshRateHelper();
   }, []);
 
   const saveCurrencyPreference = async (currency: Currency) => {

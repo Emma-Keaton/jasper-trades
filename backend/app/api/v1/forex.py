@@ -92,8 +92,14 @@ async def get_forex_rate(
         if result.get('success'):
             return result
 
-    # Fallback to Alpha Vantage
-    result = await market_data.get_forex_rate_alphavantage(from_currency, to_currency)
+    # Fallback to Alpha Vantage if configured, then ExchangeRate-API
+    if market_data.config.get('alphavantage_key'):
+        result = await market_data.get_forex_rate_alphavantage(from_currency, to_currency)
+        if result.get('success'):
+            return result
+
+    # Ultimate fallback: ExchangeRate-API (FREE, no key required)
+    result = await market_data.get_forex_rate_exchangerate(from_currency, to_currency)
     
     if not result.get('success'):
         raise HTTPException(
@@ -242,8 +248,15 @@ async def get_major_forex_rates(
                 rates[pair_key] = result['data']
                 continue
 
-        # Fallback to Alpha Vantage
-        result = await market_data.get_forex_rate_alphavantage(from_curr, to_curr)
+        # Fallback to Alpha Vantage if configured
+        if market_data.config.get('alphavantage_key'):
+            result = await market_data.get_forex_rate_alphavantage(from_curr, to_curr)
+            if result.get('success'):
+                rates[pair_key] = result['data']
+                continue
+
+        # Ultimate fallback: ExchangeRate-API (FREE, no key required)
+        result = await market_data.get_forex_rate_exchangerate(from_curr, to_curr)
         if result.get('success'):
             rates[pair_key] = result['data']
 

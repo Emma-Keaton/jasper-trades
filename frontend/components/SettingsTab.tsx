@@ -683,7 +683,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-4xl mx-auto p-6 sm:p-8 md:p-10 lg:p-12">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white mb-2">Settings & Configuration</h1>
         <p className="text-gray-400 text-sm">{deviceInfo} • All keys encrypted before storage</p>
@@ -732,15 +732,15 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-[#25D366] font-bold">2.</span>
-                  <span>Enter your Telegram chat ID above and click "Send Code"</span>
+                  <span>The bot will send you a Chat ID - copy it and paste in the field above, then click "Send Code"</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-[#25D366] font-bold">3.</span>
-                  <span>Check Telegram for the 6-digit code and enter it here</span>
+                  <span>The bot will send a 6-digit verification code - enter it below to complete setup</span>
                 </li>
               </ol>
               <p className="text-xs text-gray-500 mt-3 italic">
-                💡 Your chat ID links your Telegram to this device's trading accounts. You'll only see YOUR trades and portfolio.
+                💡 Your Chat ID links your Telegram account to this device's trading portfolio. You'll only receive notifications for YOUR trades.
               </p>
             </div>
 
@@ -767,14 +767,22 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
             {/* Chat ID Verification */}
             <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
-              <label className="text-xs text-gray-400 mb-2 block">Step 1: Verify Chat ID</label>
+              <label className="text-xs text-gray-400 mb-2 block">Step 1: Enter Your Telegram Chat ID</label>
+              <div className="mb-2 p-2 bg-[#1E293B] rounded border border-[#25D366]/30">
+                <p className="text-xs text-gray-300">
+                  <strong>What is a Chat ID?</strong> Your unique Telegram identifier (starts with <code className="bg-[#0F172A] px-1 py-0.5 rounded">@username</code> or <code className="bg-[#0F172A] px-1 py-0.5 rounded">123456789</code>).
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  <strong>How to find it:</strong> After clicking "Open on Telegram" below, the bot will tell you your Chat ID in the first message.
+                </p>
+              </div>
               <div className="flex gap-2 mb-2">
                 <input
-                  type="tel"
+                  type="text"
                   value={telegram.chat_id}
                   onChange={(e) => setTelegram({...telegram, chat_id: e.target.value})}
-                  placeholder="+234 123 456 7890"
-                  className="flex-1 bg-[#1E293B] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                  placeholder="@username or 123456789"
+                  className="flex-1 bg-[#1E293B] border border-[#475569] rounded-md px-3 py-2 text-white text-sm font-mono"
                 />
                 <button
                   onClick={requestVerification}

@@ -13,6 +13,7 @@ import { Holding, TradeHistoryItem, Toast } from '@/app/page';
 import { EquityDataPoint } from '@/hooks/usePortfolioHistory';
 import { SkeletonCard, SkeletonChart, SkeletonConsole, SkeletonTable } from './Skeleton';
 import EquityChart from './charts/EquityChart';
+import { useCurrencyFormatter } from '@/lib/currencyContext';
 
 interface DashboardTabProps {
   cash: number;
@@ -35,6 +36,7 @@ export default function DashboardTab({
   portfolioInitialized = false,
   equityData = []
 }: DashboardTabProps) {
+  const { formatMoney } = useCurrencyFormatter();
   const [timeframe, setTimeframe] = useState<string>('1M');
 
   // Portfolio calculation variables
@@ -131,7 +133,7 @@ export default function DashboardTab({
           <div className="flex flex-col gap-1.5">
             <span className="text-xs uppercase font-mono text-[#94A3B8] tracking-wider font-bold">Total Net Value</span>
             <span className="text-2xl font-black font-mono text-white tracking-tight">
-              ${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {formatMoney(totalPortfolioValue, 'USD')}
             </span>
             <span className="text-xs text-[#94A3B8] font-mono">Cash + Asset value</span>
           </div>
@@ -146,7 +148,7 @@ export default function DashboardTab({
           <div className="flex flex-col gap-1.5">
             <span className="text-xs uppercase font-mono text-[#94A3B8] tracking-wider font-bold">Total P&L</span>
             <span className={`text-2xl font-black font-mono tracking-tight ${portfolioChange >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-              {portfolioChange >= 0 ? '+' : ''}${portfolioChange.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {portfolioChange >= 0 ? '+' : ''}{formatMoney(Math.abs(portfolioChange), 'USD')}
             </span>
             <span className={`text-xs font-bold font-mono flex items-center gap-1 ${portfolioChange >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
               <TrendingUp className="w-3.5 h-3.5" />
@@ -294,7 +296,7 @@ export default function DashboardTab({
             <h3 className="font-bold text-md text-[#F8FAFC]">Current Holdings</h3>
             <span className="text-xs font-mono text-[#94A3B8]">Your portfolio positions</span>
           </div>
-          <span className="text-[10px] font-mono text-[#94A3B8]">Total: ${totalHoldingsValue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+          <span className="text-[10px] font-mono text-[#94A3B8]">Total: {formatMoney(totalHoldingsValue, 'USD')}</span>
         </div>
 
         {holdings.length === 0 ? (
@@ -346,9 +348,9 @@ export default function DashboardTab({
                         </span>
                       </td>
                       <td className="text-right text-[#F8FAFC]">{h.shares.toLocaleString()}</td>
-                      <td className="text-right text-[#F8FAFC]">${h.avgPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                      <td className="text-right text-[#F8FAFC]">${h.currentPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                      <td className="text-right font-bold text-white">${positionValue.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                      <td className="text-right text-[#F8FAFC]">{formatMoney(h.avgPrice, 'USD')}</td>
+                      <td className="text-right text-[#F8FAFC]">{formatMoney(h.currentPrice, 'USD')}</td>
+                      <td className="text-right font-bold text-white">{formatMoney(positionValue, 'USD')}</td>
                       <td className={`text-right font-bold ${isPositive ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
                         {isPositive ? '▲' : '▼'} {isPositive ? '+' : ''}{h.pnlPercent}%
                       </td>
