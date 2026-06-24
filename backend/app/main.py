@@ -347,7 +347,7 @@ app.include_router(copytrade.router, tags=["Copy Trading"])
 app.include_router(forex.router, tags=["forex"])  # Trove forex conversion
 app.include_router(banks.router, prefix="/api/v1", tags=["banks"])  # Nigerian bank list
 app.include_router(symbols.router, prefix="/api/v1", tags=["symbols"])  # Symbol listing (US + NGX)
-app.include_router(trove.router, prefix="/api/v1", tags=["trove"])  # Trove trading
+# app.include_router(trove.router, prefix="/api/v1", tags=["trove"])  # Trove trading - router not implemented yet
 app.include_router(akshare.router, prefix="/api/v1", tags=["akshare"])  # AKShare Chinese stocks
 app.include_router(akshare_settings.router, tags=["akshare-settings"])  # AKShare settings
 
