@@ -21,9 +21,12 @@ interface CTraderAccount {
 
 interface CTraderConnectionProps {
   onConnected?: (accountId: string) => void;
+  paperTradingConfig?: { enabled: boolean; capital: number; currency: string };
+  onUpdatePaperTrading?: (updates: Partial<{enabled: boolean; capital: number; currency: string}>) => void;
+  onSave?: () => void;
 }
 
-export default function CTraderConnection({ onConnected }: CTraderConnectionProps) {
+export default function CTraderConnection({ onConnected, paperTradingConfig, onUpdatePaperTrading, onSave }: CTraderConnectionProps) {
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<CTraderAccount[]>([]);
@@ -113,7 +116,7 @@ export default function CTraderConnection({ onConnected }: CTraderConnectionProp
   const toggleEnvironmentMode = async () => {
     const newMode = isLiveMode ? 'sandbox' : 'live';
     if (!confirm(`Switch to ${newMode.toUpperCase()} mode?\n\nThis will affect all cTrader connections. ${newMode === 'live' ? 'Real money trades will be executed!' : ''}`)) return;
-    
+
     setUpdatingMode(true);
     try {
       const deviceId = getDeviceId();

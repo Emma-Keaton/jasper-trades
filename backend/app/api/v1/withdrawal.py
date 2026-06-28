@@ -223,31 +223,42 @@ async def get_payout_settings(
     """Get payout configuration."""
     if not device_id:
         raise HTTPException(status_code=400, detail="X-Device-ID header required")
-    
-    async with async_session() as session:
-        from sqlalchemy import select
-        result = await session.execute(
-            select(DeviceSettings).where(DeviceSettings.device_id == device_id)
-        )
-        settings = result.scalar_one_or_none()
-    
-    if not settings or not settings.payout_config:
+
+    try:
+        async with async_session() as session:
+            from sqlalchemy import select
+            result = await session.execute(
+                select(DeviceSettings).where(DeviceSettings.device_id == device_id)
+            )
+            settings = result.scalar_one_or_none()
+
+        if not settings or not settings.payout_config:
+            return {
+                "configured": False,
+                "payout_enabled": False,
+                "payout_percentage": 50.0,
+                "payout_schedule_hour": 20,
+            }
+
+        encryption = EncryptionHelper()
+        payout_config = encryption.decrypt_json(settings.payout_config)
+
+        return {
+            "configured": True,
+            "crypto_wallet": payout_config.get("crypto_wallet", ""),
+            "payout_enabled": payout_config.get("payout_enabled", False),
+            "payout_percentage": payout_config.get("payout_percentage", 50.0),
+            "payout_schedule_hour": payout_config.get("payout_schedule_hour", 20),
+        }
+    except Exception as e:
+        logger.error(f"Error fetching payout settings: {e}")
         return {
             "configured": False,
             "payout_enabled": False,
             "payout_percentage": 50.0,
             "payout_schedule_hour": 20,
+            "error": "Failed to load settings"
         }
-    
-    payout_config = encryption.decrypt_json(settings.payout_config)
-    
-    return {
-        "configured": True,
-        "crypto_wallet": payout_config.get("crypto_wallet", ""),
-        "payout_enabled": payout_config.get("payout_enabled", False),
-        "payout_percentage": payout_config.get("payout_percentage", 50.0),
-        "payout_schedule_hour": payout_config.get("payout_schedule_hour", 20),
-    }
 
 
 @router.post("/payout/settings")

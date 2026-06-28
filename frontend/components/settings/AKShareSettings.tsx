@@ -4,6 +4,9 @@ import { API_URL } from '../../lib/api-client';
 
 interface AKShareSettingsProps {
   triggerToast: (type: 'success' | 'error' | 'info', title: string, message: string) => void;
+  paperTradingConfig?: { enabled: boolean; capital: number; currency: string };
+  onUpdatePaperTrading?: (updates: Partial<{enabled: boolean; capital: number; currency: string}>) => void;
+  onSave?: () => void;
 }
 
 interface AKShareConfig {
@@ -14,7 +17,7 @@ interface AKShareConfig {
   connected: boolean;
 }
 
-const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast }) => {
+const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTradingConfig, onUpdatePaperTrading, onSave }) => {
   const [config, setConfig] = useState<AKShareConfig>({
     enabled: false,
     paper_trading: true,
@@ -40,11 +43,11 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast }) => {
       const response = await fetch(`${API_URL}/api/v1/settings/akshare`, {
         headers: { 'X-Device-ID': deviceId! },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setConfig(data);
-        
+
         // Check backend connectivity when enabled
         if (data.enabled) {
           setConnectionStatus('checking');
@@ -102,7 +105,7 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast }) => {
       const response = await fetch(
         `${API_URL}/api/v1/akshare/market-data?symbol=${testSymbol}&exchange=SSE`
       );
-      
+
       if (response.ok) {
         const data = await response.json();
         setMarketData(data);

@@ -211,26 +211,34 @@ async def get_ctrader_accounts(
     db: Session = Depends(get_db),
     device_id: str = Depends(get_device_id),
 ):
-    """Get all connected cTrader accounts for current device"""
-    connections = db.query(BrokerConnection).filter(
-        BrokerConnection.broker_type == "ctrader",
-        BrokerConnection.device_id == device_id
-    ).all()
+    """Get all connected broker accounts for current device"""
+    try:
+        connections = db.query(BrokerConnection).filter(
+            BrokerConnection.device_id == device_id
+        ).all()
 
-    return {
-        "accounts": [
-            {
-                "id": conn.id,
-                "broker_name": conn.broker_name,
-                "account_balance": conn.account_balance,
-                "account_currency": conn.account_currency,
-                "is_connected": conn.is_connected,
-                "is_active": conn.is_active,
-                "connected_at": conn.created_at.isoformat() if conn.created_at else None
-            }
-            for conn in connections
-        ]
-    }
+        return {
+            "accounts": [
+                {
+                    "id": conn.id,
+                    "broker_name": conn.broker_name or conn.broker_type,
+                    "broker_type": conn.broker_type,
+                    "account_balance": conn.account_balance or 0.0,
+                    "account_currency": conn.account_currency or "USD",
+                    "is_connected": conn.is_connected,
+                    "is_active": conn.is_active,
+                    "connected_at": conn.created_at.isoformat() if conn.created_at else None
+                }
+                for conn in connections
+            ]
+        }
+    except Exception as e:
+        # Return empty list if table doesn't exist or query fails
+        return {
+            "accounts": [],
+            "message": "No broker accounts connected",
+            "error": str(e)
+        }
 
 
 def encrypt_token(token: str) -> str:

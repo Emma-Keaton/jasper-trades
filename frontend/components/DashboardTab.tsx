@@ -13,6 +13,7 @@ import { Holding, TradeHistoryItem, Toast } from '@/app/page';
 import { EquityDataPoint } from '@/hooks/usePortfolioHistory';
 import { SkeletonCard, SkeletonChart, SkeletonConsole, SkeletonTable } from './Skeleton';
 import EquityChart from './charts/EquityChart';
+import MarketIntelligence from './MarketIntelligence/MarketIntelPanel';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 
 interface DashboardTabProps {
@@ -98,6 +99,9 @@ export default function DashboardTab({
         </div>
 
         <SkeletonTable />
+
+        {/* Market Intelligence Section */}
+        <MarketIntelligence enabled={true} />
       </div>
     );
   }
@@ -220,6 +224,8 @@ export default function DashboardTab({
               setTimeframe(tf);
               triggerToast('info', 'Timeframe Updated', `Chart view changed to ${tf}`);
             }}
+            formatCurrency={formatMoney}
+            currentCurrency="USD"
           />
 
           {/* Chart stats */}
@@ -362,6 +368,9 @@ export default function DashboardTab({
           </div>
         )}
       </div>
+
+      {/* MARKET INTELLIGENCE */}
+      <MarketIntelligence enabled={true} />
 
     </div>
   );

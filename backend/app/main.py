@@ -39,6 +39,8 @@ except ImportError:
 
 # Import API routes
 from app.api.v1 import trading, agents, signals, portfolio, health, system, learning, risk, circuit_breaker
+from app.api.v1 import market_intelligence
+from app.api.v1 import chat
 from app.api.websocket import streams as websocket_streams
 from app.api.v1 import settings as api_settings_router
 from app.api.v1 import alpha_factors, backtest, withdrawal, symbols
@@ -312,6 +314,7 @@ except Exception as e:
 
 # Include routers
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
+app.include_router(market_intelligence.router, prefix="/api/v1", tags=["market-intelligence"])
 app.include_router(trading.router, prefix="/api/v1/trading", tags=["trading"])
 app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
 app.include_router(signals.router, prefix="/api/v1/signals", tags=["signals"])
@@ -324,11 +327,9 @@ app.include_router(withdrawal.router, prefix="/api/v1", tags=["withdrawal"])
 app.include_router(circuit_breaker.router, prefix="/api/v1", tags=["circuit-breaker"])
 app.include_router(telegram_settings.router, prefix="/api/v1", tags=["telegram-settings"])
 app.include_router(telegram_webhook.router, tags=["telegram-webhook"])
-app.include_router(telegram_chat.router, tags=["telegram-chat"])
+app.include_router(telegram_chat.router, prefix="/api/v1", tags=["telegram-chat"])
 app.include_router(telegram_bot_data.router, tags=["telegram-bot-data"])
-# Old WhatsApp chat router removed - replaced with Telegram
-# app.include_router(chat.router, prefix="/api/v1", tags=["whatsapp"])
-# app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(alpha_factors.router, prefix="/api/v1/alpha-factors", tags=["alpha-factors"])
 app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["backtest"])
 app.include_router(websocket_streams.router, tags=["websocket"])

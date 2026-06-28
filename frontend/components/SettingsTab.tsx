@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Key, Shield, Server, Check, X, RefreshCw, MessageCircle, DollarSign, TrendingUp, Plane, Bell, Send } from 'lucide-react';
+import { Save, Key, Shield, Server, Check, X, RefreshCw, MessageCircle, DollarSign, TrendingUp, Plane, Bell, Send, Brain, Hash, Palette, Cog, Link as LinkIcon, Cpu, Globe, Briefcase } from 'lucide-react';
 import { Toast } from '@/app/page';
 import { SkeletonCard, SkeletonText } from './Skeleton';
 import TradingCapsSection from './TradingCapsSection';
@@ -37,12 +37,20 @@ interface TelegramSettings {
   ai_explanations_enabled?: boolean;
 }
 
-
 interface SettingsTabProps {
   triggerToast: (type: Toast['type'], title: string, message: string) => void;
   initialTab?: string;
   onNavigate?: (tab: string) => void;
 }
+
+// Helper functions to compute completion status
+const getApiConfiguredCount = (formData: ApiSettings) => {
+  let count = 0;
+  if (formData.nvidia_api_key) count++;
+  if (formData.binance_api_key && formData.binance_api_secret) count++;
+  if (formData.colab_kronos_url) count++;
+  return count;
+};
 
 export default function SettingsTab({ triggerToast, initialTab = 'api', onNavigate }: SettingsTabProps) { 
   const { resetTours } = useOnboarding();
@@ -128,6 +136,20 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   });
   const [showLeaders, setShowLeaders] = useState(false);
 
+  // State tracking for broker connection status used in completion counting
+  const [accounts, setAccounts] = useState<any[]>([]);  // cTrader accounts
+  const [troveSettings, setTroveSettings] = useState<any>(null);
+  const [akShareConfig, setAkShareConfig] = useState<any>(null);
+
+  const getBrokerConnectedCount = () => {
+    let count = 0;
+    if (accounts && accounts.length > 0) count++;  // cTrader
+    if (troveSettings?.is_connected) count++;       // Trove
+    if (akShareConfig?.connected) count++;          // AKShare
+    if (polymarket.connected) count++;              // Polymarket
+    return count;
+  };
+
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   const fetchSettings = async () => {
@@ -175,6 +197,17 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         });
       }
 
+      // Load broker connection status for completion counting
+      if (data.ctrader_accounts) {
+        setAccounts(data.ctrader_accounts);
+      }
+      if (data.trove_config) {
+        setTroveSettings(data.trove_config);
+      }
+      if (data.akshare_config) {
+        setAkShareConfig(data.akshare_config);
+      }
+
     } catch (error) {
       console.error('Failed to load settings:', error);
     } finally {
@@ -190,9 +223,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           service,
-          key: service === 'nvidia' ? formData.nvidia_api_key :
-               
-               formData.binance_api_key
+          key: service === 'nvidia' ? formData.nvidia_api_key : formData.binance_api_key
         }),
       });
       const result = await res.json();
@@ -202,6 +233,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       }));
     } catch (error) {
       setTestResults(prev => ({
+        ...prev,
         [service]: { valid: false, message: 'Connection failed' }
       }));
     } finally {
@@ -683,44 +715,333 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   }
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-3 sm:p-4 md:p-6 lg:p-8 overflow-x-hidden">
+    <div className="w-full max-w-5xl mx-auto p-2 sm:p-3 md:p-4 overflow-x-hidden">
       <div className="mb-6">
         <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">Settings & Configuration</h1>
         <p className="text-gray-400 text-xs sm:text-sm">{deviceInfo} • All keys encrypted before storage</p>
       </div>
 
       {saved && (
-        <div className="mb-6 p-3 bg-green-500/10 border border-green-500/50 rounded-lg flex items-center gap-2 overflow-x-auto">
+        <div className="mb-4 p-3 bg-green-500/10 border border-green-500/50 rounded-lg flex items-center gap-2">
           <Check className="w-5 h-5 text-green-500" />
           <span className="text-green-500 text-sm font-medium">Settings saved!</span>
         </div>
       )}
 
-      <div className="space-y-6">
-        {/* Notification Channels - Telegram */}
-        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
-          <div className="flex items-center gap-2 mb-3">
-            <Bell className="w-5 h-5 text-[#F59E0B]" />
-            <h2 className="text-lg font-semibold text-white">Telegram Notifications</h2>
-          </div>
-          <p className="text-xs text-gray-400 mb-4">
-            Receive trade alerts, daily summaries, and 2-way chat via Telegram.
-            Verify your chat ID and configure your notification preferences below.
-          </p>
-
-          {/* Telegram */}
-          <div className="border-t border-[#475569] pt-4 mt-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <MessageCircle className="w-5 h-5 text-[#25D366]" />
-                <h3 className="text-md font-semibold text-white">Telegram Notifications</h3>
+      <div className="space-y-4">
+        {/* Group 1: AI & External Services */}
+        <CollapsibleSection
+          title="AI & External Services"
+          subtitle="NVIDIA NIM, Binance, Kronos Colab, and market data providers"
+          icon={Key}
+          defaultOpen={true}
+          storageKey="settings-ai-services-open"
+          completionStatus={`${getApiConfiguredCount(formData)} of 3 configured`}
+        >
+          <div className="space-y-4">
+            {/* NVIDIA NIM API */}
+            <div data-tour="api-keys-section" className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-5 h-5 text-[#3B82F6]" />
+                  <h3 className="text-md font-semibold text-white">NVIDIA NIM API</h3>
+                </div>
+                <button 
+                  onClick={() => testConnection('nvidia')} 
+                  disabled={!formData.nvidia_api_key} 
+                  className="text-xs px-3 py-1.5 rounded-md bg-[#3B82F6]/20 text-[#3B82F6] disabled:opacity-50"
+                >
+                  Test
+                </button>
               </div>
-              {telegram.is_verified && (
-                <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 flex items-center gap-1">
-                  <Check className="w-3 h-3" /> Verified
-                </span>
+              <input 
+                type="password" 
+                value={formData.nvidia_api_key} 
+                onChange={(e) => setFormData({...formData, nvidia_api_key: e.target.value})} 
+                placeholder="nvapi-..." 
+                className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" 
+              />
+              {testResults.nvidia && (
+                <p className={`text-xs mt-2 ${testResults.nvidia.valid ? 'text-green-500' : 'text-red-500'}`}>
+                  {testResults.nvidia.message}
+                </p>
               )}
             </div>
+
+            {/* Binance API */}
+            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-[#F7931A]" />
+                  <h3 className="text-md font-semibold text-white">Binance</h3>
+                </div>
+                <button 
+                  onClick={() => testConnection('binance')} 
+                  disabled={!formData.binance_api_key} 
+                  className="text-xs px-3 py-1.5 rounded-md bg-[#F7931A]/20 text-[#F7931A] disabled:opacity-50"
+                >
+                  Test
+                </button>
+              </div>
+              <input 
+                type="password" 
+                value={formData.binance_api_key} 
+                onChange={(e) => setFormData({...formData, binance_api_key: e.target.value})} 
+                placeholder="API Key" 
+                className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm mb-2" 
+              />
+              <input 
+                type="password" 
+                value={formData.binance_api_secret} 
+                onChange={(e) => setFormData({...formData, binance_api_secret: e.target.value})} 
+                placeholder="API Secret" 
+                className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" 
+              />
+            </div>
+
+            {/* Kronos on Google Colab */}
+            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+              <div className="flex items-center gap-2 mb-3">
+                <Server className="w-5 h-5 text-[#8B5CF6]" />
+                <h3 className="text-md font-semibold text-white">Kronos on Google Colab</h3>
+              </div>
+              <input
+                type="url"
+                value={formData.colab_kronos_url}
+                onChange={(e) => setFormData({...formData, colab_kronos_url: e.target.value})}
+                placeholder="https://<your-colab-url>/proxy/8080"
+                className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-[#8B5CF6]"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Google Colab URL from kronos_colab.ipynb notebook for GPU-accelerated predictions
+              </p>
+              <div className="mt-3 p-3 bg-[#8B5CF6]/10 border border-[#8B5CF6]/30 rounded-md">
+                <p className="text-xs text-[#8B5CF6]">
+                  📝 Run the kronos_colab.ipynb notebook, copy the public URL (with /proxy/8080), and paste it here.
+                </p>
+              </div>
+            </div>
+
+            {/* Market Data Section */}
+            <div data-tour="market-data-section">
+              <MarketDataSection marketData={marketData} setMarketData={setMarketData} triggerToast={triggerToast} />
+            </div>
+          </div>
+        </CollapsibleSection>
+
+        {/* Group 2: Broker Integrations */}
+        <CollapsibleSection
+          title="Broker Integrations"
+          subtitle="Trading platforms for automated execution"
+          icon={Briefcase}
+          storageKey="settings-brokers-open"
+          completionStatus={`${getBrokerConnectedCount()} of 4 connected`}
+        >
+          <div className="space-y-4">
+            {/* cTrader OAuth Connection */}
+            <div data-tour="ctrader-section">
+              <CTraderConnection
+                onConnected={(accountId) => {
+                  triggerToast('success', 'cTrader Connected', 'Your account is now connected for auto-trading!');
+                }}
+              />
+            </div>
+
+            {/* Trove API - US & Nigerian Stocks */}
+            <div data-tour="trove-section">
+              <TroveSettings triggerToast={triggerToast} />
+            </div>
+
+            {/* AKShare - Chinese Stocks */}
+            <div data-tour="akshare-section">
+              <AKShareSettings triggerToast={triggerToast} />
+            </div>
+
+            {/* Polymarket Account Connection */}
+            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp className="w-5 h-5 text-purple-400" />
+                <h3 className="text-md font-semibold text-white">Polymarket (Prediction Markets)</h3>
+              </div>
+
+              {!polymarket.connected ? (
+                <>
+                  <p className="text-sm text-gray-300 mb-3">
+                    Connect your Polymarket account for AI-powered prediction market trading and copytrading.
+                  </p>
+                  
+                  <div className="space-y-3 mb-3">
+                    <div>
+                      <label className="text-xs text-gray-400 block mb-1">API Key</label>
+                      <input
+                        type="password"
+                        value={polymarket.api_key}
+                        onChange={(e) => setPolymarket({...polymarket, api_key: e.target.value})}
+                        placeholder="Enter your Polymarket API key"
+                        className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="text-xs text-gray-400 block mb-1">API Secret</label>
+                      <input
+                        type="password"
+                        value={polymarket.api_secret}
+                        onChange={(e) => setPolymarket({...polymarket, api_secret: e.target.value})}
+                        placeholder="Enter your API secret"
+                        className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mb-3 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
+                    <p className="text-xs text-gray-400 mb-2">🔐 Security Features:</p>
+                    <ul className="text-xs text-gray-400 space-y-1">
+                      <li>• Credentials encrypted with AES-128 before storage</li>
+                      <li>• Only you can access your API keys</li>
+                      <li>• AI can trade automatically (when enabled)</li>
+                      <li>• Copytrade top Polymarket leaders</li>
+                    </ul>
+                  </div>
+
+                  <button
+                    onClick={connectPolymarket}
+                    disabled={polymarket.loading || !polymarket.api_key || !polymarket.api_secret}
+                    className="w-full py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-sm font-medium"
+                  >
+                    {polymarket.loading ? 'Connecting...' : 'Connect Polymarket Account'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="mb-3 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-green-400 flex items-center gap-2">
+                        <Check className="w-4 h-4" />
+                        Connected
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        Wallet: {polymarket.wallet_address?.slice(0, 6)}...{polymarket.wallet_address?.slice(-4)}
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-gray-400">Balance:</span>
+                        <p className="text-white font-medium">${polymarket.balance?.toLocaleString() || '0.00'}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Equity:</span>
+                        <p className="text-white font-medium">${polymarket.equity?.toLocaleString() || '0.00'}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        onClick={() => setShowLeaders(!showLeaders)}
+                        className="flex-1 py-1.5 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-xs"
+                      >
+                        {showLeaders ? 'Hide Leaders' : 'Browse Leaders'} ({polymarket.leaders?.length || 0})
+                      </button>
+                      <button
+                        onClick={refreshBalance}
+                        className="px-3 py-1.5 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-xs"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Copytrading Leaders Section */}
+                  {showLeaders && polymarket.leaders && polymarket.leaders.length > 0 && (
+                    <div className="mb-3">
+                      <h3 className="text-sm font-medium text-white mb-2">Top Polymarket Leaders</h3>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {polymarket.leaders.map((leader: any) => (
+                          <div key={leader.leader_id} className="p-2 bg-[#0F172A] rounded border border-[#475569]">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm text-white">{leader.leader_name}</p>
+                                <p className="text-xs text-gray-400">
+                                  Win Rate: {(leader.win_rate * 100).toFixed(1)}% | PnL: ${leader.total_pnl.toLocaleString()}
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => followLeader(leader.leader_id, leader.leader_name)}
+                                disabled={leader.is_following}
+                                className={`px-3 py-1 text-xs rounded-md ${
+                                  leader.is_following
+                                    ? 'bg-green-600/20 text-green-400 cursor-default'
+                                    : 'bg-purple-600 hover:bg-purple-700 text-white'
+                                }`}
+                              >
+                                {leader.is_following ? '✓ Following' : 'Follow'}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI Trading Settings */}
+                  <div className="mb-3 space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={polymarket.ai_trading_enabled}
+                        onChange={(e) => setPolymarket({...polymarket, ai_trading_enabled: e.target.checked})}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-gray-300">🤖 Enable AI trading</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={polymarket.copytrading_enabled}
+                        onChange={(e) => setPolymarket({...polymarket, copytrading_enabled: e.target.checked})}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-gray-300">📊 Enable copytrading leaders</span>
+                    </label>
+                  </div>
+
+                  <button
+                    onClick={disconnectPolymarket}
+                    className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm"
+                  >
+                    Disconnect Account
+                  </button>
+                </>
+              )}
+
+              {polymarket.message && (
+                <p className={`text-xs mt-2 ${polymarket.success ? 'text-green-400' : 'text-red-400'}`}>
+                  {polymarket.message}
+                </p>
+              )}
+            </div>
+          </div>
+        </CollapsibleSection>
+
+        {/* Group 3: Notifications */}
+        <CollapsibleSection
+          title="Notifications"
+          subtitle="Telegram alerts and 2-way chat"
+          icon={Bell}
+          storageKey="settings-notifications-open"
+          completionStatus={telegram.is_verified ? '✓ Verified' : 'Not configured'}
+        >
+          <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+            <div className="flex items-center gap-2 mb-3">
+              <Bell className="w-5 h-5 text-[#25D366]" />
+              <h3 className="text-md font-semibold text-white">Telegram Notifications</h3>
+            </div>
+            <p className="text-xs text-gray-400 mb-4">
+              Receive trade alerts, daily summaries, and 2-way chat via Telegram.
+              Verify your chat ID and configure your notification preferences below.
+            </p>
 
             {/* Setup Instructions */}
             <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#25D366]/30">
@@ -906,464 +1227,262 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
               </div>
             )}
           </div>
+        </CollapsibleSection>
 
-          {/* Polymarket Account Connection */}
-          <div className="mt-6 p-4 bg-[#1E293B] rounded-lg border border-[#475569]">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingUp className="w-5 h-5 text-purple-400" />
-              <h2 className="text-lg font-semibold text-white">Polymarket (Prediction Markets)</h2>
-            </div>
-
-            {!polymarket.connected ? (
-              <>
-                <p className="text-sm text-gray-300 mb-3">
-                  Connect your Polymarket account for AI-powered prediction market trading and copytrading.
-                </p>
-                
-                <div className="space-y-3 mb-3">
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">API Key</label>
-                    <input
-                      type="password"
-                      value={polymarket.api_key}
-                      onChange={(e) => setPolymarket({...polymarket, api_key: e.target.value})}
-                      placeholder="Enter your Polymarket API key"
-                      className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">API Secret</label>
-                    <input
-                      type="password"
-                      value={polymarket.api_secret}
-                      onChange={(e) => setPolymarket({...polymarket, api_secret: e.target.value})}
-                      placeholder="Enter your API secret"
-                      className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div className="mb-3 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
-                  <p className="text-xs text-gray-400 mb-2">🔐 Security Features:</p>
-                  <ul className="text-xs text-gray-400 space-y-1">
-                    <li>• Credentials encrypted with AES-128 before storage</li>
-                    <li>• Only you can access your API keys</li>
-                    <li>• AI can trade automatically (when enabled)</li>
-                    <li>• Copytrade top Polymarket leaders</li>
-                  </ul>
-                </div>
-
-                <button
-                  onClick={connectPolymarket}
-                  disabled={polymarket.loading || !polymarket.api_key || !polymarket.api_secret}
-                  className="w-full py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-sm font-medium"
-                >
-                  {polymarket.loading ? 'Connecting...' : 'Connect Polymarket Account'}
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="mb-3 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-green-400 flex items-center gap-2">
-                      <Check className="w-4 h-4" />
-                      Connected
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      Wallet: {polymarket.wallet_address?.slice(0, 6)}...{polymarket.wallet_address?.slice(-4)}
-                    </span>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <span className="text-gray-400">Balance:</span>
-                      <p className="text-white font-medium">${polymarket.balance?.toLocaleString() || '0.00'}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Equity:</span>
-                      <p className="text-white font-medium">${polymarket.equity?.toLocaleString() || '0.00'}</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      onClick={() => setShowLeaders(!showLeaders)}
-                      className="flex-1 py-1.5 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-xs"
-                    >
-                      {showLeaders ? 'Hide Leaders' : 'Browse Leaders'} ({polymarket.leaders?.length || 0})
-                    </button>
-                    <button
-                      onClick={refreshBalance}
-                      className="px-3 py-1.5 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-xs"
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                </div>
-
-                {/* Copytrading Leaders Section */}
-                {showLeaders && polymarket.leaders && polymarket.leaders.length > 0 && (
-                  <div className="mb-3">
-                    <h3 className="text-sm font-medium text-white mb-2">Top Polymarket Leaders</h3>
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {polymarket.leaders.map((leader: any) => (
-                        <div key={leader.leader_id} className="p-2 bg-[#0F172A] rounded border border-[#475569]">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm text-white">{leader.leader_name}</p>
-                              <p className="text-xs text-gray-400">
-                                Win Rate: {(leader.win_rate * 100).toFixed(1)}% | PnL: ${leader.total_pnl.toLocaleString()}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => followLeader(leader.leader_id, leader.leader_name)}
-                              disabled={leader.is_following}
-                              className={`px-3 py-1 text-xs rounded-md ${
-                                leader.is_following
-                                  ? 'bg-green-600/20 text-green-400 cursor-default'
-                                  : 'bg-purple-600 hover:bg-purple-700 text-white'
-                              }`}
-                            >
-                              {leader.is_following ? '✓ Following' : 'Follow'}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* AI Trading Settings */}
-                <div className="mb-3 space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={polymarket.ai_trading_enabled}
-                      onChange={(e) => setPolymarket({...polymarket, ai_trading_enabled: e.target.checked})}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-gray-300">🤖 Enable AI trading</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={polymarket.copytrading_enabled}
-                      onChange={(e) => setPolymarket({...polymarket, copytrading_enabled: e.target.checked})}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-gray-300">📊 Enable copytrading leaders</span>
-                  </label>
-                </div>
-
-                <button
-                  onClick={disconnectPolymarket}
-                  className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm"
-                >
-                  Disconnect Account
-                </button>
-              </>
-            )}
-
-            {polymarket.message && (
-              <p className={`text-xs mt-2 ${polymarket.success ? 'text-green-400' : 'text-red-400'}`}>
-                {polymarket.message}
+        {/* Group 4: Portfolio & Payouts */}
+        <CollapsibleSection
+          title="Portfolio & Payouts"
+          subtitle="Auto-payout and Nigerian bank payment gateways"
+          icon={DollarSign}
+          storageKey="settings-payouts-open"
+        >
+          <div className="space-y-4">
+            {/* Auto-Payout Settings */}
+            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+              <div className="flex items-center gap-2 mb-3">
+                <DollarSign className="w-5 h-5 text-[#10B981]" />
+                <h3 className="text-md font-semibold text-white">Auto-Payout (50% Daily Profit)</h3>
+              </div>
+              
+              <p className="text-xs text-gray-400 mb-3">
+                Automatically send 50% of your daily trading profits to your crypto wallet. 
+                Executes at your scheduled time (ET) each day.
               </p>
-            )}
-          </div>
 
-        {/* API Keys Section */}
-        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]" data-tour="api-keys-section">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Key className="w-5 h-5 text-[#3B82F6]" />
-              <h2 className="text-lg font-semibold text-white">NVIDIA NIM API</h2>
-            </div>
-            <button onClick={() => testConnection('nvidia')} disabled={!formData.nvidia_api_key} className="text-xs px-3 py-1.5 rounded-md bg-[#3B82F6]/20 text-[#3B82F6] disabled:opacity-50">Test</button>
-          </div>
-          <input type="password" value={formData.nvidia_api_key} onChange={(e) => setFormData({...formData, nvidia_api_key: e.target.value})} placeholder="nvapi-..." className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-          {testResults.nvidia && <p className={`text-xs mt-2 ${testResults.nvidia.valid ? 'text-green-500' : 'text-red-500'}`}>{testResults.nvidia.message}</p>}
-        </section>
+              {/* Crypto Wallet */}
+              <div className="mb-3">
+                <label className="block text-sm text-gray-300 mb-2">Crypto Wallet Address (USDC/USDT)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={payoutSettings.crypto_wallet}
+                    onChange={(e) => setPayoutSettings({...payoutSettings, crypto_wallet: e.target.value})}
+                    placeholder="0x... (Ethereum USDT/USDC) or Solana USDT/USDC"
+                    className="flex-1 bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white font-mono text-sm"
+                  />
+                  <button
+                    onClick={validateWallet}
+                    className="px-3 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white text-sm rounded-md"
+                  >
+                    Validate
+                  </button>
+                </div>
+                <p className="text-xs text-amber-500 mt-1.5 flex items-center gap-1">
+                  ⚠️ <strong>USDT or USDC only</strong> - All profits (forex, stocks, crypto) are converted to USDT before payout
+                </p>
+              </div>
 
-        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Key className="w-5 h-5 text-[#F7931A]" />
-              <h2 className="text-lg font-semibold text-white">Binance</h2>
-            </div>
-            <button onClick={() => testConnection('binance')} disabled={!formData.binance_api_key} className="text-xs px-3 py-1.5 rounded-md bg-[#F7931A]/20 text-[#F7931A] disabled:opacity-50">Test</button>
-          </div>
-          <input type="password" value={formData.binance_api_key} onChange={(e) => setFormData({...formData, binance_api_key: e.target.value})} placeholder="API Key" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm mb-2" />
-          <input type="password" value={formData.binance_api_secret} onChange={(e) => setFormData({...formData, binance_api_secret: e.target.value})} placeholder="API Secret" className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" />
-        </section>
+              {/* Enable Auto-Payout */}
+              <div className="mb-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={payoutSettings.payout_enabled}
+                    onChange={(e) => setPayoutSettings({...payoutSettings, payout_enabled: e.target.checked})}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-300">Enable Auto-Payout</span>
+                </label>
+              </div>
 
-        {/* cTrader OAuth Connection (Multi-Tenant Copy Trading) */}
-        <div data-tour="ctrader-section">
-          <CTraderConnection
-            onConnected={(accountId) => {
-              triggerToast('success', 'cTrader Connected', 'Your account is now connected for auto-trading!');
-            }}
-          />
-        </div>
+              {/* Payout Percentage */}
+              <div className="mb-3">
+                <label className="block text-sm text-gray-300 mb-2">Payout Percentage</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={payoutSettings.payout_percentage}
+                  onChange={(e) => setPayoutSettings({...payoutSettings, payout_percentage: parseInt(e.target.value)})}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>0%</span>
+                  <span className="text-[#10B981] font-semibold">{payoutSettings.payout_percentage}%</span>
+                  <span>100%</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1.5">
+                  Percentage of daily profit to auto-withdraw
+                </p>
+              </div>
 
-        {/* Trove API - US & Nigerian Stocks */}
-        <div data-tour="trove-section">
-          <TroveSettings triggerToast={triggerToast} />
-        </div>
+              {/* Payout Schedule Time */}
+              <div className="mb-3">
+                <label className="block text-sm text-gray-300 mb-2">Payout Time (ET)</label>
+                <select
+                  value={payoutSettings.payout_schedule_hour}
+                  onChange={(e) => setPayoutSettings({...payoutSettings, payout_schedule_hour: parseInt(e.target.value)})}
+                  className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                >
+                  {[...Array(24)].map((_, i) => {
+                    const hour = i % 12 || 12;
+                    const ampm = i < 12 ? 'AM' : 'PM';
+                    return (
+                      <option key={i} value={i}>
+                        {hour}:00 {ampm} ET
+                      </option>
+                    );
+                  })}
+                </select>
+                <p className="text-xs text-amber-500 mt-1.5 flex items-center gap-1">
+                  ⏰ Time is in <strong>Eastern Time (ET)</strong> - US Eastern timezone
+                </p>
+              </div>
 
-        {/* AKShare - Chinese Stocks */}
-        <div data-tour="akshare-section">
-          <AKShareSettings triggerToast={triggerToast} />
-        </div>
+              {/* Info Box */}
+              <div className="bg-[#10B981]/10 border border-[#10B981]/30 rounded-lg p-3 mb-3">
+                <p className="text-xs text-[#10B981]">
+                  💡 Auto-payout runs once per day at your scheduled time. It calculates your total realized 
+                  profit for the day and sends {payoutSettings.payout_percentage}% to your wallet. 
+                  No profit = no payout.
+                </p>
+              </div>
 
-        {/* Currency Toggle - USD/NGN */}
-        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-[#10B981]" />
-              <h2 className="text-lg font-semibold text-white">Currency Display</h2>
-            </div>
-          </div>
-          <p className="text-xs text-gray-400 mb-3">
-            Toggle between US Dollar (USD) and Nigerian Naira (NGN) for all monetary values.
-            Exchange rates update every 60 seconds.
-          </p>
-          <CurrencyToggle />
-        </section>
-
-        {/* Kronos Colab */}
-        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
-          <div className="flex items-center gap-2 mb-3">
-            <Server className="w-5 h-5 text-[#8B5CF6]" />
-            <h2 className="text-lg font-semibold text-white">Kronos on Google Colab</h2>
-          </div>
-          <input
-            type="url"
-            value={formData.colab_kronos_url}
-            onChange={(e) => setFormData({...formData, colab_kronos_url: e.target.value})}
-            placeholder="https://<your-colab-url>/proxy/8080"
-            className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-[#8B5CF6]"
-          />
-          <p className="text-xs text-gray-500 mt-2">
-            Google Colab URL from kronos_colab.ipynb notebook for GPU-accelerated predictions
-          </p>
-          <div className="mt-3 p-3 bg-[#8B5CF6]/10 border border-[#8B5CF6]/30 rounded-md">
-            <p className="text-xs text-[#8B5CF6]">
-              📝 Run the kronos_colab.ipynb notebook, copy the public URL (with /proxy/8080), and paste it here.
-            </p>
-          </div>
-        </section>
-
-        {/* Trading Caps & Risk Limits */}
-        <div data-tour="trading-caps-section">
-          <TradingCapsSection portfolioId={portfolioId} triggerToast={triggerToast} />
-        </div>
-
-        {/* Market Data Providers */}
-        <div data-tour="market-data-section">
-          <MarketDataSection marketData={marketData} setMarketData={setMarketData} triggerToast={triggerToast} />
-        </div>
-
-        {/* Auto-Payout Settings */}
-        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
-          <div className="flex items-center gap-2 mb-3">
-            <DollarSign className="w-5 h-5 text-[#10B981]" />
-            <h2 className="text-lg font-semibold text-white">Auto-Payout (50% Daily Profit)</h2>
-          </div>
-          
-          <p className="text-xs text-gray-400 mb-3">
-            Automatically send 50% of your daily trading profits to your crypto wallet. 
-            Executes at your scheduled time (ET) each day.
-          </p>
-
-          {/* Crypto Wallet */}
-          <div className="mb-3">
-            <label className="block text-sm text-gray-300 mb-2">Crypto Wallet Address (USDC/USDT)</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={payoutSettings.crypto_wallet}
-                onChange={(e) => setPayoutSettings({...payoutSettings, crypto_wallet: e.target.value})}
-                placeholder="0x... (Ethereum USDT/USDC) or Solana USDT/USDC"
-                className="flex-1 bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white font-mono text-sm"
-              />
+              {/* Save Button */}
               <button
-                onClick={validateWallet}
-                className="px-3 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white text-sm rounded-md"
+                onClick={savePayoutSettings}
+                className="w-full py-2.5 bg-[#10B981] hover:bg-[#059669] text-white font-medium rounded-lg transition-colors"
               >
-                Validate
+                Save Auto-Payout Settings
               </button>
             </div>
-            <p className="text-xs text-amber-500 mt-1.5 flex items-center gap-1">
-              ⚠️ <strong>USDT or USDC only</strong> - All profits (forex, stocks, crypto) are converted to USDT before payout
-            </p>
-          </div>
 
-          {/* Enable Auto-Payout */}
-          <div className="mb-3">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={payoutSettings.payout_enabled}
-                onChange={(e) => setPayoutSettings({...payoutSettings, payout_enabled: e.target.checked})}
-                className="w-4 h-4"
-              />
-              <span className="text-sm text-gray-300">Enable Auto-Payout</span>
-            </label>
-          </div>
+            {/* Payment Gateways - Nigerian Banks */}
+            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]" data-tour="payment-gateways">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-5 h-5 text-[#10B981]" />
+                  <h3 className="text-md font-semibold text-white">Payment Gateways (Nigerian Banks)</h3>
+                </div>
+              </div>
 
-          {/* Payout Percentage */}
-          <div className="mb-3">
-            <label className="block text-sm text-gray-300 mb-2">Payout Percentage</label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={payoutSettings.payout_percentage}
-              onChange={(e) => setPayoutSettings({...payoutSettings, payout_percentage: parseInt(e.target.value)})}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-gray-400 mt-1">
-              <span>0%</span>
-              <span className="text-[#10B981] font-semibold">{payoutSettings.payout_percentage}%</span>
-              <span>100%</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-1.5">
-             Percentage of daily profit to auto-withdraw
-            </p>
-          </div>
+              <p className="text-xs text-gray-400 mb-4">
+                Configure Paystack or Flutterwave to enable dynamic Nigerian bank list fetching and 
+                CBN-mandated account validation for Naira payouts.
+              </p>
 
-          {/* Payout Schedule Time */}
-          <div className="mb-3">
-            <label className="block text-sm text-gray-300 mb-2">Payout Time (ET)</label>
-            <select
-              value={payoutSettings.payout_schedule_hour}
-              onChange={(e) => setPayoutSettings({...payoutSettings, payout_schedule_hour: parseInt(e.target.value)})}
-              className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
-            >
-              {[...Array(24)].map((_, i) => {
-                const hour = i % 12 || 12;
-                const ampm = i < 12 ? 'AM' : 'PM';
-                return (
-                  <option key={i} value={i}>
-                    {hour}:00 {ampm} ET
-                  </option>
-                );
-              })}
-            </select>
-            <p className="text-xs text-amber-500 mt-1.5 flex items-center gap-1">
-              ⏰ Time is in <strong>Eastern Time (ET)</strong> - US Eastern timezone
-            </p>
-          </div>
-
-          {/* Info Box */}
-          <div className="bg-[#10B981]/10 border border-[#10B981]/30 rounded-lg p-3 mb-3">
-            <p className="text-xs text-[#10B981]">
-              💡 Auto-payout runs once per day at your scheduled time. It calculates your total realized 
-              profit for the day and sends {payoutSettings.payout_percentage}% to your wallet. 
-              No profit = no payout.
-            </p>
-          </div>
-
-          {/* Save Button */}
-          <button
-            onClick={savePayoutSettings}
-            className="w-full py-2.5 bg-[#10B981] hover:bg-[#059669] text-white font-medium rounded-lg transition-colors"
-          >
-            Save Auto-Payout Settings
-          </button>
-        </section>
-
-        {/* Payment Gateways - Nigerian Banks */}
-        <section className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]" data-tour="payment-gateways">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-[#10B981]" />
-              <h2 className="text-lg font-semibold text-white">Payment Gateways (Nigerian Banks)</h2>
-            </div>
-          </div>
-
-          <p className="text-xs text-gray-400 mb-4">
-            Configure Paystack or Flutterwave to enable dynamic Nigerian bank list fetching and 
-            CBN-mandated account validation for Naira payouts.
-          </p>
-
-          {/* Paystack */}
-          <div className="mb-4 p-3 bg-[#10B981]/10 border border-[#10B981]/30 rounded-md">
-            <div className="flex items-center justify-between mb-2">
-              <label className="flex items-center gap-2">
+              {/* Paystack */}
+              <div className="mb-4 p-3 bg-[#10B981]/10 border border-[#10B981]/30 rounded-md">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={paymentGateways.paystack_enabled}
+                      onChange={(e) => setPaymentGateways({...paymentGateways, paystack_enabled: e.target.checked})}
+                      className="w-4 h-4 rounded border-gray-600 text-[#10B981] focus:ring-[#10B981]"
+                    />
+                    <span className="text-sm text-gray-300 font-medium">Paystack</span>
+                  </label>
+                  <a
+                    href="https://dashboard.paystack.com/settings/api"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-[#10B981] hover:underline"
+                  >
+                    Get API Key →
+                  </a>
+                </div>
                 <input
-                  type="checkbox"
-                  checked={paymentGateways.paystack_enabled}
-                  onChange={(e) => setPaymentGateways({...paymentGateways, paystack_enabled: e.target.checked})}
-                  className="w-4 h-4 rounded border-gray-600 text-[#10B981] focus:ring-[#10B981]"
+                  type="password"
+                  value={paymentGateways.paystack_api_key}
+                  onChange={(e) => setPaymentGateways({...paymentGateways, paystack_api_key: e.target.value})}
+                  placeholder="sk_live_xxx or sk_test_xxx"
+                  className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#10B981]"
                 />
-                <span className="text-sm text-gray-300 font-medium">Paystack</span>
-              </label>
-              <a
-                href="https://dashboard.paystack.com/settings/api"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-[#10B981] hover:underline"
-              >
-                Get API Key →
-              </a>
-            </div>
-            <input
-              type="password"
-              value={paymentGateways.paystack_api_key}
-              onChange={(e) => setPaymentGateways({...paymentGateways, paystack_api_key: e.target.value})}
-              placeholder="sk_live_xxx or sk_test_xxx"
-              className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#10B981]"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Secret key for account validation and bank list fetching
-            </p>
-          </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Secret key for account validation and bank list fetching
+                </p>
+              </div>
 
-          {/* Flutterwave */}
-          <div className="p-3 bg-[#F59E0B]/10 border border-[#F59E0B]/30 rounded-md">
-            <div className="flex items-center justify-between mb-2">
-              <label className="flex items-center gap-2">
+              {/* Flutterwave */}
+              <div className="p-3 bg-[#F59E0B]/10 border border-[#F59E0B]/30 rounded-md">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={paymentGateways.flutterwave_enabled}
+                      onChange={(e) => setPaymentGateways({...paymentGateways, flutterwave_enabled: e.target.checked})}
+                      className="w-4 h-4 rounded border-gray-600 text-[#F59E0B] focus:ring-[#F59E0B]"
+                    />
+                    <span className="text-sm text-gray-300 font-medium">Flutterwave</span>
+                  </label>
+                  <a
+                    href="https://dashboard.flutterwave.com/settings/api"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-[#F59E0B] hover:underline"
+                  >
+                    Get API Key →
+                  </a>
+                </div>
                 <input
-                  type="checkbox"
-                  checked={paymentGateways.flutterwave_enabled}
-                  onChange={(e) => setPaymentGateways({...paymentGateways, flutterwave_enabled: e.target.checked})}
-                  className="w-4 h-4 rounded border-gray-600 text-[#F59E0B] focus:ring-[#F59E0B]"
+                  type="password"
+                  value={paymentGateways.flutterwave_api_key}
+                  onChange={(e) => setPaymentGateways({...paymentGateways, flutterwave_api_key: e.target.value})}
+                  placeholder="FLWSECK_xxx"
+                  className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#F59E0B]"
                 />
-                <span className="text-sm text-gray-300 font-medium">Flutterwave</span>
-              </label>
-              <a
-                href="https://dashboard.flutterwave.com/settings/api"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-[#F59E0B] hover:underline"
-              >
-                Get API Key →
-              </a>
+                <p className="text-xs text-gray-500 mt-1">
+                  Secret key for account validation and bank list fetching
+                </p>
+              </div>
+
+              <div className="mt-4 p-3 bg-[#3B82F6]/10 border border-[#3B82F6]/30 rounded-md">
+                <p className="text-xs text-[#3B82F6]">
+                  <strong>💡 Why configure this?</strong> Nigerian regulations (CBN NIP) require account validation 
+                  before transfers. Your users will see verified account holder names before payouts, preventing fraud.
+                </p>
+              </div>
             </div>
-            <input
-              type="password"
-              value={paymentGateways.flutterwave_api_key}
-              onChange={(e) => setPaymentGateways({...paymentGateways, flutterwave_api_key: e.target.value})}
-              placeholder="FLWSECK_xxx"
-              className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#F59E0B]"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Secret key for account validation and bank list fetching
-            </p>
           </div>
+        </CollapsibleSection>
 
-          <div className="mt-4 p-3 bg-[#3B82F6]/10 border border-[#3B82F6]/30 rounded-md">
-            <p className="text-xs text-[#3B82F6]">
-              <strong>💡 Why configure this?</strong> Nigerian regulations (CBN NIP) require account validation 
-              before transfers. Your users will see verified account holder names before payouts, preventing fraud.
+        {/* Group 5: Display Settings */}
+        <CollapsibleSection
+          title="Display"
+          subtitle="Currency and regional settings"
+          icon={Globe}
+          storageKey="settings-display-open"
+        >
+          <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Globe className="w-5 h-5 text-[#10B981]" />
+                <h3 className="text-md font-semibold text-white">Currency Display</h3>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              Toggle between US Dollar (USD) and Nigerian Naira (NGN) for all monetary values.
+              Exchange rates update every 60 seconds.
             </p>
+            <CurrencyToggle />
           </div>
-        </section>
+        </CollapsibleSection>
 
-        {/* Save Button */}
+        {/* Group 6: Risk Controls */}
+        <CollapsibleSection
+          title="Risk Controls"
+          subtitle="Trading caps and position limits"
+          icon={Shield}
+          storageKey="settings-risk-open"
+        >
+          <div data-tour="trading-caps-section">
+            <TradingCapsSection portfolioId={portfolioId} triggerToast={triggerToast} />
+          </div>
+        </CollapsibleSection>
+
+        {/* Group 7: System Status */}
+        <CollapsibleSection
+          title="System Status"
+          subtitle="Real-time monitoring of backend services"
+          icon={Shield}
+          storageKey="settings-system-open"
+          defaultOpen={false}
+        >
+          <SystemStatusPanel />
+        </CollapsibleSection>
+
+        {/* Global Save and Tour Reset controls */}
         <div
           data-onboarding="save-reset"
           className="flex items-center justify-between gap-3 pt-6 border-t border-[#475569]"
@@ -1386,18 +1505,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
             <Save className="w-5 h-5" /> Save All Settings
           </button>
         </div>
-      </section>
-    </div>
-
-      {/* System Status Panel */}
-      <CollapsibleSection
-        title="System Status"
-        subtitle="Real-time monitoring of backend services"
-        storageKey="settings-system-open"
-      >
-        <SystemStatusPanel />
-      </CollapsibleSection>
-
+      </div>
     </div>
   );
 }

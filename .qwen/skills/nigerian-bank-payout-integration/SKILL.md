@@ -1,21 +1,23 @@
 ---
 name: nigerian-bank-payout-integration
-description: Dynamic Nigerian bank list fetching and CBN NIP account validation for NGN payouts
+description: Dynamic Nigerian bank list fetching and CBN NIP account validation for NGN payouts with auto-gateway detection
 source: auto-skill
-extracted_at: '2026-06-12T20:28:49.946Z'
+extracted_at: '2026-06-28T13:21:13.742Z'
 ---
 
 # Nigerian Bank Payout Integration
 
 ## Overview
 
-Implement production-ready Nigerian bank payouts with dynamic bank list fetching and mandatory CBN NIP account validation to prevent fraud and ensure regulatory compliance.
+Implement production-ready Nigerian bank payouts with dynamic bank list fetching, mandatory CBN NIP account validation, and auto-gateway detection for flexible deployment configurations.
 
 ## Key Principles
 
 **NEVER hardcode bank lists** - Nigerian banks are frequently renamed, licensed, or liquidated. Always fetch from payment gateway APIs at runtime.
 
 **Always validate accounts** - CBN mandates NIP account resolution before any transfer to prevent wrong-account payouts.
+
+**Flexibility for deployment** - API keys can be provided via environment variables (Render) or user settings (local dev/flexible deployment).
 
 ## Backend Implementation
 

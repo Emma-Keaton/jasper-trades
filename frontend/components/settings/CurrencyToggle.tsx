@@ -44,6 +44,8 @@ export default function CurrencyToggle({ className = '' }: CurrencyToggleProps) 
       <button
         onClick={handleToggle}
         className="relative flex items-center justify-center w-16 h-8 bg-[#334155] rounded-full transition-colors hover:bg-[#475569]"
+        aria-label={`Switch currency from ${currency} to ${currency === 'USD' ? 'NGN' : 'USD'}`}
+        aria-pressed={currency === 'NGN'}
         title={`Switch to ${currency === 'USD' ? 'NGN' : 'USD'}`}
       >
         <div
@@ -57,7 +59,7 @@ export default function CurrencyToggle({ className = '' }: CurrencyToggleProps) 
             <ToggleRight className="w-6 h-6 text-[#10B981]" />
           )}
         </div>
-        <span className="text-xs font-semibold text-white">
+        <span className="text-xs font-semibold text-white" aria-hidden="true">
           {currency === 'USD' ? 'NGN' : 'USD'}
         </span>
       </button>

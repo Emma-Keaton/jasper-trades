@@ -279,7 +279,7 @@ async def test_telegram_connection(
         raise HTTPException(status_code=400, detail="Telegram chat not verified")
 
     # Send test message
-    success = await telegram_service.test_connection()
+    success = await telegram_service.test_connection(user.chat_id)
 
     if success:
         # Update last active

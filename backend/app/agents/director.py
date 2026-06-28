@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, List
 from app.agents.base import BaseAgent
 from app.nvidia_nim import nvidia_client
 from app.models import Signal
+from app.services.agent_reach.market_intel_service import get_market_intel_service
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -40,12 +41,36 @@ class DirectorAgent(BaseAgent):
         Returns:
             Strategic analysis with theses and recommendations
         """
+        # Extract symbols from market data for news lookup
+        symbols = market_data.get('symbols', [])
+        if isinstance(symbols, str):
+            symbols = [symbols]
+        
+        # Get market intelligence for mentioned symbols
+        news_context = ""
+        if symbols:
+            try:
+                market_intel_service = get_market_intel_service()
+                for symbol in symbols[:3]:  # Look up top 3 symbols
+                    try:
+                        sentiment = await market_intel_service.get_sentiment(ticker=symbol)
+                        if sentiment and sentiment.get('recent_articles', 0) > 0:
+                            score = sentiment.get('overall_score', 50)
+                            label = "bullish" if score > 60 else "bearish" if score < 40 else "neutral"
+                            news_context += f"\n- {symbol}: {sentiment.get('recent_articles', 0)} recent articles, sentiment {label} ({score:.0f}/100)"
+                    except:
+                        pass
+            except Exception as e:
+                logger.warning(f"Market intelligence lookup failed: {e}")
+        
         prompt = f"""
 You are the Director Agent of an AI trading system. Your role is to analyze market conditions 
 and generate strategic trading theses.
 
 Market Data:
 {market_data}
+
+Market Intelligence:{news_context if news_context else " No real-time news available."}
 
 Generate a comprehensive analysis including:
 1. Market regime (bullish/bearish/sideways)

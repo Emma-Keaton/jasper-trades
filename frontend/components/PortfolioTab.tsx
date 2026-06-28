@@ -18,6 +18,7 @@ import {
 import ReactFrappeChart from 'react-frappe-charts';
 import { Holding, TradeHistoryItem, Toast } from '@/app/page';
 import WithdrawModal from './WithdrawModal';
+import { useCurrencyFormatter } from '@/lib/currencyContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -40,6 +41,7 @@ export default function PortfolioTab({
   triggerToast,
   portfolioInitialized = false
 }: PortfolioTabProps) {
+  const { formatMoney } = useCurrencyFormatter();
   const [allocationStyle, setAllocationStyle] = useState<'donut' | 'treemap'>('donut');
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [isExportingCSV, setIsExportingCSV] = useState<boolean>(false);
@@ -125,7 +127,7 @@ export default function PortfolioTab({
         triggerToast('info', 'Paper Trading', 'Portfolio is in paper trading mode. No broker sync needed.');
       } else if (result.status === 'success') {
         setCash(result.new_cash);
-        triggerToast('success', 'Broker Synced', `Synced $${result.new_cash.toLocaleString()} from ${result.broker}.`);
+        triggerToast('success', 'Broker Synced', `Synced ${formatMoney(result.new_cash, 'USD')} from ${result.broker}.`);
       }
     } catch (error: any) {
       triggerToast('error', 'Sync Failed', error.message || 'Could not sync with broker.');
@@ -208,7 +210,7 @@ export default function PortfolioTab({
 
     setHoldings(remainingHoldings);
     setCash(prev => prev + creditAmount);
-    triggerToast('success', 'Positions Liquidated', `Closed ${selectedPositions.length} positions, credited $${creditAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} to cash.`);
+    triggerToast('success', 'Positions Liquidated', `Closed ${selectedPositions.length} positions, credited ${formatMoney(creditAmount, 'USD')} to cash.`);
     setSelectedPositions([]);
   };
 
@@ -229,7 +231,7 @@ export default function PortfolioTab({
           <p className="text-sm text-[#94A3B8]">Monitor allocation indices, synchronise broker positions, and execute withdrawals.</p>
         </div>
         <span className="bg-[#3B82F6]/15 border border-[#3B82F6]/30 text-[#3B82F6] px-3 py-1 rounded-full text-xs font-bold font-mono">
-          {totalPositions} Positions | ${totalNetValue.toLocaleString(undefined, { minimumFractionDigits: 2 })} AUM
+          {totalPositions} Positions | {formatMoney(totalNetValue, 'USD')} AUM
         </span>
       </div>
 
@@ -238,7 +240,7 @@ export default function PortfolioTab({
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
             <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Net Valuation</span>
-            <span className="text-2xl font-black font-mono text-white">${totalNetValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            <span className="text-2xl font-black font-mono text-white">{formatMoney(totalNetValue, 'USD')}</span>
             <span className="text-[11px] text-[#94A3B8] font-mono">Holdings + Liquid Cash</span>
           </div>
           <div className="p-3 bg-[#3B82F6]/10 text-[#3B82F6] rounded-xl">
@@ -249,7 +251,7 @@ export default function PortfolioTab({
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
             <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold" data-onboarding="cash-balance">Liquid Cash</span>
-            <span className="text-2xl font-black font-mono text-white">${cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            <span className="text-2xl font-black font-mono text-white">{formatMoney(cash, 'USD')}</span>
             <span className="text-[11px] text-[#94A3B8] font-mono">Available for deployment</span>
           </div>
           <div className="p-3 bg-[#10B981]/10 text-[#10B981] rounded-xl">
@@ -260,7 +262,7 @@ export default function PortfolioTab({
         <div className="bg-[#1E293B] border border-[#475569] p-4 rounded-xl flex items-center justify-between">
           <div className="flex flex-col gap-1">
             <span className="text-xs uppercase font-mono text-[#94A3B8] font-bold">Equity Holdings</span>
-            <span className="text-2xl font-black font-mono text-white">${holdingsValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            <span className="text-2xl font-black font-mono text-white">{formatMoney(holdingsValue, 'USD')}</span>
             <span className="text-[11px] text-[#94A3B8] font-mono">{stocksCount} Stocks, {cryptoCount} Crypto</span>
           </div>
           <div className="p-3 bg-[#F59E0B]/10 text-[#F59E0B] rounded-xl">
@@ -394,7 +396,7 @@ export default function PortfolioTab({
             <h3 className="font-bold text-md text-[#F8FAFC]">Current Holdings</h3>
             <span className="text-xs font-mono text-[#94A3B8]">Your portfolio positions</span>
           </div>
-          <span className="text-[10px] font-mono text-[#94A3B8]">Total: ${holdingsValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          <span className="text-[10px] font-mono text-[#94A3B8]">Total: {formatMoney(holdingsValue, 'USD')}</span>
         </div>
 
         {holdings.length === 0 ? (
@@ -454,9 +456,9 @@ export default function PortfolioTab({
                         </span>
                       </td>
                       <td className="text-right text-[#F8FAFC]">{h.shares.toLocaleString()}</td>
-                      <td className="text-right text-[#F8FAFC]">${h.avgPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                      <td className="text-right text-[#F8FAFC]">${h.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                      <td className="text-right font-bold text-white">${positionValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="text-right text-[#F8FAFC]">{formatMoney(h.avgPrice, 'USD')}</td>
+                      <td className="text-right text-[#F8FAFC]">{formatMoney(h.currentPrice, 'USD')}</td>
+                      <td className="text-right font-bold text-white">{formatMoney(positionValue, 'USD')}</td>
                       <td className={`text-right font-bold ${isPositive ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
                         {isPositive ? '▲' : '▼'} {isPositive ? '+' : ''}{h.pnlPercent}%
                       </td>

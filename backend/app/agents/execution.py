@@ -14,6 +14,7 @@ from app.brokers import (
     broker_registry,
 )
 from app.brokers.router import broker_router
+from app.services.agent_reach.market_intel_service import get_market_intel_service
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -74,25 +75,42 @@ class ExecutionAgent(BaseAgent):
 
     async def analyze(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyze execution conditions.
+        Analyze execution conditions with market intelligence.
 
         Returns:
-            Execution quality metrics
+            Execution quality metrics and news context
         """
         try:
             spread = market_data.get('spread', 0)
             volume = market_data.get('volume', 0)
             volatility = market_data.get('volatility', 0)
+            symbol = market_data.get('symbol', '')
 
             # Execution quality assessment
             liquidity_score = min(1.0, volume / 1000000) if volume else 0.5
             spread_score = max(0, 1 - spread * 100)  # Lower spread = better
+
+            # Get market intelligence for execution timing
+            news_context = {}
+            if symbol:
+                try:
+                    market_intel_service = get_market_intel_service()
+                    sentiment = await market_intel_service.get_sentiment(ticker=symbol)
+                    if sentiment and sentiment.get('recent_articles', 0) > 0:
+                        news_context = {
+                            'recent_news_count': sentiment.get('recent_articles', 0),
+                            'sentiment_score': sentiment.get('overall_score', 50),
+                            'news_driven_volatility': sentiment.get('overall_score', 50) > 70 or sentiment.get('overall_score', 50) < 30
+                        }
+                except Exception as intel_error:
+                    logger.warning(f"Market intel lookup failed for {symbol}: {intel_error}")
 
             return {
                 'liquidity_score': liquidity_score,
                 'spread_score': spread_score,
                 'volatility': volatility,
                 'execution_quality': (liquidity_score + spread_score) / 2,
+                'news_context': news_context,
             }
 
         except Exception as e:

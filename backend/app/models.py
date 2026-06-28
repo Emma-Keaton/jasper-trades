@@ -182,6 +182,9 @@ class DeviceSettings(Base):
     telegram_config = Column(String, nullable=True)  # JSON: {bot_token, chat_id, enabled}
     whatsapp_config = Column(String, nullable=True)  # JSON: {phone_number, openwa_url, enabled, chat_enabled}
 
+    # Broker paper trading configs (stored as JSON string)
+    broker_paper_trading_config = Column(String, nullable=True)  # JSON: {ctrader: {enabled, capital, currency}, trove: {...}, akshare: {...}}
+
     # Market Data APIs (encrypted)
     alphavantage_key = Column(String, nullable=True)  # Encrypted
     finnhub_key = Column(String, nullable=True)  # Encrypted

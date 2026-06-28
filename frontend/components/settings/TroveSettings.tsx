@@ -15,9 +15,12 @@ interface TroveSettingsState {
 
 interface TroveSettingsProps {
   triggerToast: (type: 'success' | 'error' | 'info', title: string, message: string) => void;
+  paperTradingConfig?: { enabled: boolean; capital: number; currency: string };
+  onUpdatePaperTrading?: (updates: Partial<{enabled: boolean; capital: number; currency: string}>) => void;
+  onSave?: () => void;
 }
 
-export default function TroveSettings({ triggerToast }: TroveSettingsProps) {
+export default function TroveSettings({ triggerToast, paperTradingConfig, onUpdatePaperTrading, onSave }: TroveSettingsProps) {
   const [formData, setFormData] = useState({
     trove_api_key: '',
     trove_base_url: 'https://sandbox.api.trovefinance.com/v1',
@@ -59,7 +62,7 @@ export default function TroveSettings({ triggerToast }: TroveSettingsProps) {
           trove_sandbox: data.trove_sandbox ?? true,
           trove_base_url: data.trove_base_url || 'https://sandbox.api.trovefinance.com/v1',
         }));
-        
+
         // Check backend connectivity when enabled
         if (data.trove_enabled && data.trove_api_key) {
           setConnectionStatus('checking');

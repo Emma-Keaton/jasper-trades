@@ -7,7 +7,9 @@ from typing import Dict, Any, Optional
 from app.agents.base import BaseAgent
 from app.nvidia_nim import nvidia_client
 from app.models import Signal
+from app.services.agent_reach.market_intel_service import get_market_intel_service
 import structlog
+import json
 
 logger = structlog.get_logger(__name__)
 
@@ -96,6 +98,25 @@ Output as JSON with: risk_level, volatility_regime, correlation_risk, liquidity,
             Risk assessment with approval and limits
         """
         try:
+            # Get market intelligence for this symbol
+            market_intel_service = get_market_intel_service()
+            news_data = None
+            sentiment_data = None
+            news_context = ""
+            
+            try:
+                # Fetch news and sentiment (non-blocking, doesn't fail if unavailable)
+                news_data = await market_intel_service.get_news(ticker=symbol, limit=10)
+                sentiment_data = await market_intel_service.get_sentiment(ticker=symbol)
+                
+                # Build news context for risk assessment
+                if news_data and len(news_data) > 0 and sentiment_data:
+                    sentiment_score = sentiment_data.get('overall_score', 50)
+                    sentiment_label = "positive" if sentiment_score > 60 else "negative" if sentiment_score < 40 else "neutral"
+                    news_context = f"\n\nMarket Intelligence:\n- Recent news articles: {len(news_data)}\n- Sentiment: {sentiment_score:.0f}/100 ({sentiment_label})\n- Sources: {len(sentiment_data.get('source_scores', {}))}"
+            except Exception as intel_error:
+                logger.warning(f"Market intelligence not available for {symbol}: {intel_error}")
+            
             # Calculate current exposure
             current_exposure = sum(
                 pos.get('market_value', 0) 
@@ -104,14 +125,14 @@ Output as JSON with: risk_level, volatility_regime, correlation_risk, liquidity,
             
             exposure_ratio = current_exposure / portfolio_value if portfolio_value else 1
             
-            # Use NVIDIA NIM for risk assessment
+            # Use NVIDIA NIM for risk assessment with market intelligence context
             prompt = f"""
 Assess the risk of this potential position:
 
 Symbol: {symbol}
 Signal Action: {signal.action}
 Signal Strength: {signal.strength}
-Signal Reasoning: {signal.reasoning}
+Signal Reasoning: {signal.reasoning}{news_context}
 
 Portfolio Context:
 - Total Value: ${portfolio_value:,.2f}

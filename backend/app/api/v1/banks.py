@@ -7,14 +7,16 @@ Returns bank names and NIP codes for payout processing.
 Gateway Priority:
 1. Paystack (most reliable, widely used)
 2. Flutterwave (fallback)
-3. Monnify (alternative)
 
-All gateway credentials are loaded from Settings page (encrypted in database).
+API keys are loaded from:
+- Environment variables (Render dashboard): PAYSTACK_SECRET_KEY or FLUTTERWAVE_SECRET_KEY
+- Settings page (encrypted in database): naira_bank_details
 """
 from fastapi import APIRouter, Depends, HTTPException, Header
 from typing import List, Dict, Any, Optional
 import structlog
 import httpx
+import os
 
 from app.database import async_session
 from app.models import DeviceSettings
@@ -25,24 +27,53 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(tags=["banks"])
 
 
-async def get_paystack_api_key() -> Optional[str]:
-    """Get Paystack API key from settings."""
+async def get_gateway_api_key(device_id: str) -> tuple[Optional[str], str]:
+    """
+    Get API key from environment variables or settings.
+    
+    Returns:
+        Tuple of (api_key, gateway_name) - (None, "none") if no key found
+    """
+    # Check environment variables first (for Render deployment)
+    paystack_key = os.getenv("PAYSTACK_SECRET_KEY")
+    flutterwave_key = os.getenv("FLUTTERWAVE_SECRET_KEY")
+    
+    # Prefer Paystack if available in env vars
+    if paystack_key:
+        return paystack_key, "paystack"
+    if flutterwave_key:
+        return flutterwave_key, "flutterwave"
+    
+    # Fall back to settings database
+    if not device_id:
+        return None, "none"
+    
     async with async_session() as session:
-        result = await session.execute(DeviceSettings.__table__.select().limit(1))
+        result = await session.execute(
+            DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+        )
         settings = result.scalar_one_or_none()
-        
+
         if settings and settings.naira_bank_details:
             encryption = EncryptionHelper()
             bank_config = encryption.decrypt_json(settings.naira_bank_details)
             if bank_config:
-                # Paystack key stored in bank_config or use general payment config
-                return bank_config.get("paystack_api_key")
-    return None
+                # Try Paystack first
+                paystack_key = bank_config.get("paystack_api_key")
+                if paystack_key:
+                    return paystack_key, "paystack"
+                
+                # Fall back to Flutterwave
+                flutterwave_key = bank_config.get("flutterwave_api_key")
+                if flutterwave_key:
+                    return flutterwave_key, "flutterwave"
+    
+    return None, "none"
 
 
 @router.get("/nigeria")
 async def get_nigerian_banks(
-    gateway: str = "paystack",  # paystack, flutterwave, monnify
+    gateway: str = "auto",  # paystack, flutterwave, auto (default)
     device_id: str = Header(None, alias="X-Device-ID"),
 ):
     """
@@ -54,46 +85,30 @@ async def get_nigerian_banks(
     - Includes new digital banks and MFBs
 
     Args:
-        gateway: Payment gateway to query (paystack recommended)
-        device_id: Device ID for loading API keys
+        gateway: Payment gateway to query ("auto" to use env vars or most efficient)
+        device_id: Device ID for loading API keys from env vars or settings. If not provided,
+                   will use environment variables (PAYSTACK_SECRET_KEY or FLUTTERWAVE_SECRET_KEY).
 
     Returns:
         List of banks with name, code, slug
     """
-    # Load API key from settings
-    api_key = None
-    
-    if device_id:
-        async with async_session() as session:
-            result = await session.execute(
-                DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
-            )
-            settings = result.scalar_one_or_none()
-            
-            if settings:
-                encryption = EncryptionHelper()
-                
-                # Try to get Paystack key from naira_bank_details
-                if settings.naira_bank_details:
-                    bank_config = encryption.decrypt_json(settings.naira_bank_details)
-                    if bank_config:
-                        api_key = bank_config.get("paystack_api_key")
-                
-                # Fallback: check if there's a general payment_config
-                # (implementation depends on your settings structure)
+    # Get API key and gateway (auto-detect from env vars or settings)
+    api_key, detected_gateway = await get_gateway_api_key(device_id)
 
     # If no API key configured, return cached list
     if not api_key:
         logger.warning("No payment gateway API key configured, returning cached bank list")
         return get_cached_nigerian_banks()
 
+    # Use detected gateway if "auto" specified
+    if gateway == "auto":
+        gateway = detected_gateway
+
     # Fetch from gateway
     if gateway == "paystack":
         banks = await fetch_paystack_banks(api_key)
     elif gateway == "flutterwave":
         banks = await fetch_flutterwave_banks(api_key)
-    elif gateway == "monnify":
-        banks = await fetch_monnify_banks(api_key)
     else:
         banks = await fetch_paystack_banks(api_key)  # Default to Paystack
 
@@ -109,7 +124,7 @@ async def get_nigerian_banks(
 async def validate_nigerian_account(
     account_number: str,
     bank_code: str,
-    gateway: str = "paystack",
+    gateway: str = "auto",
     device_id: str = Header(None, alias="X-Device-ID"),
 ):
     """
@@ -121,8 +136,8 @@ async def validate_nigerian_account(
     Args:
         account_number: 10-digit NUBAN account number
         bank_code: Bank NIP code (e.g., "058" for GTBank)
-        gateway: Payment gateway to use (paystack or flutterwave)
-        device_id: Device ID for loading API keys
+        gateway: Payment gateway to use ("auto" to use env vars or most efficient)
+        device_id: Device ID for loading API keys from env vars or settings
 
     Returns:
         Account holder name and validation status
@@ -139,28 +154,19 @@ async def validate_nigerian_account(
             "error_code": "INVALID_ACCOUNT_NUMBER",
         }
 
-    # Load API key from settings
-    api_key = None
-    
-    if device_id:
-        async with async_session() as session:
-            result = await session.execute(
-                DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
-            )
-            settings = result.scalar_one_or_none()
-            
-            if settings and settings.naira_bank_details:
-                encryption = EncryptionHelper()
-                bank_config = encryption.decrypt_json(settings.naira_bank_details)
-                if bank_config:
-                    api_key = bank_config.get("paystack_api_key")
+    # Get API key and gateway (auto-detect from env vars or settings)
+    api_key, detected_gateway = await get_gateway_api_key(device_id)
 
     if not api_key:
         return {
             "success": False,
-            "message": "Payment gateway API key not configured. Please add your Paystack/Flutterwave key in Settings.",
+            "message": "Payment gateway API key not configured. Please add your Paystack/Flutterwave key in Settings or set environment variables.",
             "error_code": "NO_API_KEY",
         }
+
+    # Use detected gateway if "auto" specified
+    if gateway == "auto":
+        gateway = detected_gateway
 
     # Validate using gateway
     if gateway == "paystack":

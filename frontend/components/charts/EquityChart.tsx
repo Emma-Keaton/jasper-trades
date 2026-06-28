@@ -21,33 +21,53 @@ interface EquityChartProps {
   data: EquityChartDataPoint[];
   timeframe?: '1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL';
   onTimeframeChange?: (timeframe: string) => void;
+  formatCurrency?: (amount: number, currency: 'USD' | 'NGN') => string;
+  currentCurrency?: 'USD' | 'NGN';
+  exchangeRate?: number;
 }
 
-export default function EquityChart({ data, timeframe = '1M', onTimeframeChange }: EquityChartProps) {
+export default function EquityChart({ 
+  data, 
+  timeframe = '1M', 
+  onTimeframeChange,
+  formatCurrency,
+  currentCurrency = 'USD',
+  exchangeRate = 0
+}: EquityChartProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Convert values if currency formatter is provided
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
 
-    return data.map((point, index) => ({
-      index,
-      value: point.y,
-      label: typeof point.x === 'string' ? point.x :
-        index === 0 ? 'Start' :
-        index === data.length - 1 ? 'Now' : ''
-    }));
-  }, [data]);
+    return data.map((point, index) => {
+      const originalValue = point.y;
+      // Convert value to current currency if we have exchange rate
+      const convertedValue = formatCurrency && exchangeRate > 0 && currentCurrency === 'NGN'
+        ? originalValue / exchangeRate
+        : originalValue;
+
+      return {
+        index,
+        value: convertedValue,
+        originalValue,
+        label: typeof point.x === 'string' ? point.x :
+          index === 0 ? 'Start' :
+          index === data.length - 1 ? 'Now' : ''
+      };
+    });
+  }, [data, formatCurrency, exchangeRate, currentCurrency]);
 
   const maxValue = useMemo(() => {
     if (data.length === 0) return 0;
-    return Math.max(...data.map(d => d.y));
-  }, [data]);
+    return Math.max(...chartData.map(d => d.value));
+  }, [chartData, data]);
 
   const minValue = useMemo(() => {
     if (data.length === 0) return 0;
-    return Math.min(...data.map(d => d.y));
-  }, [data]);
+    return Math.min(...chartData.map(d => d.value));
+  }, [chartData, data]);
 
   const isPositive = data.length > 0 && data[data.length - 1].y >= data[0].y;
 
@@ -89,6 +109,9 @@ export default function EquityChart({ data, timeframe = '1M', onTimeframeChange 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const currentValue = payload[0].value;
+      const formattedValue = formatCurrency
+        ? formatCurrency(currentValue, currentCurrency)
+        : `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
       return (
         <div className="bg-[#0F172A] border border-[#475569] rounded-lg px-4 py-3 shadow-2xl">
@@ -96,7 +119,7 @@ export default function EquityChart({ data, timeframe = '1M', onTimeframeChange 
             {payload[0].payload.label || `Point ${payload[0].payload.index + 1}`}
           </p>
           <p className="text-lg font-black text-white">
-            ${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {formattedValue}
           </p>
         </div>
       );
@@ -198,6 +221,11 @@ export default function EquityChart({ data, timeframe = '1M', onTimeframeChange 
               axisLine={{ stroke: '#475569' }}
               tickLine={{ stroke: '#475569' }}
               tickFormatter={(value) => {
+                if (formatCurrency) {
+                  const formatted = formatCurrency(value, currentCurrency);
+                  // Remove currency symbol for axis labels to keep them short
+                  return formatted.replace(/[₦$]/, '');
+                }
                 if (value >= 1000000) return `$${(value/1000000).toFixed(1)}M`;
                 if (value >= 1000) return `$${(value/1000).toFixed(0)}K`;
                 return `$${value}`;

@@ -6,13 +6,39 @@ Uses AKShare library for real-time and historical data.
 """
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
 import structlog
+import asyncio
 
 from app.database import get_db
 from app.brokers.akshare_service import AKShareBrokerService
 
 logger = structlog.get_logger(__name__)
+
+# Simple in-memory cache for symbols (avoids slow AKShare API calls)
+_symbols_cache: Dict[str, dict] = {}
+
+class SimpleCache:
+    """Simple in-memory cache with expiration"""
+    
+    @staticmethod
+    async def get(key: str) -> Optional[Any]:
+        if key in _symbols_cache:
+            cached = _symbols_cache[key]
+            if datetime.utcnow() < cached['expires']:
+                return cached['data']
+            del _symbols_cache[key]
+        return None
+    
+    @staticmethod
+    async def set(key: str, data: Any, expire: int = 300):
+        _symbols_cache[key] = {
+            'data': data,
+            'expires': datetime.utcnow() + timedelta(seconds=expire)
+        }
+
+cache = SimpleCache()
 
 router = APIRouter(prefix="/akshare", tags=["AKShare"])
 
@@ -82,7 +108,8 @@ async def get_historical_data(
 @router.get("/symbols")
 async def get_symbols(
     market: str = Query(default="A", description="A or B"),
-    exchange: str = Query(default="SSE", description="SSE or SZSE")
+    exchange: str = Query(default="SSE", description="SSE or SZSE"),
+    limit: int = Query(default=100, ge=1, le=500, description="Max symbols to return")
 ):
     """
     Get list of available Chinese stocks.
@@ -90,16 +117,31 @@ async def get_symbols(
     Args:
         market: A-shares (CNY) or B-shares (USD/HKD)
         exchange: SSE (Shanghai) or SZSE (Shenzhen)
+        limit: Maximum number of symbols to return (default: 100, max: 500)
     """
     try:
         service = AKShareBrokerService()
         
-        # Fetch all symbols via AKShare
-        if market.upper() == "A":
-            df = service.akshare.stock_zh_a_spot_em()
-        else:
-            df = service.akshare.stock_zh_b_spot_em()
+        # Use caching to avoid repeated API calls
+        import asyncio
+        cache_key = f"akshare_symbols_{market}_{exchange}"
         
+        # Try to get from cache first
+        try:
+            cache_data = await cache.get(cache_key)
+            if cache_data:
+                # Apply limit to cached data
+                return {"symbols": cache_data[:limit], "total": len(cache_data), "cached": True}
+        except:
+            pass
+
+        # Fetch all symbols via AKShare with timeout
+        async with asyncio.timeout(30):  # 30 second timeout
+            if market.upper() == "A":
+                df = service.akshare.stock_zh_a_spot_em()
+            else:
+                df = service.akshare.stock_zh_b_spot_em()
+
         symbols = []
         for _, row in df.iterrows():
             # Filter by exchange based on code prefix
@@ -118,9 +160,22 @@ async def get_symbols(
                     "current": float(row.get('最新价', 0)),
                     "change_pct": float(row.get('涨跌幅', 0)),
                 })
-        
-        return {"symbols": symbols[:100]}  # Limit to 100 results
-    
+            
+            # Stop if we've reached the limit
+            if len(symbols) >= limit * 2:  # Fetch slightly more to account for filtering
+                break
+
+        # Cache for 5 minutes
+        try:
+            await cache.set(cache_key, symbols, expire=300)
+        except:
+            pass
+
+        return {"symbols": symbols[:limit], "total": len(symbols), "cached": False}
+
+    except asyncio.TimeoutError:
+        logger.error("AKShare symbols fetch timed out after 30s")
+        raise HTTPException(status_code=504, detail="Request timeout - try again later")
     except Exception as e:
         logger.error(f"Failed to fetch symbols: {e}")
         raise HTTPException(status_code=500, detail=str(e))

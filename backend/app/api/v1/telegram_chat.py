@@ -75,6 +75,8 @@ async def telegram_chat(
             response_text = await handle_status_intent(user.device_id)
         elif intent == "signal":
             response_text = await handle_signal_intent(request.message, user.device_id)
+        elif intent == "market_intel":
+            response_text = await handle_market_intel_intent(request.message, user.device_id)
         else:
             # General AI chat
             response_text = await handle_general_chat(request.message, user.device_id)
@@ -113,6 +115,10 @@ def detect_intent(message: str) -> str:
     For production, use NLP or fine-tuned model.
     """
     message_lower = message.lower()
+
+    # Market intelligence/news
+    if any(word in message_lower for word in ["news", "market intel", "trending", "what's hot", "breaking news", "market news"]):
+        return "market_intel"
 
     # Portfolio-related
     if any(word in message_lower for word in ["portfolio", "balance", "holdings", "positions", "value"]):
@@ -191,6 +197,72 @@ async def handle_signal_intent(message: str, device_id: str) -> str:
     )
 
 
+async def handle_market_intel_intent(message: str, device_id: str) -> str:
+    """Handle market intelligence/news request"""
+    try:
+        from app.services.agent_reach.market_intel_service import get_market_intel_service
+        
+        service = get_market_intel_service()
+        
+        # Check to see if user is asking about a specific ticker
+        import re
+        ticker_match = re.search(r'\b[A-Z]{1,5}\b', message.upper())
+        ticker = ticker_match.group(0) if ticker_match else None
+        
+        if ticker:
+            # Get news and sentiment for specific ticker
+            news = await service.get_news(ticker=ticker, limit=5)
+            sentiment = await service.get_sentiment(ticker)
+            
+            if news:
+                response = f"📰 *Latest News for {ticker}*\n\n"
+                for i, article in enumerate(news[:3], 1):
+                    sentiment_icon = "🟢" if article.get('sentiment_score', 50) > 60 else "🔴" if article.get('sentiment_score', 50) < 40 else "🟡"
+                    response += f"{i}. {sentiment_icon} {article.get('title', 'No title')[:60]}\n"
+                
+                response += f"\n📊 *Sentiment:* {sentiment.get('overall_score', 50):.0f}/100\n"
+                response += f"📈 *Sources:* {len(sentiment.get('source_scores', {}))}\n"
+                response += f"📝 *Articles:* {sentiment.get('recent_articles', 0)}\n\n"
+                response += f"Data as of {datetime.utcnow().strftime('%H:%M UTC')}"
+            else:
+                response = f"🔍 No recent news found for {ticker}.\n\n"
+                response += "Try checking with Agent Reach enabled:\n"
+                response += "• Set AGENT_REACH_ENABLED=true\n"
+                response += "• Configure channels (twitter, reddit, etc.)"
+        else:
+            # General market intelligence
+            trending = await service.get_trending_stocks(limit=5)
+            
+            response = "🌍 *Market Intelligence*\n\n"
+            
+            if trending:
+                response += "🔥 *Trending Stocks:*\n"
+                for i, stock in enumerate(trending[:5], 1):
+                    response += f"{i}. {stock.get('symbol', 'N/A')} - {stock.get('mention_count', 0)} mentions\n"
+                
+                response += f"\n💡 Tip: Ask about specific stocks (e.g., \"News on AAPL?\")"
+            else:
+                response += "📡 Market intelligence is loading...\n\n"
+                response += "Try:\n"
+                response += "• \"News on AAPL?\"\n"
+                response += "• \"What stocks are trending?\"\n"
+                response += "• \"Market insights for NVDA\""
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Market intelligence error: {e}")
+        return (
+            "🔍 *Market Intelligence*\n\n"
+            "⚠️ Agent Reach is not fully configured yet.\n\n"
+            "To enable:\n"
+            "• Install: pip install agent-reach\n"
+            "• Configure: AGENT_REACH_ENABLED=true\n"
+            "• Set up channels: twitter, reddit, v2ex\n\n"
+            "Check AGENT_REACH_INTEGRATION_PLAN.md for setup guide."
+        )
+
+
 async def handle_general_chat(message: str, device_id: str) -> str:
     """Handle general AI chat"""
     # TODO: Integrate with NVIDIA NIM for AI responses
@@ -208,6 +280,7 @@ async def handle_general_chat(message: str, device_id: str) -> str:
             f"• Ask about your portfolio: \"What's my balance?\"\n"
             f"• Check trades: \"Show me recent trades\"\n"
             f"• Get signals: \"Should I buy AAPL?\"\n"
+            f"• Market news: \"News on NVDA?\" or \"What's trending?\"\n"
             f"• Account status: \"Am I verified?\"\n\n"
             f"Just ask naturally!"
         )
