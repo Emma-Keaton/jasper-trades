@@ -28,7 +28,7 @@ httpx>=0.27.0
 websockets>=12.0
 
 # Market Intelligence (enabled by default - installs safely on all platforms)
-agent-reach>=1.5.0
+# agent-reach>=1.5.0  # Local module - not published to PyPI
 playwright>=1.40
 browser-cookie3>=0.19
 
