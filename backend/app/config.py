@@ -118,6 +118,13 @@ class Settings(BaseSettings):
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: Optional[str] = None  # Bot token from BotFather
 
+    # Agent Reach - Market Intelligence (optional)
+    AGENT_REACH_ENABLED: bool = True  # Enable market intelligence
+    AGENT_REACH_CHANNELS: str = "v2ex,reddit,twitter"  # Multi-source for fast signal detection
+    NEWS_POLL_INTERVAL: int = 30  # 30 seconds - ultra-fast for trending stock detection
+    SENTIMENT_CACHE_TTL: int = 60  # 1 minute cache for freshness
+    SENTIMENT_ANALYSIS_ENABLED: bool = True  # Enable sentiment analysis
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""
