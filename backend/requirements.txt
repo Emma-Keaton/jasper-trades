@@ -48,6 +48,7 @@ pytz>=2024.2
 
 # Logging
 structlog>=24.1.0
+loguru>=0.7.0
 
 # Memory monitoring (Kronos 4GB)
 psutil>=5.9.0
