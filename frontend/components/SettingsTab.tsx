@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Key, Shield, Server, Check, X, RefreshCw, MessageCircle, DollarSign, TrendingUp, Plane, Bell, Send, Brain, Hash, Palette, Cog, Link as LinkIcon, Cpu, Globe, Briefcase } from 'lucide-react';
+import { 
+  Save, Key, Shield, Server, Check, X, RefreshCw, MessageCircle, DollarSign, 
+  TrendingUp, Plane, Bell, Send, Brain, Hash, Palette, Cog, Link as LinkIcon, 
+  Cpu, Globe, Briefcase, Lock, Activity, AlertTriangle 
+} from 'lucide-react';
 import { Toast } from '@/app/page';
 import { SkeletonCard, SkeletonText } from './Skeleton';
 import TradingCapsSection from './TradingCapsSection';
@@ -21,6 +25,8 @@ interface ApiSettings {
   binance_api_key: string;
   binance_api_secret: string;
   colab_kronos_url: string;
+  trove_api_key?: string;
+  akshare_token?: string;
 }
 
 interface TelegramSettings {
@@ -59,6 +65,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     binance_api_key: '',
     binance_api_secret: '',
     colab_kronos_url: '',
+    trove_api_key: '',
+    akshare_token: '',
   });
 
   const [telegram, setTelegram] = useState<TelegramSettings>({
@@ -141,16 +149,48 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   const [troveSettings, setTroveSettings] = useState<any>(null);
   const [akShareConfig, setAkShareConfig] = useState<any>(null);
 
+  // Environment variable status from backend
+  const [envStatus, setEnvStatus] = useState<{
+    environment_variables: Record<string, {
+      configured: boolean;
+      env_var: string;
+      description: string;
+      required_for: string;
+    }>;
+    summary: {
+      total: number;
+      configured: number;
+      missing: number;
+    };
+  } | null>(null);
+
+  // Sandbox/Live mode states for brokers
+  const [ctraderSandboxMode, setCtraderSandboxMode] = useState<boolean>(true);
+  const [troveSandboxMode, setTroveSandboxMode] = useState<boolean>(true);
+  const [troveEnabled, setTroveEnabled] = useState<boolean>(false);
+  const [akshareSandboxMode, setAkshareSandboxMode] = useState<boolean>(true);
+  const [akshareEnabled, setAkshareEnabled] = useState<boolean>(false);
+
   const getBrokerConnectedCount = () => {
     let count = 0;
     if (accounts && accounts.length > 0) count++;  // cTrader
-    if (troveSettings?.is_connected) count++;       // Trove
-    if (akShareConfig?.connected) count++;          // AKShare
+    if (troveEnabled) count++;                      // Trove
+    if (akshareEnabled) count++;                    // AKShare
     if (polymarket.connected) count++;              // Polymarket
     return count;
   };
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  const fetchEnvStatus = async () => {
+    try {
+      const envRes = await fetch(`${API_URL}/api/v1/settings/env-status`);
+      const envData = await envRes.json();
+      setEnvStatus(envData);
+    } catch (error) {
+      console.error('Failed to load env status:', error);
+    }
+  };
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -175,6 +215,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         binance_api_key: data.binance_api_key || '',
         binance_api_secret: data.binance_api_secret || '',
         colab_kronos_url: data.colab_kronos_url || '',
+        trove_api_key: data.trove_api_key || '',
+        akshare_token: data.akshare_token || '',
       });
       
       setDeviceInfo(`Device ID: ${deviceId}`);
@@ -203,10 +245,28 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       }
       if (data.trove_config) {
         setTroveSettings(data.trove_config);
+        // Load Trove sandbox mode from backend
+        if (data.trove_config.sandbox !== undefined) {
+          setTroveSandboxMode(data.trove_config.sandbox);
+        }
+        setTroveEnabled(data.trove_config.enabled || false);
       }
       if (data.akshare_config) {
         setAkShareConfig(data.akshare_config);
+        // Load AKShare sandbox mode from backend
+        if (data.akshare_config.sandbox !== undefined) {
+          setAkshareSandboxMode(data.akshare_config.sandbox);
+        }
+        setAkshareEnabled(data.akshare_config.enabled || false);
       }
+      if (data.ctrader_config) {
+        if (data.ctrader_config.sandbox !== undefined) {
+          setCtraderSandboxMode(data.ctrader_config.sandbox);
+        }
+      }
+
+      // Load environment variable status
+      await fetchEnvStatus();
 
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -241,23 +301,43 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     }
   };
 
-  const saveApiSettings = async () => {
+  const handleSave = async () => {
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
-      const res = await fetch(`${API_URL}/api/v1/settings`, {
+      // Save all form data including sandbox modes
+      const payload = {
+        nvidia_api_key: formData.nvidia_api_key,
+        binance_api_key: formData.binance_api_key,
+        binance_api_secret: formData.binance_api_secret,
+        colab_kronos_url: formData.colab_kronos_url,
+        trove_api_key: formData.trove_api_key,
+        akshare_token: formData.akshare_token,
+        trove_sandbox: troveSandboxMode,
+        trove_enabled: troveEnabled,
+        akshare_sandbox: akshareSandboxMode,
+        akshare_enabled: akshareEnabled,
+        ctrader_sandbox: ctraderSandboxMode,
+      };
+
+      const response = await fetch(`${API_URL}/api/v1/settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Device-ID': deviceId,
+          'X-Device-ID': localStorage.getItem('device_id') || 'unknown',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
-      if (res.ok) {
+
+      if (response.ok) {
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
-        triggerToast('success', 'Settings Saved', 'Your API configuration has been saved.');
+        triggerToast('success', 'Settings Saved', 'All settings and broker modes have been updated.');
+        // Also refresh env status
+        await fetchEnvStatus();
+      } else {
+        throw new Error('Failed to save');
       }
     } catch (error) {
+      console.error('Error saving settings:', error);
       triggerToast('error', 'Save Failed', 'Could not save settings.');
     }
   };
@@ -746,25 +826,55 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   <Cpu className="w-5 h-5 text-[#3B82F6]" />
                   <h3 className="text-md font-semibold text-white">NVIDIA NIM API</h3>
                 </div>
-                <button 
-                  onClick={() => testConnection('nvidia')} 
-                  disabled={!formData.nvidia_api_key} 
-                  className="text-xs px-3 py-1.5 rounded-md bg-[#3B82F6]/20 text-[#3B82F6] disabled:opacity-50"
-                >
-                  Test
-                </button>
+                <div className="flex items-center gap-2">
+                  {envStatus?.environment_variables?.nvidia_api_key?.configured && (
+                    <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> ENV
+                    </span>
+                  )}
+                  {!envStatus?.environment_variables?.nvidia_api_key?.configured && (
+                    <button
+                      onClick={() => testConnection('nvidia')}
+                      disabled={!formData.nvidia_api_key}
+                      className="text-xs px-3 py-1.5 rounded-md bg-[#3B82F6]/20 text-[#3B82F6] disabled:opacity-50"
+                    >
+                      Test
+                    </button>
+                  )}
+                </div>
               </div>
-              <input 
-                type="password" 
-                value={formData.nvidia_api_key} 
-                onChange={(e) => setFormData({...formData, nvidia_api_key: e.target.value})} 
-                placeholder="nvapi-..." 
-                className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" 
+              <input
+                type="password"
+                value={formData.nvidia_api_key}
+                onChange={(e) => envStatus?.environment_variables?.nvidia_api_key?.configured
+                  ? undefined
+                  : setFormData({...formData, nvidia_api_key: e.target.value})
+                }
+                disabled={envStatus?.environment_variables?.nvidia_api_key?.configured}
+                placeholder="nvapi-..."
+                className={`w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm ${
+                  envStatus?.environment_variables?.nvidia_api_key?.configured
+                    ? 'opacity-60 cursor-not-allowed'
+                    : ''
+                }`}
               />
-              {testResults.nvidia && (
-                <p className={`text-xs mt-2 ${testResults.nvidia.valid ? 'text-green-500' : 'text-red-500'}`}>
-                  {testResults.nvidia.message}
-                </p>
+              {envStatus?.environment_variables?.nvidia_api_key?.configured ? (
+                <div className="mt-2 p-2 bg-green-500/10 border border-green-500/30 rounded">
+                  <p className="text-xs text-green-400 flex items-center gap-1 font-medium">
+                    <Lock className="w-3 h-3" />
+                    <span>Managed via Render:</span>
+                    <span className="ml-1 text-gray-300">NVIDIA_API_KEY environment variable detected</span>
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    This field is locked. Update Render Dashboard variables to edit this value.
+                  </p>
+                </div>
+              ) : (
+                testResults.nvidia && (
+                  <p className={`text-xs mt-2 ${testResults.nvidia.valid ? 'text-green-500' : 'text-red-500'}`}>
+                    {testResults.nvidia.message}
+                  </p>
+                )
               )}
             </div>
 
@@ -775,51 +885,129 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   <TrendingUp className="w-5 h-5 text-[#F7931A]" />
                   <h3 className="text-md font-semibold text-white">Binance</h3>
                 </div>
-                <button 
-                  onClick={() => testConnection('binance')} 
-                  disabled={!formData.binance_api_key} 
-                  className="text-xs px-3 py-1.5 rounded-md bg-[#F7931A]/20 text-[#F7931A] disabled:opacity-50"
-                >
-                  Test
-                </button>
+                <div className="flex items-center gap-2">
+                  {(envStatus?.environment_variables?.binance_api_key?.configured &&
+                      envStatus?.environment_variables?.binance_api_secret?.configured) && (
+                    <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> ENV
+                    </span>
+                  )}
+                  {!envStatus?.environment_variables?.binance_api_key?.configured && (
+                    <button
+                      onClick={() => testConnection('binance')}
+                      disabled={!formData.binance_api_key}
+                      className="text-xs px-3 py-1.5 rounded-md bg-[#F7931A]/20 text-[#F7931A] disabled:opacity-50"
+                    >
+                      Test
+                    </button>
+                  )}
+                </div>
               </div>
-              <input 
-                type="password" 
-                value={formData.binance_api_key} 
-                onChange={(e) => setFormData({...formData, binance_api_key: e.target.value})} 
-                placeholder="API Key" 
-                className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm mb-2" 
-              />
-              <input 
-                type="password" 
-                value={formData.binance_api_secret} 
-                onChange={(e) => setFormData({...formData, binance_api_secret: e.target.value})} 
-                placeholder="API Secret" 
-                className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm" 
-              />
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">API Key</label>
+                  <input
+                    type="password"
+                    value={formData.binance_api_key}
+                    onChange={(e) => envStatus?.environment_variables?.binance_api_key?.configured
+                      ? undefined
+                      : setFormData({...formData, binance_api_key: e.target.value})
+                    }
+                    disabled={envStatus?.environment_variables?.binance_api_key?.configured}
+                    placeholder="Binance API Key"
+                    className={`w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm ${
+                      envStatus?.environment_variables?.binance_api_key?.configured
+                        ? 'opacity-60 cursor-not-allowed'
+                        : ''
+                    }`}
+                  />
+                  {envStatus?.environment_variables?.binance_api_key?.configured && (
+                    <p className="text-xs text-green-400 mt-1 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      Managed via Render: BINANCE_API_KEY
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">API Secret</label>
+                  <input
+                    type="password"
+                    value={formData.binance_api_secret}
+                    onChange={(e) => envStatus?.environment_variables?.binance_api_secret?.configured
+                      ? undefined
+                      : setFormData({...formData, binance_api_secret: e.target.value})
+                    }
+                    disabled={envStatus?.environment_variables?.binance_api_secret?.configured}
+                    placeholder="Binance API Secret"
+                    className={`w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm ${
+                      envStatus?.environment_variables?.binance_api_secret?.configured
+                        ? 'opacity-60 cursor-not-allowed'
+                        : ''
+                    }`}
+                  />
+                  {envStatus?.environment_variables?.binance_api_secret?.configured && (
+                    <p className="text-xs text-green-400 mt-1 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      Managed via Render: BINANCE_API_SECRET
+                    </p>
+                  )}
+                </div>
+              </div>
+              {(envStatus?.environment_variables?.binance_api_key?.configured &&
+                  envStatus?.environment_variables?.binance_api_secret?.configured) ? (
+                <div className="mt-2 p-2 bg-green-500/10 border border-green-500/30 rounded">
+                  <p className="text-xs text-green-400 flex items-center gap-1 font-medium">
+                    <Lock className="w-3 h-3" />
+                    <span>Credentials Locked:</span>
+                    <span className="ml-1 text-gray-300">Set via system environment variables</span>
+                  </p>
+                </div>
+              ) : (
+                testResults.binance && (
+                  <p className={`text-xs mt-2 ${testResults.binance.valid ? 'text-green-500' : 'text-red-500'}`}>
+                    {testResults.binance.message}
+                  </p>
+                )
+              )}
             </div>
 
-            {/* Kronos on Google Colab */}
+            {/* Kronos AI - Google Colab */}
             <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
-              <div className="flex items-center gap-2 mb-3">
-                <Server className="w-5 h-5 text-[#8B5CF6]" />
-                <h3 className="text-md font-semibold text-white">Kronos on Google Colab</h3>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-[#FF6B9D]" />
+                  <h3 className="text-md font-semibold text-white">Kronos AI - Google Colab</h3>
+                </div>
+                {envStatus?.environment_variables?.colab_kronos_url?.configured && (
+                  <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> ENV
+                  </span>
+                )}
               </div>
               <input
-                type="url"
+                type="text"
                 value={formData.colab_kronos_url}
-                onChange={(e) => setFormData({...formData, colab_kronos_url: e.target.value})}
-                placeholder="https://<your-colab-url>/proxy/8080"
-                className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-[#8B5CF6]"
+                onChange={(e) => envStatus?.environment_variables?.colab_kronos_url?.configured
+                  ? undefined
+                  : setFormData({...formData, colab_kronos_url: e.target.value})
+                }
+                disabled={envStatus?.environment_variables?.colab_kronos_url?.configured}
+                placeholder="https://colab.research.google.com/..."
+                className={`w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm ${
+                  envStatus?.environment_variables?.colab_kronos_url?.configured
+                    ? 'opacity-60 cursor-not-allowed'
+                    : ''
+                }`}
               />
-              <p className="text-xs text-gray-500 mt-2">
-                Google Colab URL from kronos_colab.ipynb notebook for GPU-accelerated predictions
-              </p>
-              <div className="mt-3 p-3 bg-[#8B5CF6]/10 border border-[#8B5CF6]/30 rounded-md">
-                <p className="text-xs text-[#8B5CF6]">
-                  📝 Run the kronos_colab.ipynb notebook, copy the public URL (with /proxy/8080), and paste it here.
+              {envStatus?.environment_variables?.colab_kronos_url?.configured && (
+                <p className="text-xs text-green-400 mt-2 flex items-center gap-1">
+                  <Lock className="w-3 h-3" />
+                  Managed via Render: KRONOS_COLAB_URL
                 </p>
-              </div>
+              )}
+              <p className="text-xs text-gray-400 mt-2">
+                Google Colab notebook URL configuration for running high-performance GPU prediction strategy tasks.
+              </p>
             </div>
 
             {/* Market Data Section */}
@@ -838,26 +1026,279 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           completionStatus={`${getBrokerConnectedCount()} of 4 connected`}
         >
           <div className="space-y-4">
-            {/* cTrader OAuth Connection */}
-            <div data-tour="ctrader-section">
-              <CTraderConnection
-                onConnected={(accountId) => {
-                  triggerToast('success', 'cTrader Connected', 'Your account is now connected for auto-trading!');
-                }}
-              />
+            
+            {/* cTrader Execution Panel */}
+            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569] space-y-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-[#10B981]" />
+                  <h3 className="text-md font-semibold text-white">cTrader Execution Mode</h3>
+                </div>
+                {envStatus?.environment_variables?.ctrader_client_id?.configured && (
+                  <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> ENV
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-[#0F172A] rounded-lg border border-[#475569]/30">
+                <div>
+                  <p className="text-sm font-semibold text-white mb-1">
+                    {ctraderSandboxMode ? 'Sandbox Mode (Paper Trading)' : 'LIVE EXECUTION'}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {ctraderSandboxMode
+                      ? 'Executing simulated order routing without financial exposure'
+                      : '⚠️ WARNING: Placing real money orders on live cTrader accounts'
+                    }
+                  </p>
+                </div>
+                <button
+                  onClick={() => setCtraderSandboxMode(!ctraderSandboxMode)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    ctraderSandboxMode ? 'bg-[#3B82F6]' : 'bg-[#EF4444]'
+                  }`}
+                >
+                  <span
+                    className={`${
+                      ctraderSandboxMode ? 'translate-x-1' : 'translate-x-6'
+                    } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                  />
+                </button>
+              </div>
+
+              {ctraderSandboxMode ? (
+                <div className="p-2 bg-blue-500/10 border border-blue-500/30 rounded">
+                  <p className="text-xs text-blue-400 flex items-center gap-1">
+                    <Check className="w-3 h-3" />
+                    <span>Using safe simulated API endpoints for paper accounts.</span>
+                  </p>
+                </div>
+              ) : (
+                <div className="p-2 bg-red-500/10 border border-red-500/30 rounded">
+                  <p className="text-xs text-red-400 flex items-center gap-1 font-semibold">
+                    <AlertTriangle className="w-3 h-3 text-red-400 animate-pulse" />
+                    <span>Live environment configuration active. Capital risks apply.</span>
+                  </p>
+                </div>
+              )}
+
+              <div data-tour="ctrader-section" className="pt-2">
+                <CTraderConnection
+                  onConnected={(accountId) => {
+                    triggerToast('success', 'cTrader Connected', 'Account validated and synced.');
+                  }}
+                />
+              </div>
+
+              <div className="text-xs text-gray-400 bg-[#0F172A] p-3 rounded border border-[#475569]/30">
+                <p>💡 <strong>Note:</strong> cTrader authentication utilizes high-security OAuth2 redirects. No client secrets are stored directly on the device.</p>
+              </div>
             </div>
 
-            {/* Trove API - US & Nigerian Stocks */}
-            <div data-tour="trove-section">
-              <TroveSettings triggerToast={triggerToast} />
+            {/* Trove Finance Panel */}
+            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569] space-y-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-[#8B5CF6]" />
+                  <h3 className="text-md font-semibold text-white">Trove Finance</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  {envStatus?.environment_variables?.trove_api_key?.configured && (
+                    <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> ENV
+                    </span>
+                  )}
+                  <label className="inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={troveEnabled}
+                      onChange={(e) => setTroveEnabled(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <span className={`w-10 h-5 rounded-full transition-colors ${
+                      troveEnabled ? 'bg-[#10B981]' : 'bg-[#6B7280]'
+                    } relative`}>
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                        troveEnabled ? 'translate-x-5' : ''
+                      }`} />
+                    </span>
+                    <span className="ml-2 text-xs text-gray-300">{troveEnabled ? 'Enabled' : 'Disabled'}</span>
+                  </label>
+                </div>
+              </div>
+
+              {troveEnabled && (
+                <>
+                  <div className="flex items-center justify-between p-3 bg-[#0F172A] rounded-lg border border-[#475569]/30">
+                    <div>
+                      <p className="text-sm font-semibold text-white mb-1">
+                        {troveSandboxMode ? 'Sandbox Mode (Paper Trading)' : 'LIVE MODE'}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {troveSandboxMode
+                          ? 'Simulating US/Nigerian equity orders on dev profiles'
+                          : '⚠️ REAL-TIME Execution: Executing assets via funded brokerage'
+                        }
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setTroveSandboxMode(!troveSandboxMode)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        troveSandboxMode ? 'bg-[#3B82F6]' : 'bg-[#EF4444]'
+                      }`}
+                    >
+                      <span
+                        className={`${
+                          troveSandboxMode ? 'translate-x-1' : 'translate-x-6'
+                        } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                      />
+                    </button>
+                  </div>
+
+                  {troveSandboxMode ? (
+                    <div className="p-2 bg-blue-500/10 border border-blue-500/30 rounded text-xs text-blue-400 flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      <span>Safe environment active. No actual capital affected.</span>
+                    </div>
+                  ) : (
+                    <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-400 flex items-center gap-1 font-semibold">
+                      <AlertTriangle className="w-3 h-3 text-red-400" />
+                      <span>WARNING: Real fund execution active.</span>
+                    </div>
+                  )}
+
+                  {envStatus?.environment_variables?.trove_api_key?.configured ? (
+                    <div className="p-2 bg-green-500/10 border border-green-500/30 rounded text-xs text-green-400 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      <span>Configured globally in Render settings (TROVE_API_KEY).</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="block text-xs text-gray-400">Trove Account Token / Key</label>
+                      <input
+                        type="password"
+                        value={formData.trove_api_key || ''}
+                        onChange={(e) => setFormData({...formData, trove_api_key: e.target.value})}
+                        placeholder="TRV-..."
+                        className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                      />
+                    </div>
+                  )}
+
+                  <div data-tour="trove-section">
+                    <TroveSettings triggerToast={triggerToast} />
+                  </div>
+                </>
+              )}
+
+              <div className="text-xs text-gray-400 bg-[#0F172A] p-3 rounded border border-[#475569]/30">
+                <p>💡 <strong>About Trove Finance:</strong> Integrates custom API structures to execute trades across US markets and NGX equities.</p>
+              </div>
             </div>
 
-            {/* AKShare - Chinese Stocks */}
-            <div data-tour="akshare-section">
-              <AKShareSettings triggerToast={triggerToast} />
+            {/* AKShare Chinese Equities Panel */}
+            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569] space-y-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-5 h-5 text-[#38BDF8]" />
+                  <h3 className="text-md font-semibold text-white">AKShare Chinese Markets</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  {envStatus?.environment_variables?.akshare_token?.configured && (
+                    <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> ENV
+                    </span>
+                  )}
+                  <label className="inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={akshareEnabled}
+                      onChange={(e) => setAkshareEnabled(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <span className={`w-10 h-5 rounded-full transition-colors ${
+                      akshareEnabled ? 'bg-[#10B981]' : 'bg-[#6B7280]'
+                    } relative`}>
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                        akshareEnabled ? 'translate-x-5' : ''
+                      }`} />
+                    </span>
+                    <span className="ml-2 text-xs text-gray-300">{akshareEnabled ? 'Enabled' : 'Disabled'}</span>
+                  </label>
+                </div>
+              </div>
+
+              {akshareEnabled && (
+                <>
+                  <div className="flex items-center justify-between p-3 bg-[#0F172A] rounded-lg border border-[#475569]/30">
+                    <div>
+                      <p className="text-sm font-semibold text-white mb-1">
+                        {akshareSandboxMode ? 'Sandbox Mode (Simulated)' : 'LIVE SYSTEM'}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {akshareSandboxMode
+                          ? 'Using delayed public Chinese index matrices'
+                          : '⚠️ REAL-TIME Execution: Dispatching real orders to mainland indices'
+                        }
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setAkshareSandboxMode(!akshareSandboxMode)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        akshareSandboxMode ? 'bg-[#3B82F6]' : 'bg-[#EF4444]'
+                      }`}
+                    >
+                      <span
+                        className={`${
+                          akshareSandboxMode ? 'translate-x-1' : 'translate-x-6'
+                        } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                      />
+                    </button>
+                  </div>
+
+                  {akshareSandboxMode ? (
+                    <div className="p-2 bg-blue-500/10 border border-blue-500/30 rounded text-xs text-blue-400 flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      <span>Delayed simulated fills are computed natively on public pipelines.</span>
+                    </div>
+                  ) : (
+                    <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-400 flex items-center gap-1 font-semibold">
+                      <AlertTriangle className="w-3 h-3 text-red-400" />
+                      <span>WARNING: Real liquidity pool connection active.</span>
+                    </div>
+                  )}
+
+                  {envStatus?.environment_variables?.akshare_token?.configured ? (
+                    <div className="p-2 bg-green-500/10 border border-green-500/30 rounded text-xs text-green-400 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      <span>Configured via system env (AKSHARE_TOKEN).</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="block text-xs text-gray-400">AKShare Token Credentials</label>
+                      <input
+                        type="password"
+                        value={formData.akshare_token || ''}
+                        onChange={(e) => setFormData({...formData, akshare_token: e.target.value})}
+                        placeholder="AKShare Access Key / Token"
+                        className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                      />
+                    </div>
+                  )}
+
+                  <div data-tour="akshare-section">
+                    <AKShareSettings triggerToast={triggerToast} />
+                  </div>
+                </>
+              )}
+
+              <div className="text-xs text-gray-400 bg-[#0F172A] p-3 rounded border border-[#475569]/30">
+                <p>💡 <strong>About AKShare:</strong> Feeds strategy models real-time data metrics spanning equities, index rates, and SSE/SZSE options packages.</p>
+              </div>
             </div>
 
-            {/* Polymarket Account Connection */}
+            {/* Polymarket (Prediction Markets) */}
             <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
               <div className="flex items-center gap-2 mb-3">
                 <TrendingUp className="w-5 h-5 text-purple-400" />
@@ -1482,7 +1923,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           <SystemStatusPanel />
         </CollapsibleSection>
 
-        {/* Global Save and Tour Reset controls */}
+        {/* Global Save and Onboarding controllers */}
         <div
           data-onboarding="save-reset"
           className="flex items-center justify-between gap-3 pt-6 border-t border-[#475569]"
@@ -1495,7 +1936,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           </button>
           <button
             onClick={async () => {
-              await saveApiSettings();
+              await handleSave();
               if (paymentGateways.paystack_api_key || paymentGateways.flutterwave_api_key) {
                 await savePaymentGateways();
               }

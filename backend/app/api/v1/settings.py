@@ -6,10 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional, Dict
 import structlog
+import os
 
 from app.database import get_db, async_session
 from app.models import DeviceSettings
 from app.services.encryption import EncryptionHelper
+from app.config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -123,6 +125,79 @@ async def validate_api_key(request: ValidateKeyRequest):
         return {"valid": valid, "message": message}
 
     return {"valid": True, "message": "Key format looks valid"}
+
+
+@router.get("/env-status")
+async def get_env_status():
+    """
+    Check which environment variables are configured in the deployment environment.
+    
+    Returns status of API keys and secrets that should be set via Render dashboard
+    environment variables during deployment.
+    """
+    env_status = {
+        "nvidia_api_key": {
+            "configured": bool(settings.NVIDIA_API_KEY and settings.NVIDIA_API_KEY != "" and settings.NVIDIA_API_KEY != "CHANGE_THIS_BEFORE_PRODUCTION"),
+            "env_var": "NVIDIA_API_KEY",
+            "description": "NVIDIA NIM API key for AI model inference",
+            "required_for": "AI chat, trade analysis, Kronos predictions"
+        },
+        "binance_api_key": {
+            "configured": bool(os.getenv("BINANCE_API_KEY") and os.getenv("BINANCE_API_KEY") != "" and os.getenv("BINANCE_API_KEY") != "CHANGE_THIS_BEFORE_PRODUCTION"),
+            "env_var": "BINANCE_API_KEY",
+            "description": "Binance API key for crypto trading",
+            "required_for": "Binance spot/futures trading"
+        },
+        "binance_api_secret": {
+            "configured": bool(os.getenv("BINANCE_API_SECRET") and os.getenv("BINANCE_API_SECRET") != "" and os.getenv("BINANCE_API_SECRET") != "CHANGE_THIS_BEFORE_PRODUCTION"),
+            "env_var": "BINANCE_API_SECRET",
+            "description": "Binance API secret for crypto trading",
+            "required_for": "Binance spot/futures trading"
+        },
+        "telegram_bot_token": {
+            "configured": bool(os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_BOT_TOKEN") != "" and os.getenv("TELEGRAM_BOT_TOKEN") != "CHANGE_THIS_BEFORE_PRODUCTION"),
+            "env_var": "TELEGRAM_BOT_TOKEN",
+            "description": "Telegram bot token for notifications",
+            "required_for": "Trade notifications, daily summaries"
+        },
+        "colab_kronos_url": {
+            "configured": bool(os.getenv("KRONOS_COLAB_URL") and os.getenv("KRONOS_COLAB_URL") != "" and os.getenv("KRONOS_COLAB_URL") != "CHANGE_THIS_BEFORE_PRODUCTION"),
+            "env_var": "KRONOS_COLAB_URL",
+            "description": "Google Colab URL for Kronos AI predictions",
+            "required_for": "Kronos AI model predictions"
+        },
+        "trove_api_key": {
+            "configured": bool(os.getenv("TROVE_API_KEY") and os.getenv("TROVE_API_KEY") != "" and os.getenv("TROVE_API_KEY") != "CHANGE_THIS_BEFORE_PRODUCTION"),
+            "env_var": "TROVE_API_KEY",
+            "description": "Trove API key for Nigerian/US stocks",
+            "required_for": "Trove broker integration"
+        },
+        "ctrader_client_id": {
+            "configured": bool(os.getenv("CTRADER_CLIENT_ID") and os.getenv("CTRADER_CLIENT_ID") != "" and os.getenv("CTRADER_CLIENT_ID") != "CHANGE_THIS_BEFORE_PRODUCTION"),
+            "env_var": "CTRADER_CLIENT_ID",
+            "description": "cTrader OAuth client ID",
+            "required_for": "cTrader copy trading"
+        },
+        "ctrader_client_secret": {
+            "configured": bool(os.getenv("CTRADER_CLIENT_SECRET") and os.getenv("CTRADER_CLIENT_SECRET") != "" and os.getenv("CTRADER_CLIENT_SECRET") != "CHANGE_THIS_BEFORE_PRODUCTION"),
+            "env_var": "CTRADER_CLIENT_SECRET",
+            "description": "cTrader OAuth client secret",
+            "required_for": "cTrader copy trading"
+        }
+    }
+    
+    # Calculate summary
+    total_vars = len(env_status)
+    configured_count = sum(1 for v in env_status.values() if v["configured"])
+    
+    return {
+        "environment_variables": env_status,
+        "summary": {
+            "total": total_vars,
+            "configured": configured_count,
+            "missing": total_vars - configured_count
+        }
+    }
 
 
 # Broker Paper Trading Models

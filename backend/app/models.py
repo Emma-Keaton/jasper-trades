@@ -175,6 +175,9 @@ class DeviceSettings(Base):
 
     colab_url = Column(String, nullable=True)  # Kronos Colab URL
 
+    # cTrader sandbox/live mode
+    ctrader_sandbox = Column(Boolean, default=True)  # True = Sandbox/Paper, False = Live production
+
     # Notification configs (stored as encrypted JSON strings)
     discord_config = Column(String, nullable=True)  # JSON: {webhook_url, enabled}
     slack_config = Column(String, nullable=True)  # JSON: {webhook_url, enabled}
@@ -245,6 +248,9 @@ class DeviceSettings(Base):
     #   "connected": false
     # }
     akshare_config = Column(String, nullable=True)  # JSON string
+
+    # AKShare sandbox/live mode (paper trading flag)
+    akshare_sandbox = Column(Boolean, default=True)  # True = Paper trading, False = Live production
 
     # Currency preferences
     default_currency = Column(String(3), default="USD")  # "USD" or "NGN"
