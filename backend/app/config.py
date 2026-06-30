@@ -99,7 +99,10 @@ class Settings(BaseSettings):
     KRONOS_USE_CLOUD: bool = False  # Use HuggingFace/Colab fallback
     HUGGINGFACE_API_TOKEN: Optional[str] = None
 
-    # Kronos Colab Integration (3-model ensemble)
+    # Kronos Remote Service (Render Deployment)
+    KRONOS_SERVICE_URL: Optional[str] = None  # Remote Kronos service URL (Render)
+
+    # Kronos Colab Integration (3-model ensemble) - Deprecated, use KRONOS_SERVICE_URL
     KRONOS_COLAB_URL: Optional[str] = None  # Colab public URL (ngrok)
     KRONOS_COLAB_STRATEGY: str = "cascade"  # cascade|ensemble|context|mini|small|base
 
