@@ -182,7 +182,7 @@ async def lifespan(app: FastAPI):
             
             # Start polling in background (for local dev)
             asyncio.create_task(bot_service.start_polling())
-            logger.info(f"Telegram Bot started (long polling mode) - @{bot_service.bot.username}")
+            logger.info("Telegram Bot started (long polling mode)")
         except Exception as e:
             logger.warning(f"Telegram Bot startup failed: {e}")
     else:
@@ -211,21 +211,6 @@ async def lifespan(app: FastAPI):
         logger.info("Forex polling service started (NGN/USD rates every 60s)")
     except Exception as e:
         logger.warning(f"Forex polling service startup failed: {e}")
-
-    # Start Telegram Bot
-    if settings.TELEGRAM_BOT_TOKEN:
-        try:
-            from app.services.telegram_bot_service import get_telegram_bot_service
-            bot_service = get_telegram_bot_service(settings.TELEGRAM_BOT_TOKEN)
-            await bot_service.initialize()
-            
-            # Start polling in background (for local dev)
-            asyncio.create_task(bot_service.start_polling())
-            logger.info(f"Telegram Bot started (long polling mode) - @{bot_service.bot.username}")
-        except Exception as e:
-            logger.warning(f"Telegram Bot startup failed: {e}")
-    else:
-        logger.warning("TELEGRAM_BOT_TOKEN not set - Telegram bot disabled")
 
     yield
 
@@ -257,15 +242,6 @@ async def lifespan(app: FastAPI):
         logger.info("Auto-payout scheduler stopped")
     except Exception as e:
         logger.warning(f"Error stopping payout scheduler: {e}")
-
-    # Stop Telegram Bot
-    try:
-        from app.services.telegram_bot_service import telegram_bot_service
-        if telegram_bot_service and telegram_bot_service.running:
-            await telegram_bot_service.stop_polling()
-            logger.info("Telegram Bot stopped")
-    except Exception as e:
-        logger.warning(f"Error stopping Telegram Bot: {e}")
 
     # Stop forex polling service
     try:
