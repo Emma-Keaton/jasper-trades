@@ -41,13 +41,15 @@ class TelegramBotService:
     async def initialize(self):
         """Initialize bot application"""
         try:
-            # Create bot application with proper initialization
+            # Create bot application
             self.application = Application.builder().token(self.bot_token).build()
-            
-            # Initialize the bot object separately
-            from telegram.request import HTTPXRequest
-            self.bot = Bot(token=self.bot_token, request=HTTPXRequest())
-            await self.bot.initialize()
+
+            # Initialize the application (this also initializes the internal bot)
+            await self.application.initialize()
+
+            # Get the bot from the application (not a separate instance)
+            self.bot = self.application.bot
+
             logger.info(f"Bot initialized: @{self.bot.username} (ID: {self.bot.id})")
 
             # Register handlers
