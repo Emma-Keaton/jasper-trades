@@ -3,6 +3,8 @@ Jasper Trades - Superpowered AI Trader
 Main FastAPI Application
 """
 import logging
+import asyncio
+import uuid
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -137,12 +139,15 @@ async def lifespan(app: FastAPI):
 
         portfolios = await portfolio_service.get_portfolios()
         if not portfolios:
+            # Generate a device ID for the default portfolio
+            device_id = str(uuid.uuid4())
             await portfolio_service.create_portfolio(
                 name="Default",
                 initial_cash=100000.0,
                 is_paper=True,
+                device_id=device_id,
             )
-            logger.info("Created default portfolio")
+            logger.info(f"Created default portfolio for device {device_id[:8]}...")
 
         await db.close()
     except Exception as e:

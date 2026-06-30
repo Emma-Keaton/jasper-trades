@@ -83,6 +83,7 @@ class PortfolioService:
         initial_cash: float = 100000.0,
         is_paper: bool = True,
         broker: str = "ctrader",
+        device_id: Optional[str] = None,
     ) -> Portfolio:
         """
         Create a new portfolio.
@@ -92,11 +93,13 @@ class PortfolioService:
             initial_cash: Starting cash amount
             is_paper: Paper trading or live
             broker: Default broker (defaults to ctrader)
+            device_id: Device ID for the portfolio (required)
 
         Returns:
             Created Portfolio object
         """
         portfolio = Portfolio(
+            device_id=device_id,
             name=name,
             cash=initial_cash,
             initial_value=initial_cash,
