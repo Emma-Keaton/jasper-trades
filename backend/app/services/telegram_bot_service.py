@@ -80,8 +80,13 @@ class TelegramBotService:
 
     async def start_polling(self):
         """Start long polling (for local dev - runs in existing event loop)"""
-        if not self.application:
-            await self.initialize()
+        # Always reinitialize to ensure app is properly set up
+        if self.application:
+            try:
+                await self.application.stop()
+            except:
+                pass
+        await self.initialize()
 
         self.running = True
         logger.info("Starting Telegram Bot polling...")
@@ -93,7 +98,7 @@ class TelegramBotService:
             timeout=30,
             allowed_updates=["message", "callback_query"],
         )
-        
+
         # Keep the task alive (no return until stopped)
         while self.running:
             await asyncio.sleep(1)
