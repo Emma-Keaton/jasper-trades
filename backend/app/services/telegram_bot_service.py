@@ -2,6 +2,7 @@
 Telegram Bot Service - Long Polling & Command Handler
 Handles incoming messages, commands, and sends notifications
 """
+
 import asyncio
 import structlog
 import os
@@ -47,10 +48,10 @@ class TelegramBotService:
             # Initialize the application (this also initializes the internal bot)
             await self.application.initialize()
 
-            # Get the bot from the application (not a separate instance)
+            # Get the bot from the application
             self.bot = self.application.bot
 
-            logger.info(f"Bot initialized: @{self.bot.username} (ID: {self.bot.id})")
+            logger.info("Telegram Bot initialized")
 
             # Register handlers
             self._register_handlers()

@@ -12,25 +12,40 @@ Usage:
 
 import asyncio
 import time
+import os
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from loguru import logger
 from app.config import settings
 from app.services.agent_reach.channels.twitter_channel import get_twitter_channel
+import xml.etree.ElementTree as ET
 
 
 class MarketIntelService:
     """Market intelligence service with sentiment analysis."""
-    
+
     def __init__(self):
         self.enabled = getattr(settings, 'AGENT_REACH_ENABLED', False)
         self.channels = self._parse_channels()
-        self.poll_interval = getattr(settings, 'NEWS_POLL_INTERVAL', 60)
+        self.poll_interval = getattr(settings, 'NEWS_POLL_INTERVAL', 15)
         self.cache = {}
-        self.cache_ttl = getattr(settings, 'SENTIMENT_CACHE_TTL', 300)
+        self.cache_ttl = getattr(settings, 'SENTIMENT_CACHE_TTL', 60)
         self.last_update = None
         self.sentiment_enabled = getattr(settings, 'SENTIMENT_ANALYSIS_ENABLED', True)
-        
+
+        # Configure Agent Reach config path
+        self.config_path = getattr(settings, 'AGENT_REACH_CONFIG_PATH', None)
+        if self.config_path:
+            # Resolve relative paths to backend directory
+            if not os.path.isabs(self.config_path):
+                backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                self.config_path = os.path.join(backend_dir, self.config_path)
+            # Set environment variable for agent-reach library
+            os.environ['AGENT_REACH_CONFIG_PATH'] = self.config_path
+            logger.info(f"Agent Reach config path set to: {self.config_path}")
+
         # Lazy-load sentiment service
         self._sentiment_service = None
         if self.sentiment_enabled:
@@ -39,9 +54,9 @@ class MarketIntelService:
                 self._sentiment_service = get_sentiment_service()
             except Exception as e:
                 logger.warning(f"Sentiment service unavailable: {e}")
-        
+
         if self.enabled:
-            logger.info(f"Market Intelligence enabled: {self.channels}")
+            logger.info(f"Market Intelligence enabled: {self.channels}, poll_interval={self.poll_interval}s")
             asyncio.create_task(self._polling_loop())
         else:
             logger.info("Market Intelligence disabled")
@@ -102,8 +117,179 @@ class MarketIntelService:
             return await self._fetch_twitter_news()
         elif channel == 'reddit':
             return await self._fetch_reddit_news()
+        elif channel == 'rss':
+            return await self._fetch_rss_news()
         else:
             return []
+
+    async def _fetch_rss_news(self) -> List[Dict[str, Any]]:
+        """Fetch news from RSS feeds configured in RSS_FEED_URLS."""
+        try:
+            # Get RSS URLs from settings (comma-separated)
+            rss_urls_str = getattr(settings, 'RSS_FEED_URLS', '')
+            if not rss_urls_str:
+                logger.warning("No RSS feed URLs configured in RSS_FEED_URLS")
+                return []
+
+            rss_urls = [url.strip() for url in rss_urls_str.split(',') if url.strip()]
+            if not rss_urls:
+                return []
+
+            all_items = []
+            max_per_feed = 15
+            max_total = 100
+
+            for url in rss_urls:
+                try:
+                    logger.info(f"Fetching RSS feed: {url}")
+                    req = urllib.request.Request(
+                        url,
+                        headers={"User-Agent": "JasperTrades/1.0 (RSS Feed Reader)"}
+                    )
+
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        xml_data = resp.read()
+
+                    # Parse XML
+                    root = ET.fromstring(xml_data)
+
+                    # Find feed items (handle different RSS/Atom formats)
+                    items = []
+
+                    # RSS 2.0 format
+                    channel = root.find('channel')
+                    if channel is not None:
+                        items = channel.findall('item')
+
+                    # Atom format
+                    if not items:
+                        ns = {'atom': 'http://www.w3.org/2005/Atom'}
+                        items = root.findall('atom:entry', ns)
+                        if not items:
+                            # Try without namespace
+                            items = root.findall('{http://www.w3.org/2005/Atom}entry')
+
+                    feed_items = []
+                    for item in items[:max_per_feed]:
+                        title = self._get_xml_text(item, ['title', '{http://www.w3.org/2005/Atom}title'])
+                        link = self._get_xml_text(item, ['link', 'guid', '{http://www.w3.org/2005/Atom}link'])
+
+                        # Handle Atom link with href attribute
+                        if not link:
+                            link_elem = item.find('link')
+                            if link_elem is not None and link_elem.get('href'):
+                                link = link_elem.get('href')
+                            else:
+                                link_elem = item.find('{http://www.w3.org/2005/Atom}link')
+                                if link_elem is not None and link_elem.get('href'):
+                                    link = link_elem.get('href')
+
+                        description = self._get_xml_text(item, [
+                            'description',
+                            'content',
+                            'summary',
+                            '{http://www.w3.org/2005/Atom}content',
+                            '{http://www.w3.org/2005/Atom}summary'
+                        ])
+
+                        pub_date_str = self._get_xml_text(item, [
+                            'pubDate',
+                            'pubdate',
+                            'date',
+                            'published',
+                            '{http://www.w3.org/2005/Atom}published',
+                            '{http://www.w3.org/2005/Atom}updated'
+                        ])
+
+                        author = self._get_xml_text(item, [
+                            'author',
+                            'dc:creator',
+                            'creator',
+                            '{http://www.w3.org/2005/Atom}author'
+                        ])
+
+                        # Parse date
+                        timestamp = self._parse_rss_date(pub_date_str)
+
+                        # Generate unique ID
+                        item_id = f"rss_{hash(link or title) % 100000000}"
+
+                        feed_items.append({
+                            'id': item_id,
+                            'source': 'rss',
+                            'title': title or '',
+                            'content': (description or '')[:500],
+                            'url': link or '',
+                            'author': author or '',
+                            'timestamp': timestamp or datetime.utcnow(),
+                            'tickers_mentioned': [],
+                            'sentiment_score': 50,
+                            'impact_score': 0
+                        })
+
+                    all_items.extend(feed_items)
+                    logger.info(f"Fetched {len(feed_items)} items from {url}")
+
+                except urllib.error.URLError as e:
+                    logger.warning(f"Failed to fetch RSS feed {url}: {e}")
+                    continue
+                except ET.ParseError as e:
+                    logger.warning(f"Failed to parse RSS XML from {url}: {e}")
+                    continue
+                except Exception as e:
+                    logger.warning(f"Error processing RSS feed {url}: {e}")
+                    continue
+
+                # Limit total items
+                if len(all_items) >= max_total:
+                    break
+
+            logger.info(f"Total RSS news collected: {len(all_items)}")
+            return all_items[:max_total]
+
+        except Exception as e:
+            logger.error(f"RSS fetch error: {e}")
+            return []
+
+    def _get_xml_text(self, element: ET.Element, tag_names: List[str]) -> Optional[str]:
+        """Extract text from XML element with fallback to multiple tag names."""
+        for tag_name in tag_names:
+            child = element.find(tag_name)
+            if child is not None and child.text:
+                return child.text.strip()
+        return None
+
+    def _parse_rss_date(self, date_str: Optional[str]) -> Optional[datetime]:
+        """Parse RFC 822 or ISO 8601 date formats."""
+        if not date_str:
+            return None
+
+        try:
+            # RFC 822 format: "Wed, 02 Oct 2024 14:30:00 GMT"
+            from email.utils import parsedate_to_datetime
+            dt = parsedate_to_datetime(date_str)
+            return dt.replace(tzinfo=None)
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            # ISO 8601 format: "2024-10-02T14:30:00Z" or "2024-10-02T14:30:00+00:00"
+            if date_str.endswith('Z'):
+                date_str = date_str[:-1] + '+00:00'
+            from datetime import timezone
+            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            return dt.replace(tzinfo=None)
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            # Simple format: "2024-10-02 14:30:00"
+            return datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError):
+            pass
+
+        logger.warning(f"Failed to parse date: {date_str}")
+        return None
     
     async def _fetch_v2ex_news(self) -> List[Dict[str, Any]]:
         try:
@@ -152,12 +338,47 @@ class MarketIntelService:
             channel = get_reddit_channel()
             if not channel.enabled:
                 return []
+            
+            # Trading-relevant subreddits for execution signals
+            subreddits = [
+                'wallstreetbets',      # High-signal YOLO trades, sentiment
+                'stocks',               # Fundamental discussions
+                'investing',            # Broader market analysis
+                'securityanalysis',     # Deep value investing
+                'investor',             # Long-term positions
+                'Daytrading',           # Short-term signals
+                'CryptoCurrency',       # Crypto sentiment
+                'CryptoMarkets',        # Crypto trading signals
+                'wallstreetbets质的',    # WSB discussion mirror
+                'superstonk',           # Meme stock sentiment
+                'stocks',               # General stock talk
+                'BeenWhy',              # Options flow (if available)
+            ]
+            
             posts = []
-            for sub in ['wallstreetbets', 'stocks']:
-                posts.extend(await channel.fetch_subreddit_posts(subreddit=sub, limit=15))
-            return posts[:30]
+            for sub in subreddits[:8]:  # Limit to 8 subs to avoid rate limits
+                try:
+                    sub_posts = await channel.fetch_subreddit_posts(subreddit=sub, limit=10)
+                    posts.extend(sub_posts)
+                    logger.info(f"Fetched {len(sub_posts)} posts from r/{sub}")
+                except Exception as sub_error:
+                    logger.warning(f"Failed to fetch r/{sub}: {sub_error}")
+                    continue
+            
+            # Deduplicate by post ID
+            seen_ids = set()
+            unique_posts = []
+            for post in posts:
+                if post.get('id') not in seen_ids:
+                    seen_ids.add(post.get('id'))
+                    unique_posts.append(post)
+            
+            logger.info(f"Reddit: {len(unique_posts)} unique posts from {len(subreddits)} subreddits")
+            return unique_posts[:50]  # Return top 50 posts
         except Exception as e:
             logger.error(f"Reddit error: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     async def get_news(self, ticker: Optional[str] = None, limit: int = 20,

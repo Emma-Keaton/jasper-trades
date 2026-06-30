@@ -1,12 +1,12 @@
 """
 Twitter Channel Integration for Market Intelligence
 
-Uses Agent Reach's twitter-cli or OpenCLI for real-time Twitter/X data.
-Requires browser authentication (Chrome with logged-in Twitter account).
+Uses OpenCLI for real-time Twitter/X data via browser authentication.
+No API keys needed - uses your logged-in Chrome session.
 
 Usage:
     from app.services.agent_reach.channels.twitter_channel import TwitterChannel
-    
+
     channel = TwitterChannel()
     news = await channel.fetch_financial_news(ticker="AAPL")
 """
@@ -22,40 +22,40 @@ from loguru import logger
 
 
 class TwitterChannel:
-    """Twitter channel for fetching financial news and sentiment."""
+    """Twitter channel for fetching financial news and sentiment via OpenCLI."""
+
+    # Financial/ticker patterns
+    TICKER_PATTERN = re.compile(r'\$([A-Z]{1,5})|\\b[A-Z]{2,5}\\b')
     
-    # Financial/tickers keywords to look for
-    TICKER_PATTERN = re.compile(r'\b[A-Z]{1,5}\b')
-    FINANCIAL_KEYWORDS = [
-        'earnings', 'stock', 'shares', 'price', 'market', 'investment',
-        'trading', 'bullish', 'bearish', 'buy', 'sell', 'hold',
-        'SPY', 'QQQ', 'DIA', 'IWM'  # Major ETFs
+    # Financial search terms
+    FINANCIAL_SEARCH_TERMS = [
+        'stock market',
+        'earnings report',
+        'SPY',
+        'QQQ',
+        'market crash',
+        'bull market',
+        'Fed rate',
+        'inflation data',
+        'tech stocks',
+        'crypto market',
+        'Bitcoin',
+        'Ethereum'
     ]
-    
+
     def __init__(self):
         self.enabled = False
         self.cli_available = self._check_cli_availability()
-        
+
         if self.cli_available:
-            logger.info("Twitter CLI available for market intelligence")
+            logger.info("Twitter/OpenCLI available for market intelligence")
             self.enabled = True
         else:
-            logger.info("Twitter CLI not available. Install with: pipx install twitter-cli")
-    
+            logger.info("Twitter/OpenCLI not available")
+
     def _check_cli_availability(self) -> bool:
-        """Check if twitter-cli or opencli is available."""
+        """Check if OpenCLI is available."""
         try:
-            # Check for twitter-cli
-            result = subprocess.run(
-                ['twitter', '--help'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0:
-                return True
-            
-            # Check for opencli
             result = subprocess.run(
                 ['opencli', '--help'],
                 capture_output=True,
@@ -63,51 +63,50 @@ class TwitterChannel:
                 timeout=5
             )
             return result.returncode == 0
-            
+
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
-    
+
     async def fetch_financial_news(
         self,
         ticker: Optional[str] = None,
         keywords: Optional[List[str]] = None,
-        limit: int = 20
+        limit: int = 30
     ) -> List[Dict[str, Any]]:
         """
-        Fetch financial news/tweets for a ticker or keywords.
-        
+        Fetch financial news/tweets using OpenCLI.
+
         Args:
             ticker: Stock ticker symbol (e.g., "AAPL")
-            keywords: List of keywords to search for
-            limit: Maximum number of tweets to fetch
-            
+            keywords: Search keywords
+            limit: Maximum tweets to fetch
+
         Returns:
-            List of tweet dictionaries with sentiment context
+            List of tweet dictionaries
         """
         if not self.enabled:
             logger.warning("Twitter channel not enabled")
             return []
-        
+
         try:
             # Build search query
             query = self._build_search_query(ticker, keywords)
-            
-            # Execute twitter-cli search
-            tweets = await self._search_twitter(query, limit)
-            
-            # Filter for financial content
-            financial_tweets = self._filter_financial_content(tweets)
-            
+
+            # Execute OpenCLI Twitter search
+            tweets = await self._search_twitter_opencli(query, limit)
+
             # Extract tickers mentioned
-            for tweet in financial_tweets:
+            for tweet in tweets:
                 tweet['tickers_mentioned'] = self._extract_tickers(tweet['content'])
-            
-            return financial_tweets
-            
+
+            return tweets
+
         except Exception as e:
             logger.error(f"Twitter fetch error: {e}")
+            import traceback
+            traceback.print_exc()
             return []
-    
+
     def _build_search_query(
         self,
         ticker: Optional[str] = None,
@@ -115,173 +114,121 @@ class TwitterChannel:
     ) -> str:
         """Build Twitter search query."""
         parts = []
-        
+
         if ticker:
             parts.append(f"${ticker}")
             parts.append(ticker)
-        
+
         if keywords:
             parts.extend(keywords)
         else:
-            parts.extend(self.FINANCIAL_KEYWORDS[:5])  # Top 5 financial keywords
-        
-        return " OR ".join(parts)
-    
-    async def _search_twitter(self, query: str, limit: int) -> List[Dict[str, Any]]:
-        """Search Twitter using twitter-cli."""
+            # Default financial terms
+            parts.extend(self.FINANCIAL_SEARCH_TERMS[:3])
+
+        return " OR ".join(parts[:5])  # Limit query length
+
+    async def _search_twitter_opencli(self, query: str, limit: int) -> List[Dict[str, Any]]:
+        """Search Twitter using OpenCLI browser bridge."""
         try:
-            # Try twitter-cli first
+            # Use OpenCLI for Twitter search
             result = subprocess.run(
-                ['twitter', 'search', query, '--limit', str(limit)],
+                [
+                    'opencli', 'twitter', 'search',
+                    '--query', query,
+                    '--limit', str(limit),
+                    '--format', 'json'
+                ],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
-            
-            if result.returncode == 0:
-                return self._parse_twitter_output(result.stdout)
-            
-            # Fallback to opencli
-            result = subprocess.run(
-                ['opencli', 'twitter', 'search', query, '--limit', str(limit)],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode == 0:
-                return self._parse_twitter_output(result.stdout)
-            
-            logger.error(f"Twitter search failed: {result.stderr}")
+
+            if result.returncode == 0 and result.stdout.strip():
+                return self._parse_opencli_output(result.stdout)
+
+            if result.stderr:
+                logger.error(f"Twitter search stderr: {result.stderr}")
             return []
-            
+
         except subprocess.TimeoutExpired:
             logger.error("Twitter search timed out")
             return []
         except Exception as e:
             logger.error(f"Twitter search error: {e}")
+            import traceback
+            traceback.print_exc()
             return []
-    
-    def _parse_twitter_output(self, output: str) -> List[Dict[str, Any]]:
-        """Parse twitter-cli output into structured data."""
+
+    def _parse_opencli_output(self, output: str) -> List[Dict[str, Any]]:
+        """Parse OpenCLI Twitter output."""
         tweets = []
-        
+
         try:
-            # Try to parse as JSON first
             data = json.loads(output)
             if isinstance(data, list):
                 for tweet in data:
                     tweets.append({
-                        'id': tweet.get('id', ''),
+                        'id': tweet.get('id', f"tw_{hash(tweet.get('text', ''))}"),
                         'source': 'twitter',
                         'title': tweet.get('text', '')[:100],
                         'content': tweet.get('text', ''),
-                        'url': tweet.get('url', ''),
-                        'author': tweet.get('user', {}).get('username', ''),
-                        'timestamp': datetime.fromisoformat(
-                            tweet.get('created_at', '').replace('Z', '+00:00')
-                        ) if tweet.get('created_at') else datetime.utcnow(),
-                        'likes': tweet.get('likes', 0),
-                        'retweets': tweet.get('retweets', 0),
-                        'sentiment_score': 50,  # Will be calculated by AI
-                        'impact_score': 0  # Will be calculated by AI
-                    })
-        except json.JSONDecodeError:
-            # Try line-by-line parsing
-            for line in output.strip().split('\n'):
-                if line.strip():
-                    tweets.append({
-                        'id': f"twitter_{hash(line)}",
-                        'source': 'twitter',
-                        'title': line[:100],
-                        'content': line,
-                        'url': '',
-                        'author': 'unknown',
-                        'timestamp': datetime.utcnow(),
-                        'likes': 0,
-                        'retweets': 0,
+                        'url': tweet.get('url', tweet.get('permalink', '')),
+                        'author': tweet.get('user', {}).get('username', 
+                                   tweet.get('author', 'unknown')),
+                        'timestamp': datetime.utcnow(),  # Will be parsed if available
+                        'likes': tweet.get('likes', tweet.get('likes_count', 0)),
+                        'retweets': tweet.get('retweets', tweet.get('retweet_count', 0)),
                         'sentiment_score': 50,
                         'impact_score': 0
                     })
-        
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse Twitter JSON output")
+
         return tweets
-    
-    def _filter_financial_content(
-        self,
-        tweets: List[Dict[str, Any]],
-        min_relevance: float = 0.3
-    ) -> List[Dict[str, Any]]:
-        """Filter tweets for financial/relevant content."""
-        filtered = []
-        
-        for tweet in tweets:
-            content_lower = tweet.get('content', '').lower()
-            
-            # Check for financial keywords
-            relevance_score = sum(
-                1 for keyword in self.FINANCIAL_KEYWORDS
-                if keyword.lower() in content_lower
-            ) / len(self.FINANCIAL_KEYWORDS)
-            
-            # Check for ticker mentions
-            tickers = self._extract_tickers(tweet.get('content', ''))
-            if tickers:
-                relevance_score = max(relevance_score, 0.8)
-            
-            if relevance_score >= min_relevance:
-                tweet['relevance_score'] = relevance_score
-                filtered.append(tweet)
-        
-        # Sort by relevance and engagement
-        filtered.sort(
-            key=lambda x: (
-                x.get('relevance_score', 0) * 0.6 +
-                min(x.get('likes', 0) / 100, 1) * 0.2 +
-                min(x.get('retweets', 0) / 50, 1) * 0.2
-            ),
-            reverse=True
-        )
-        
-        return filtered
-    
+
     def _extract_tickers(self, text: str) -> List[str]:
         """Extract ticker symbols from text."""
-        matches = self.TICKER_PATTERN.findall(text.upper())
+        # Match $TICKER or WORD_TICKER patterns
+        matches = re.findall(r'\$([A-Z]{1,5})|_([A-Z]{1,5})\\b', text.upper())
         
-        # Filter out common non-ticker words
-        exclude = {
-            'THE', 'AND', 'FOR', 'WITH', 'THAT', 'THIS', 'HAVE', 'HAS',
-            'ARE', 'WERE', 'WILL', 'WOULD', 'COULD', 'SHOULD', 'CAN',
-            ' Stocks', ' Stock', ' Market', ' Price'
-        }
-        
-        return [t for t in matches if t not in exclude and len(t) >= 2]
-    
+        # Flatten and filter
+        tickers = []
+        for match in matches:
+            ticker = match[0] or match[1]
+            if ticker and len(ticker) >= 2:
+                tickers.append(ticker)
+
+        # Remove duplicates
+        return list(set(tickers))
+
     async def get_trending_tickers(self, limit: int = 10) -> List[str]:
         """Get trending ticker symbols from Twitter."""
         if not self.enabled:
             return []
-        
+
         try:
             # Search for common financial discussions
-            tweets = await self._search_twitter("stock OR $SPY OR $QQQ", limit=100)
-            
+            tweets = await self._search_twitter_opencli("stock OR $SPY OR $QQQ", limit=100)
+
             # Count ticker mentions
             ticker_counts = {}
             for tweet in tweets:
                 tickers = self._extract_tickers(tweet.get('content', ''))
                 for ticker in tickers:
+                    # Skip common non-ticker symbols
+                    if ticker in ['SPY', 'QQQ', 'DIA']:
+                        continue
                     ticker_counts[ticker] = ticker_counts.get(ticker, 0) + 1
-            
+
             # Return most mentioned
             sorted_tickers = sorted(
                 ticker_counts.items(),
                 key=lambda x: x[1],
                 reverse=True
             )
-            
+
             return [t[0] for t in sorted_tickers[:limit]]
-            
+
         except Exception as e:
             logger.error(f"Error getting trending tickers: {e}")
             return []

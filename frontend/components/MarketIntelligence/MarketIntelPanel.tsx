@@ -29,20 +29,19 @@ export default function MarketIntelligence({ enabled = true }: MarketIntelProps)
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSource, setSelectedSource] = useState<string>('all');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchNews = async () => {
     try {
       const response = await fetch('/api/v1/market-intelligence/news?limit=20');
       const data = await response.json();
-      
+
       if (data.success) {
         setNews(data.news || []);
         setLastUpdate(new Date());
       }
     } catch (error) {
       console.error('Failed to fetch news:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -50,7 +49,7 @@ export default function MarketIntelligence({ enabled = true }: MarketIntelProps)
     try {
       const response = await fetch('/api/v1/market-intelligence/trending?limit=10');
       const data = await response.json();
-      
+
       if (data.success) {
         setTrending(data.trending || []);
       }
@@ -59,20 +58,35 @@ export default function MarketIntelligence({ enabled = true }: MarketIntelProps)
     }
   };
 
+  const refreshAll = async () => {
+    setRefreshing(true);
+    setLoading(true);
+    try {
+      // Trigger backend refresh
+      await fetch('/api/v1/market-intelligence/refresh', { method: 'POST' });
+      // Fetch fresh data
+      await Promise.all([fetchNews(), fetchTrending()]);
+    } catch (error) {
+      console.error('Failed to refresh:', error);
+    } finally {
+      setRefreshing(false);
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    if (!enabled) return;
-    
+    // Always poll when component is mounted - real-time market intelligence
     fetchNews();
     fetchTrending();
-    
-    // Auto-refresh every 60 seconds
+
+    // Auto-refresh every 15 seconds for real-time trend trading
     const interval = setInterval(() => {
       fetchNews();
       fetchTrending();
-    }, 60000);
-    
+    }, 15000);
+
     return () => clearInterval(interval);
-  }, [enabled]);
+  }, []); // Empty dependency array = always run on mount, never re-run
 
   const filteredNews = news.filter(item => {
     const matchesSource = selectedSource === 'all' || item.source === selectedSource;
@@ -113,27 +127,7 @@ export default function MarketIntelligence({ enabled = true }: MarketIntelProps)
     return 'text-yellow-400';
   };
 
-  if (!enabled) {
-    return (
-      <div className="bg-[#1E293B] rounded-lg p-6 border border-[#475569]">
-        <div className="flex items-center gap-2 mb-4">
-          <AlertCircle className="w-5 h-5 text-yellow-500" />
-          <h3 className="text-lg font-bold text-[#F8FAFC]">Market Intelligence Disabled</h3>
-        </div>
-        <p className="text-[#94A3B8] text-sm mb-4">
-          Agent Reach market intelligence is not enabled. To activate:
-        </p>
-        <ol className="list-decimal list-inside text-[#94A3B8] text-sm space-y-1 mb-4">
-          <li>Install: <code className="bg-[#0F172A] px-2 py-1 rounded text-cyan-400">pip install agent-reach</code></li>
-          <li>Configure: <code className="bg-[#0F172A] px-2 py-1 rounded text-cyan-400">AGENT_REACH_ENABLED=true</code></li>
-          <li>Restart backend server</li>
-        </ol>
-        <p className="text-[#94A3B8] text-xs">
-          See AGENT_REACH_INTEGRATION_PLAN.md for setup instructions.
-        </p>
-      </div>
-    );
-  }
+  // Component is always enabled - real-time market intelligence
 
   if (loading && news.length === 0) {
     return (
@@ -162,15 +156,12 @@ export default function MarketIntelligence({ enabled = true }: MarketIntelProps)
           )}
         </div>
         <button
-          onClick={() => {
-            setLoading(true);
-            fetchNews();
-            fetchTrending();
-          }}
-          className="p-2 hover:bg-[#334155] rounded-lg transition text-[#94A3B8] hover:text-[#F8FAFC]"
+          onClick={refreshAll}
+          disabled={refreshing}
+          className="p-2 hover:bg-[#334155] rounded-lg transition text-[#94A3B8] hover:text-[#F8FAFC] disabled:opacity-50"
           title="Refresh data"
         >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
