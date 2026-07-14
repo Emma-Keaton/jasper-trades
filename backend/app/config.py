@@ -102,21 +102,18 @@ class Settings(BaseSettings):
     # Kronos Remote Service (Render Deployment)
     KRONOS_SERVICE_URL: Optional[str] = None  # Remote Kronos service URL (Render)
 
-    # Kronos Colab Integration (3-model ensemble) - Deprecated, use KRONOS_SERVICE_URL
-    KRONOS_COLAB_URL: Optional[str] = None  # Colab public URL (ngrok)
-    KRONOS_COLAB_STRATEGY: str = "cascade"  # cascade|ensemble|context|mini|small|base
-
     # cTrader OpenAPI (OAuth 2.0 Copy Trading)
     CTRADER_CLIENT_ID: Optional[str] = None
     CTRADER_CLIENT_SECRET: Optional[str] = None
     CTRADER_REDIRECT_URI: Optional[str] = None
-    CTRADER_SANDBOX: bool = True
     CTRADER_ENCRYPTION_KEY: Optional[str] = None
     CTRADER_BROKER_ENABLED: bool = True
     CTRADER_RATE_LIMIT: int = 50
 
-    # WhatsApp Integration - Use database settings
-    WHATSAPP_SERVICE_URL: str = "http://localhost:2785"  # Default OpenWA URL
+    # Universal Paper Trading (replaces broker-specific sandbox modes)
+    UNIVERSAL_PAPER_TRADING: bool = True
+    UNIVERSAL_PAPER_CAPITAL: float = 10000.0
+    UNIVERSAL_PAPER_CURRENCY: str = "USD"
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: Optional[str] = None  # Bot token from BotFather

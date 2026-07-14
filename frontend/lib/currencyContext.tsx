@@ -7,11 +7,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
 
 // Types
-export type Currency = 'USD' | 'NGN';
+export type Currency = 'USD' | 'NGN' | 'CNY';
 
 interface CurrencyState {
   currency: Currency;
-  exchangeRate: number; // NGN to USD rate
+  exchangeRate: number; // NGN/USD or CNY/USD rate
+  exchangeRates: Record<string, number>; // Store all rates
   lastUpdated: Date | null;
   isLoading: boolean;
   error: string | null;
@@ -28,7 +29,13 @@ interface CurrencyContextType extends CurrencyState {
 // Initial state
 const initialState: CurrencyState = {
   currency: 'USD',
-  exchangeRate: 0,
+  exchangeRate: 1, // Default to 1.0
+  exchangeRates: {
+    'NGN/USD': 0.00065, // Default fallback
+    'USD/NGN': 1538.46,
+    'CNY/USD': 0.14, // ~7.1 CNY per USD
+    'USD/CNY': 7.1,
+  },
   lastUpdated: null,
   isLoading: false,
   error: null,
@@ -41,11 +48,13 @@ const CurrencyContext = createContext<CurrencyContextType | undefined>(undefined
 const currencySymbols: Record<Currency, string> = {
   USD: '$',
   NGN: '₦',
+  CNY: '¥',
 };
 
 const localeMap: Record<Currency, string> = {
   USD: 'en-US',
   NGN: 'en-NG',
+  CNY: 'zh-CN',
 };
 
 export function CurrencyProvider({ children }: { children: ReactNode }) {
@@ -90,10 +99,18 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
           try {
             const data = JSON.parse(event.data);
             if (data.type === 'forex_update' && data.rates) {
-              const ngnUsdRate = data.rates['NGN/USD']?.rate || 0;
+              const newRates: Record<string, number> = {};
+              
+              // Parse all rates
+              Object.keys(data.rates).forEach(pair => {
+                const rate = data.rates[pair]?.rate || 0;
+                newRates[pair] = rate;
+              });
+
               setState(prev => ({
                 ...prev,
-                exchangeRate: ngnUsdRate,
+                exchangeRate: data.rates['NGN/USD']?.rate || prev.exchangeRate,
+                exchangeRates: { ...prev.exchangeRates, ...newRates },
                 lastUpdated: new Date(),
                 isLoading: false,
               }));
@@ -152,21 +169,41 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
 
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/forex/rate/NGN/USD`, {
-        headers: { 'X-Device-ID': deviceId },
-      });
+      // Fetch all major currency pairs
+      const promises = [
+        fetch(`${API_URL}/api/v1/forex/rate/NGN/USD`, { headers: { 'X-Device-ID': deviceId } }),
+        fetch(`${API_URL}/api/v1/forex/rate/USD/NGN`, { headers: { 'X-Device-ID': deviceId } }),
+        fetch(`${API_URL}/api/v1/forex/rate/CNY/USD`, { headers: { 'X-Device-ID': deviceId } }),
+        fetch(`${API_URL}/api/v1/forex/rate/USD/CNY`, { headers: { 'X-Device-ID': deviceId } }),
+      ];
 
-      if (res.ok) {
-        const data = await res.json();
-        setState(prev => ({
-          ...prev,
-          exchangeRate: data.data?.rate || 0,
-          lastUpdated: new Date(),
-          isLoading: false,
-        }));
-      } else {
-        throw new Error('Failed to fetch exchange rate');
+      const results = await Promise.all(promises);
+      const newRates: Record<string, number> = { ...state.exchangeRates };
+
+      if (results[0].ok) {
+        const data = await results[0].json();
+        newRates['NGN/USD'] = data.data?.rate || 0;
       }
+      if (results[1].ok) {
+        const data = await results[1].json();
+        newRates['USD/NGN'] = data.data?.rate || 0;
+      }
+      if (results[2].ok) {
+        const data = await results[2].json();
+        newRates['CNY/USD'] = data.data?.rate || 0;
+      }
+      if (results[3].ok) {
+        const data = await results[3].json();
+        newRates['USD/CNY'] = data.data?.rate || 0;
+      }
+
+      setState(prev => ({
+        ...prev,
+        exchangeRate: newRates['NGN/USD'] || prev.exchangeRate,
+        exchangeRates: newRates,
+        lastUpdated: new Date(),
+        isLoading: false,
+      }));
     } catch (e) {
       setState(prev => ({
         ...prev,
@@ -206,23 +243,42 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toggleCurrency = useCallback(() => {
-    const newCurrency = state.currency === 'USD' ? 'NGN' : 'USD';
-    setCurrency(newCurrency);
+    const cycle = state.currency === 'USD' ? 'NGN' : state.currency === 'NGN' ? 'CNY' : 'USD';
+    setCurrency(cycle);
   }, [state.currency, setCurrency]);
 
   const convertAmount = useCallback((amount: number, from: Currency, to: Currency): number => {
     if (from === to) return amount;
 
-    // NGN to USD: multiply by exchange rate (e.g., 0.00065)
-    // USD to NGN: divide by exchange rate (e.g., 1 / 0.00065 = 1538.46)
-    if (from === 'NGN' && to === 'USD') {
-      return amount * state.exchangeRate;
-    } else if (from === 'USD' && to === 'NGN') {
-      return state.exchangeRate > 0 ? amount / state.exchangeRate : 0;
+    // Convert to USD first, then from USD to target currency
+    const rates = state.exchangeRates;
+
+    // If both currencies are USD, return amount
+    if (from === 'USD') {
+      // USD to NGN
+      if (to === 'NGN') return rates['USD/NGN'] > 0 ? amount * rates['USD/NGN'] : amount;
+      // USD to CNY
+      if (to === 'CNY') return rates['USD/CNY'] > 0 ? amount * rates['USD/CNY'] : amount;
+    } else if (from === 'NGN') {
+      // NGN to USD
+      if (to === 'USD') return rates['NGN/USD'] > 0 ? amount * rates['NGN/USD'] : amount;
+      // NGN to CNY (via USD)
+      if (to === 'CNY') {
+        const usdAmount = rates['NGN/USD'] > 0 ? amount * rates['NGN/USD'] : amount;
+        return rates['USD/CNY'] > 0 ? usdAmount * rates['USD/CNY'] : usdAmount;
+      }
+    } else if (from === 'CNY') {
+      // CNY to USD
+      if (to === 'USD') return rates['CNY/USD'] > 0 ? amount * rates['CNY/USD'] : amount;
+      // CNY to NGN (via USD)
+      if (to === 'NGN') {
+        const usdAmount = rates['CNY/USD'] > 0 ? amount * rates['CNY/USD'] : amount;
+        return rates['USD/NGN'] > 0 ? usdAmount * rates['USD/NGN'] : usdAmount;
+      }
     }
 
     return amount;
-  }, [state.exchangeRate]);
+  }, [state.exchangeRates]);
 
   const formatCurrency = useCallback((amount: number, currency?: Currency): string => {
     const curr = currency || state.currency;

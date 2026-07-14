@@ -185,8 +185,12 @@ class DeviceSettings(Base):
     telegram_config = Column(String, nullable=True)  # JSON: {bot_token, chat_id, enabled}
     whatsapp_config = Column(String, nullable=True)  # JSON: {phone_number, openwa_url, enabled, chat_enabled}
 
-    # Broker paper trading configs (stored as JSON string)
-    broker_paper_trading_config = Column(String, nullable=True)  # JSON: {ctrader: {enabled, capital, currency}, trove: {...}, akshare: {...}}
+    # Broker paper trading configs (stored as JSON string - DEPRECATED)
+    broker_paper_trading_config = Column(String, nullable=True)  # JSON: {ctrader: {enabled, capital, currency}, trove: {...}, akshare: {...}} (DEPRECATED)
+
+    # Universal paper trading configuration (replaces broker-specific sandbox modes)
+    # Structure: {enabled, initial_capital, current_balance, total_pnl, currency}
+    universal_paper_trading_config = Column(String, nullable=True)  # JSON: {enabled, initial_capital, current_balance, total_pnl, currency}
 
     # Market Data APIs (encrypted)
     alphavantage_key = Column(String, nullable=True)  # Encrypted

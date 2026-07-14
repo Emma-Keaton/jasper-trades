@@ -1,4 +1,4 @@
-"""
+﻿"""
 Database Migration System
 Automatically migrates database schema on application startup.
 No external tools (Alembic) needed - simple SQLAlchemy-based migrations.
@@ -89,6 +89,13 @@ async def _migrate_device_settings():
         'trove_account_id': 'TEXT',
         'trove_sandbox': 'BOOLEAN DEFAULT 1',
 
+        # AKShare (Chinese stocks)
+        'akshare_config': 'TEXT',
+        'akshare_sandbox': 'BOOLEAN DEFAULT 1',
+
+        # cTrader sandbox mode
+        'ctrader_sandbox': 'BOOLEAN DEFAULT 1',
+
         # Currency preferences
         'default_currency': "TEXT DEFAULT 'USD'",
         'currency_conversion_enabled': 'BOOLEAN DEFAULT 1',
@@ -102,6 +109,10 @@ async def _migrate_device_settings():
 
         # Environment mode
         'environment_mode': 'TEXT DEFAULT "sandbox"',
+        
+        # Broker paper trading config
+        'broker_paper_trading_config': 'TEXT',
+        'universal_paper_trading_config': 'TEXT',
     }
 
     existing_columns = await get_existing_columns('device_settings')
@@ -113,7 +124,7 @@ async def _migrate_device_settings():
                     await conn.execute(
                         text(f"ALTER TABLE device_settings ADD COLUMN {column_name} {column_type}")
                     )
-                logger.info(f"✓ Added column: {column_name} ({column_type})")
+                logger.info(f"âœ“ Added column: {column_name} ({column_type})")
             except Exception as e:
                 logger.warning(f"Could not add column {column_name}: {e}")
 
@@ -144,7 +155,7 @@ async def _migrate_portfolios():
                     await conn.execute(
                         text(f"ALTER TABLE portfolios ADD COLUMN {column_name} {column_type}")
                     )
-                logger.info(f"✓ Added column: {column_name} ({column_type}) to portfolios")
+                logger.info(f"âœ“ Added column: {column_name} ({column_type}) to portfolios")
             except Exception as e:
                 logger.warning(f"Could not add column {column_name} to portfolios: {e}")
 
@@ -176,6 +187,6 @@ async def _migrate_whatsapp_users():
                     await conn.execute(
                         text(f"ALTER TABLE whatsapp_users ADD COLUMN {column_name} {column_type}")
                     )
-                logger.info(f"✓ Added column: {column_name} ({column_type}) to whatsapp_users")
+                logger.info(f"âœ“ Added column: {column_name} ({column_type}) to whatsapp_users")
             except Exception as e:
                 logger.warning(f"Could not add column {column_name} to whatsapp_users: {e}")

@@ -14,6 +14,7 @@ import MarketDataSection from './settings/MarketDataSection';
 import CTraderConnection from './settings/CTraderConnection';
 import TroveSettings from './settings/TroveSettings';
 import AKShareSettings from './settings/AKShareSettings';
+import BrokerSettings from './settings/BrokerSettings';
 import CurrencyToggle from './settings/CurrencyToggle';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
@@ -24,7 +25,6 @@ interface ApiSettings {
   nvidia_api_key: string;
   binance_api_key: string;
   binance_api_secret: string;
-  colab_kronos_url: string;
   trove_api_key?: string;
   akshare_token?: string;
 }
@@ -54,7 +54,6 @@ const getApiConfiguredCount = (formData: ApiSettings) => {
   let count = 0;
   if (formData.nvidia_api_key) count++;
   if (formData.binance_api_key && formData.binance_api_secret) count++;
-  if (formData.colab_kronos_url) count++;
   return count;
 };
 
@@ -64,7 +63,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     nvidia_api_key: '',
     binance_api_key: '',
     binance_api_secret: '',
-    colab_kronos_url: '',
     trove_api_key: '',
     akshare_token: '',
   });
@@ -164,11 +162,16 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     };
   } | null>(null);
 
-  // Sandbox/Live mode states for brokers
-  const [ctraderSandboxMode, setCtraderSandboxMode] = useState<boolean>(true);
-  const [troveSandboxMode, setTroveSandboxMode] = useState<boolean>(true);
+  // Universal paper trading state (replaces per-broker sandbox modes)
+  const [universalPaperTrading, setUniversalPaperTrading] = useState<any>({
+    enabled: true,
+    initial_capital: 10000,
+    current_balance: 10000,
+    total_pnl: 0,
+    currency: 'USD'
+  });
+
   const [troveEnabled, setTroveEnabled] = useState<boolean>(false);
-  const [akshareSandboxMode, setAkshareSandboxMode] = useState<boolean>(true);
   const [akshareEnabled, setAkshareEnabled] = useState<boolean>(false);
 
   const getBrokerConnectedCount = () => {
@@ -214,7 +217,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         nvidia_api_key: data.nvidia_api_key || '',
         binance_api_key: data.binance_api_key || '',
         binance_api_secret: data.binance_api_secret || '',
-        colab_kronos_url: data.colab_kronos_url || '',
         trove_api_key: data.trove_api_key || '',
         akshare_token: data.akshare_token || '',
       });
@@ -245,24 +247,22 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       }
       if (data.trove_config) {
         setTroveSettings(data.trove_config);
-        // Load Trove sandbox mode from backend
-        if (data.trove_config.sandbox !== undefined) {
-          setTroveSandboxMode(data.trove_config.sandbox);
-        }
         setTroveEnabled(data.trove_config.enabled || false);
       }
       if (data.akshare_config) {
         setAkShareConfig(data.akshare_config);
-        // Load AKShare sandbox mode from backend
-        if (data.akshare_config.sandbox !== undefined) {
-          setAkshareSandboxMode(data.akshare_config.sandbox);
-        }
         setAkshareEnabled(data.akshare_config.enabled || false);
       }
-      if (data.ctrader_config) {
-        if (data.ctrader_config.sandbox !== undefined) {
-          setCtraderSandboxMode(data.ctrader_config.sandbox);
-        }
+
+      // Load universal paper trading config
+      if (data.universal_paper_trading) {
+        setUniversalPaperTrading({
+          enabled: data.universal_paper_trading.enabled,
+          initial_capital: data.universal_paper_trading.initial_capital,
+          current_balance: data.universal_paper_trading.current_balance || data.universal_paper_trading.initial_capital,
+          total_pnl: data.universal_paper_trading.total_pnl || 0,
+          currency: data.universal_paper_trading.currency || 'USD'
+        });
       }
 
       // Load environment variable status
@@ -303,19 +303,15 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
   const handleSave = async () => {
     try {
-      // Save all form data including sandbox modes
+      // Save all form data
       const payload = {
         nvidia_api_key: formData.nvidia_api_key,
         binance_api_key: formData.binance_api_key,
         binance_api_secret: formData.binance_api_secret,
-        colab_kronos_url: formData.colab_kronos_url,
         trove_api_key: formData.trove_api_key,
         akshare_token: formData.akshare_token,
-        trove_sandbox: troveSandboxMode,
         trove_enabled: troveEnabled,
-        akshare_sandbox: akshareSandboxMode,
         akshare_enabled: akshareEnabled,
-        ctrader_sandbox: ctraderSandboxMode,
       };
 
       const response = await fetch(`${API_URL}/api/v1/settings`, {
@@ -812,11 +808,11 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         {/* Group 1: AI & External Services */}
         <CollapsibleSection
           title="AI & External Services"
-          subtitle="NVIDIA NIM, Binance, Kronos Colab, and market data providers"
+          subtitle="NVIDIA NIM, Binance, and market data providers"
           icon={Key}
           defaultOpen={true}
           storageKey="settings-ai-services-open"
-          completionStatus={`${getApiConfiguredCount(formData)} of 3 configured`}
+          completionStatus={`${getApiConfiguredCount(formData)} of 2 configured`}
         >
           <div className="space-y-4">
             {/* NVIDIA NIM API */}
@@ -971,45 +967,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
               )}
             </div>
 
-            {/* Kronos AI - Google Colab */}
-            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-[#FF6B9D]" />
-                  <h3 className="text-md font-semibold text-white">Kronos AI - Google Colab</h3>
-                </div>
-                {envStatus?.environment_variables?.colab_kronos_url?.configured && (
-                  <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> ENV
-                  </span>
-                )}
-              </div>
-              <input
-                type="text"
-                value={formData.colab_kronos_url}
-                onChange={(e) => envStatus?.environment_variables?.colab_kronos_url?.configured
-                  ? undefined
-                  : setFormData({...formData, colab_kronos_url: e.target.value})
-                }
-                disabled={envStatus?.environment_variables?.colab_kronos_url?.configured}
-                placeholder="https://colab.research.google.com/..."
-                className={`w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm ${
-                  envStatus?.environment_variables?.colab_kronos_url?.configured
-                    ? 'opacity-60 cursor-not-allowed'
-                    : ''
-                }`}
-              />
-              {envStatus?.environment_variables?.colab_kronos_url?.configured && (
-                <p className="text-xs text-green-400 mt-2 flex items-center gap-1">
-                  <Lock className="w-3 h-3" />
-                  Managed via Render: KRONOS_COLAB_URL
-                </p>
-              )}
-              <p className="text-xs text-gray-400 mt-2">
-                Google Colab notebook URL configuration for running high-performance GPU prediction strategy tasks.
-              </p>
-            </div>
-
             {/* Market Data Section */}
             <div data-tour="market-data-section">
               <MarketDataSection marketData={marketData} setMarketData={setMarketData} triggerToast={triggerToast} />
@@ -1027,6 +984,37 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         >
           <div className="space-y-4">
             
+            {/* Universal Paper Trading Configuration */}
+            <BrokerSettings
+              triggerToast={triggerToast}
+              onSave={() => fetchSettings()}
+            />
+
+            {/* Global Trading Mode Indicator */}
+            <div className={`p-3 rounded-lg border ${
+              universalPaperTrading.enabled
+                ? 'bg-blue-500/10 border-blue-500/30'
+                : 'bg-red-500/10 border-red-500/30'
+            }`}>
+              <div className="flex items-center gap-2">
+                {universalPaperTrading.enabled ? (
+                  <>
+                    <Check className="w-4 h-4 text-blue-400" />
+                    <p className="text-sm text-blue-400">
+                      <strong>Paper Trading Active:</strong> All broker integrations will run in simulation mode
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-4 h-4 text-red-400" />
+                    <p className="text-sm text-red-400">
+                      <strong>Live Trading Mode:</strong> Real capital will be used with connected brokers
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
             {/* cTrader Execution Panel */}
             <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569] space-y-4">
               <div className="flex items-center justify-between mb-3">
@@ -1040,48 +1028,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   </span>
                 )}
               </div>
-
-              <div className="flex items-center justify-between p-3 bg-[#0F172A] rounded-lg border border-[#475569]/30">
-                <div>
-                  <p className="text-sm font-semibold text-white mb-1">
-                    {ctraderSandboxMode ? 'Sandbox Mode (Paper Trading)' : 'LIVE EXECUTION'}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {ctraderSandboxMode
-                      ? 'Executing simulated order routing without financial exposure'
-                      : '⚠️ WARNING: Placing real money orders on live cTrader accounts'
-                    }
-                  </p>
-                </div>
-                <button
-                  onClick={() => setCtraderSandboxMode(!ctraderSandboxMode)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    ctraderSandboxMode ? 'bg-[#3B82F6]' : 'bg-[#EF4444]'
-                  }`}
-                >
-                  <span
-                    className={`${
-                      ctraderSandboxMode ? 'translate-x-1' : 'translate-x-6'
-                    } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
-                  />
-                </button>
-              </div>
-
-              {ctraderSandboxMode ? (
-                <div className="p-2 bg-blue-500/10 border border-blue-500/30 rounded">
-                  <p className="text-xs text-blue-400 flex items-center gap-1">
-                    <Check className="w-3 h-3" />
-                    <span>Using safe simulated API endpoints for paper accounts.</span>
-                  </p>
-                </div>
-              ) : (
-                <div className="p-2 bg-red-500/10 border border-red-500/30 rounded">
-                  <p className="text-xs text-red-400 flex items-center gap-1 font-semibold">
-                    <AlertTriangle className="w-3 h-3 text-red-400 animate-pulse" />
-                    <span>Live environment configuration active. Capital risks apply.</span>
-                  </p>
-                </div>
-              )}
 
               <div data-tour="ctrader-section" className="pt-2">
                 <CTraderConnection
@@ -1130,44 +1076,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
               {troveEnabled && (
                 <>
-                  <div className="flex items-center justify-between p-3 bg-[#0F172A] rounded-lg border border-[#475569]/30">
-                    <div>
-                      <p className="text-sm font-semibold text-white mb-1">
-                        {troveSandboxMode ? 'Sandbox Mode (Paper Trading)' : 'LIVE MODE'}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {troveSandboxMode
-                          ? 'Simulating US/Nigerian equity orders on dev profiles'
-                          : '⚠️ REAL-TIME Execution: Executing assets via funded brokerage'
-                        }
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setTroveSandboxMode(!troveSandboxMode)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        troveSandboxMode ? 'bg-[#3B82F6]' : 'bg-[#EF4444]'
-                      }`}
-                    >
-                      <span
-                        className={`${
-                          troveSandboxMode ? 'translate-x-1' : 'translate-x-6'
-                        } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
-                      />
-                    </button>
-                  </div>
-
-                  {troveSandboxMode ? (
-                    <div className="p-2 bg-blue-500/10 border border-blue-500/30 rounded text-xs text-blue-400 flex items-center gap-1">
-                      <Check className="w-3 h-3" />
-                      <span>Safe environment active. No actual capital affected.</span>
-                    </div>
-                  ) : (
-                    <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-400 flex items-center gap-1 font-semibold">
-                      <AlertTriangle className="w-3 h-3 text-red-400" />
-                      <span>WARNING: Real fund execution active.</span>
-                    </div>
-                  )}
-
                   {envStatus?.environment_variables?.trove_api_key?.configured ? (
                     <div className="p-2 bg-green-500/10 border border-green-500/30 rounded text-xs text-green-400 flex items-center gap-1">
                       <Lock className="w-3 h-3" />
@@ -1231,44 +1139,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
               {akshareEnabled && (
                 <>
-                  <div className="flex items-center justify-between p-3 bg-[#0F172A] rounded-lg border border-[#475569]/30">
-                    <div>
-                      <p className="text-sm font-semibold text-white mb-1">
-                        {akshareSandboxMode ? 'Sandbox Mode (Simulated)' : 'LIVE SYSTEM'}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {akshareSandboxMode
-                          ? 'Using delayed public Chinese index matrices'
-                          : '⚠️ REAL-TIME Execution: Dispatching real orders to mainland indices'
-                        }
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setAkshareSandboxMode(!akshareSandboxMode)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        akshareSandboxMode ? 'bg-[#3B82F6]' : 'bg-[#EF4444]'
-                      }`}
-                    >
-                      <span
-                        className={`${
-                          akshareSandboxMode ? 'translate-x-1' : 'translate-x-6'
-                        } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
-                      />
-                    </button>
-                  </div>
-
-                  {akshareSandboxMode ? (
-                    <div className="p-2 bg-blue-500/10 border border-blue-500/30 rounded text-xs text-blue-400 flex items-center gap-1">
-                      <Check className="w-3 h-3" />
-                      <span>Delayed simulated fills are computed natively on public pipelines.</span>
-                    </div>
-                  ) : (
-                    <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-400 flex items-center gap-1 font-semibold">
-                      <AlertTriangle className="w-3 h-3 text-red-400" />
-                      <span>WARNING: Real liquidity pool connection active.</span>
-                    </div>
-                  )}
-
                   {envStatus?.environment_variables?.akshare_token?.configured ? (
                     <div className="p-2 bg-green-500/10 border border-green-500/30 rounded text-xs text-green-400 flex items-center gap-1">
                       <Lock className="w-3 h-3" />
