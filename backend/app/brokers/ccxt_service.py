@@ -57,7 +57,7 @@ class CCXTBrokerService(BaseBrokerService):
         self.precision_limits = config.get("precision_limits", {})
 
         if not self.api_key or not self.api_secret:
-            logger.warning("Exchange API credentials not configured")
+            logger.debug("CCXT broker instantiated without API credentials – placeholder; will be activated when user provides keys.")
 
     async def connect(self) -> bool:
         """
