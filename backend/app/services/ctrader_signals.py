@@ -168,20 +168,13 @@ class CTraderSignalIngestionService:
     ) -> List[Dict[str, Any]]:
         """
         Fetch recent signals from cTrader API.
-        
-        This is a placeholder - implement based on cTrader's actual API.
-        
-        Args:
-            leader_account_id: cTrader account ID
-            
-        Returns:
-            List of signal payloads
+
+        This method must be implemented using the actual cTrader endpoint for signal retrieval.
+        It currently raises NotImplementedError to avoid mock behavior.
         """
-        # TODO: Implement cTrader API call
-        # Example: GET /user/accounts/{id}/signals
-        logger.debug(f"Polling signals for leader {leader_account_id}")
-        return []
-    
+        raise NotImplementedError(
+            "cTrader signal fetching not implemented – integrate with the real cTrader API endpoint."
+        )
     # === Auto-Copy Execution ===
     
     async def _auto_copy_to_followers(
