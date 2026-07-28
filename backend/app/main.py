@@ -49,6 +49,7 @@ from app.api.v1 import alpha_factors, backtest, withdrawal, symbols
 from app.api.v1 import heartbeat, polymarket, debate, ensemble, swarm, quantlib, checkpoint, notify
 from app.api.v1 import trading_caps
 from app.api.v1 import settings_extensions
+from app.api.v1 import crypto_connector
 from app.api.v1 import telegram_settings
 from app.api.v1 import telegram_webhook
 from app.api.v1 import telegram_chat
