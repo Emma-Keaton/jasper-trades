@@ -169,15 +169,23 @@ def initialize_brokers(config: Optional[Dict[str, Any]] = None) -> BrokerRegistr
     # Configuration
     config = config or {}
 
-    # Initialize CCXT (crypto)
+    # Initialize CCXT (crypto) – only if API credentials are provided
     if config.get("ccxt", {}).get("enabled", True):
-        try:
-            ccxt_config = config.get("ccxt", {})
-            exchange_id = ccxt_config.get("exchange", "binance")
-            ccxt = CCXTBrokerService(exchange_id=exchange_id, config=ccxt_config)
-            registry.register(exchange_id, ccxt)
-        except Exception as e:
-            logger.warning(f"Failed to initialize CCXT: {e}")
+        # Determine credentials from config or settings
+        ccxt_config = config.get("ccxt", {})
+        api_key = ccxt_config.get("api_key") or settings.BINANCE_API_KEY
+        api_secret = ccxt_config.get("api_secret") or settings.BINANCE_API_SECRET
+        if api_key and api_secret:
+            try:
+                exchange_id = ccxt_config.get("exchange", "binance")
+                # Pass credentials via config to the service
+                ccxt_config = {**ccxt_config, "api_key": api_key, "api_secret": api_secret}
+                ccxt = CCXTBrokerService(exchange_id=exchange_id, config=ccxt_config)
+                registry.register(exchange_id, ccxt)
+            except Exception as e:
+                logger.warning(f"Failed to initialize CCXT: {e}")
+        else:
+            logger.warning("CCXT broker not initialized: missing Binance API credentials")
 
     # Initialize Solana
     if config.get("solana", {}).get("enabled", False):
