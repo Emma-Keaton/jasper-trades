@@ -59,14 +59,20 @@ async def connect_ctrader(
             detail="cTrader OAuth not configured. Set CTRADER_CLIENT_ID in environment."
         )
 
-    # Determine if sandbox mode
-    is_sandbox = mode.lower() == "sandbox"
-    auth_url = oauth_service.get_authorization_url(is_sandbox=is_sandbox)
+    # Enforce live-only mode – sandbox/development should use Universal Paper Trading
+    if mode.lower() != "live":
+        raise HTTPException(
+            status_code=400,
+            detail="cTrader sandbox mode is not supported. Use Universal Paper Trading (settings API) for sandbox testing."
+        )
+
+    # Generate live authorization URL (sandbox flag forced to False)
+    auth_url = oauth_service.get_authorization_url(is_sandbox=False)
 
     return {
         "authorization_url": auth_url,
-        "mode": "sandbox" if is_sandbox else "live",
-        "message": "Redirect user to this URL to connect cTrader account"
+        "mode": "live",
+        "message": "Redirect user to this URL to connect cTrader account for live trading"
     }
 
 
