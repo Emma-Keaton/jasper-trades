@@ -61,6 +61,7 @@ from app.api.v1 import banks  # Nigerian bank list
 from app.api.v1 import trove  # Trove stocks (Nigerian/US stocks)
 from app.api.v1 import akshare  # AKShare Chinese stocks
 from app.api.v1 import akshare_settings  # AKShare settings
+from app.api.v1 import exchanges
 
 # cTrader OAuth token refresh scheduler
 try:
@@ -325,6 +326,7 @@ app.include_router(checkpoint.router, tags=["checkpoint"])
 app.include_router(notify.router, tags=["notify"])
 app.include_router(trading_caps.router, prefix="/api/v1", tags=["trading-caps"])
 app.include_router(settings_extensions.router, prefix="/api/v1", tags=["settings-extensions"])
+app.include_router(exchanges.router, prefix="/api/v1", tags=["exchanges"])
 app.include_router(broker_connections.router, prefix="/api/v1", tags=["brokers"])
 app.include_router(copytrade.router, tags=["Copy Trading"])
 app.include_router(forex.router, tags=["forex"])  # Trove forex conversion
