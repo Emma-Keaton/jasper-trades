@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X, Plus, Save, Trash2, Wallet } from "lucide-react";
 import { API_URL } from "@/lib/constants";
+import DataTable from "@/components/ui/data-table";
 
 type Credential = {
   id: number;
@@ -93,43 +94,15 @@ export default function CryptoConnector() {
       </h2>
 
       {/* Existing rows */}
-      <table className="w-full text-sm text-left text-gray-300">
-        <thead className="border-b border-gray-700">
-          <tr>
-            <th className="pb-2">Exchange / Chain</th>
-            <th className="pb-2">Wallet / Address</th>
-            <th className="pb-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {creds.map((c) => (
-            <tr
-              key={c.id}
-              className="border-b border-gray-800 hover:bg-gray-800/30"
-            >
-              <td className="py-2 capitalize">{c.exchange}</td>
-              <td className="py-2">{c.wallet_address || "-"}</td>
-              <td className="py-2 flex gap-2">
-                <button
-                  onClick={() => {
-                    setEditing(c);
-                    setShowForm(true);
-                  }}
-                  className="p-1 text-gray-400 hover:text-gray-100"
-                >
-                  <Save size={16} />
-                </button>
-                <button
-                  onClick={() => handleDelete(c.id)}
-                  className="p-1 text-red-500 hover:text-red-300"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        columns={[
+          { header: "Exchange / Chain", accessor: "exchange", sortable: true },
+          { header: "Wallet / Address", accessor: "wallet_address", sortable: false },
+          { header: "API Key", accessor: "api_key", sortable: false },
+          { header: "API Secret", accessor: "api_secret", sortable: false },
+        ]}
+        data={creds}
+      />
 
       {/* Add manual connector button */}
       <div className="mt-4 flex gap-4">

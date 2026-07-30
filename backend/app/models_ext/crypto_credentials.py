@@ -4,6 +4,7 @@ Stored encrypted using the existing EncryptionHelper.
 """
 
 from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy.sql import func
 from app.models import Base  # Use the project's central declarative Base
 
 class DeviceCryptoCredential(Base):
@@ -16,9 +17,5 @@ class DeviceCryptoCredential(Base):
     encrypted_api_secret = Column(String, nullable=True)
     wallet_address = Column(String, nullable=True)
     chain = Column(String, nullable=True)  # "ethereum", "solana", "bsc", …
-    created_at = Column(DateTime, server_default="CURRENT_TIMESTAMP")
-    updated_at = Column(
-        DateTime,
-        server_default="CURRENT_TIMESTAMP",
-        onupdate="CURRENT_TIMESTAMP",
-    )
+    created_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, nullable=True)

@@ -19,7 +19,8 @@ import {
   Sparkles,
   Check,
   AlertTriangle,
-  Info
+  Info,
+  Globe
 } from 'lucide-react';
 
 // Types

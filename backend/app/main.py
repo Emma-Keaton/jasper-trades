@@ -34,7 +34,7 @@ from app.services.forex_polling_service import start_forex_polling, stop_forex_p
 try:
     from app.services.kronos import set_memory_limits, configure_torch_cpu
     KRONOS_AVAILABLE = True
-except ImportError:
+except Exception:
     KRONOS_AVAILABLE = False
     set_memory_limits = lambda **kwargs: None  # type: ignore
     configure_torch_cpu = lambda: None  # type: ignore
@@ -327,6 +327,7 @@ app.include_router(notify.router, tags=["notify"])
 app.include_router(trading_caps.router, prefix="/api/v1", tags=["trading-caps"])
 app.include_router(settings_extensions.router, prefix="/api/v1", tags=["settings-extensions"])
 app.include_router(exchanges.router, prefix="/api/v1", tags=["exchanges"])
+app.include_router(crypto_connector.router, prefix="/api/v1", tags=["crypto-connector"])
 app.include_router(broker_connections.router, prefix="/api/v1", tags=["brokers"])
 app.include_router(copytrade.router, tags=["Copy Trading"])
 app.include_router(forex.router, tags=["forex"])  # Trove forex conversion
