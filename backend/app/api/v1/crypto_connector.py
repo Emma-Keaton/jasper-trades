@@ -22,6 +22,9 @@ class CredentialIn(BaseModel):
     api_secret: str | None = None
     wallet_address: str | None = None
     chain: str | None = None
+    # Wallet ownership proof: signature over `nonce` using the wallet's key.
+    signature: str | None = None
+    nonce: str | None = None
 
     @validator("exchange")
     def validate_exchange(cls, v: str):
@@ -29,6 +32,46 @@ class CredentialIn(BaseModel):
         if v.lower() not in allowed:
             raise ValueError(f"Unsupported exchange/wallet: {v}")
         return v.lower()
+
+
+def _verify_wallet_signature(chain: str, address: str, message: str, signature: str) -> bool:
+    """
+    Verify that `signature` is a valid signature over `message` by the owner of
+    `address`. Fail-closed: unknown chain or missing libs -> False.
+
+    - ethereum/bsc: personal_sign; signer recovered via eth_account.
+    - solana: ED25519 signature verified via nacl.
+    """
+    if not address or not message or not signature:
+        return False
+    try:
+        if chain in ("ethereum", "bsc"):
+            from eth_account import Account
+            from eth_account.messages import encode_defunct
+
+            recovered = Account.recover_message(
+                encode_defunct(text=message), signature=signature
+            ).lower()
+            return recovered == address.strip().lower()
+        if chain == "solana":
+            import base64
+            import nacl.signing
+
+            # solana byte-array/hex/base64 signature handling
+            try:
+                sig_bytes = bytes.fromhex(signature)
+            except ValueError:
+                sig_bytes = base64.b64decode(signature)
+            try:
+                pub_bytes = bytes.fromhex(address)
+            except ValueError:
+                pub_bytes = base64.b64decode(address)
+            verify_key = nacl.signing.VerifyKey(pub_bytes)
+            verify_key.verify(message.encode("utf-8"), sig_bytes)
+            return True
+        return False
+    except Exception:
+        return False
 
 class CredentialOut(CredentialIn):
     id: int
@@ -44,6 +87,21 @@ async def upsert_credential(
 ):
     if not device_id:
         raise HTTPException(status_code=400, detail="X-Device-ID header required")
+
+    # If a wallet address is being stored, REQUIRE a valid ownership signature
+    # (fail-closed) so a forged/pasted address can never be saved.
+    if cred.wallet_address:
+        verified = _verify_wallet_signature(
+            (cred.chain or "").lower(),
+            cred.wallet_address,
+            cred.nonce or "",
+            cred.signature or "",
+        )
+        if not verified:
+            raise HTTPException(
+                status_code=400,
+                detail="Wallet verification failed: could not prove ownership of this address.",
+            )
 
     await db.run_sync(lambda s: Base.metadata.create_all(bind=async_engine.sync_engine))
     enc_key = encrypt_token(cred.api_key) if cred.api_key else None

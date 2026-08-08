@@ -5,16 +5,36 @@ from app.models import Base
 from app.config import settings
 import os
 
-# Ensure data directory exists
-os.makedirs(settings.DATA_DIR, exist_ok=True)
-os.makedirs(f"{settings.DATA_DIR}/sqlite", exist_ok=True)
 
-# Create async engine
+def normalize_db_url(url: str) -> str:
+    """
+    Normalize a database URL to a form SQLAlchemy async understands.
+
+    - Supabase/Postgres: accept 'postgres://' / 'postgresql://' and rewrite to
+      'postgresql+asyncpg://' (asyncpg driver).
+    - Local SQLite: keep as-is.
+    """
+    if not url:
+        return url
+    if url.startswith("postgres://"):
+        return "postgresql+asyncpg://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + url[len("postgresql://"):]
+    return url
+
+
+# Ensure local data directory exists (SQLite only; Postgres/Supabase is remote)
+if settings.DATABASE_URL.startswith("sqlite"):
+    os.makedirs(settings.DATA_DIR, exist_ok=True)
+    os.makedirs(f"{settings.DATA_DIR}/sqlite", exist_ok=True)
+
+# Create async engine (Postgres+asyncpg for Supabase, aiosqlite for local dev)
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    normalize_db_url(settings.DATABASE_URL),
     echo=settings.DEBUG,
     future=True,
 )
+
 
 # Async session factory
 AsyncSessionLocal = async_sessionmaker(

@@ -243,62 +243,27 @@ class ValuationService:
 
     async def _fetch_crypto_price(self, symbol: str) -> Optional[float]:
         """
-        Fetch crypto price from CCXT.
-
-        Args:
-            symbol: Crypto symbol (e.g., "BTC", "ETH")
-
-        Returns:
-            Current price in USDT or None
+        Fetch crypto price via the market-data router
+        (CoinGecko -> CCXT -> CoinLore). No longer depends on a connected
+        Binance broker.
         """
         try:
-            broker = get_broker("binance")
+            from app.services.market_data_router import get_market_data_router
 
-            if not broker or not broker.is_connected:
-                logger.debug("Binance not connected, trying alt sources")
-                return None
-
-            if isinstance(broker, CCXTBrokerService):
-                # Create trading pair
-                pair = f"{symbol}/USDT"
-
-                # Get ticker
-                ticker = await broker.exchange.fetch_ticker(pair)
-                if ticker and "last" in ticker:
-                    return float(ticker["last"])
-
+            result = await get_market_data_router().get_price(symbol)
+            price = result.get("price")
+            return float(price) if price else None
         except Exception as e:
             logger.warning(f"Failed to fetch crypto price for {symbol}: {e}")
-
-        return None
+            return None
 
     async def _fetch_crypto_prices(self, symbols: List[str]) -> Dict[str, float]:
-        """
-        Fetch multiple crypto prices.
-
-        Args:
-            symbols: List of crypto symbols
-
-        Returns:
-            Dict of symbol -> price
-        """
+        """Fetch multiple crypto prices via the market-data router."""
         prices = {}
-
-        try:
-            broker = get_broker("binance")
-
-            if not broker or not broker.is_connected:
-                return prices
-
-            # Fetch prices
-            for symbol in symbols:
-                price = await self._fetch_crypto_price(symbol)
-                if price:
-                    prices[symbol] = price
-
-        except Exception as e:
-            logger.error(f"Error fetching crypto prices: {e}")
-
+        for symbol in symbols:
+            price = await self._fetch_crypto_price(symbol)
+            if price:
+                prices[symbol] = price
         return prices
 
     # ========== Utilities ==========

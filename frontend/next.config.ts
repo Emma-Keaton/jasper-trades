@@ -18,7 +18,6 @@ const nextConfig: NextConfig = {
   // Use 'standalone' for Node.js server or 'export' for static HTML
   // For Render deployment with backend serving frontend, use 'standalone'
   output: 'standalone',
-  transpilePackages: ['motion'],
   webpack: (config, {dev}) => {
     if (dev && process.env.DISABLE_HMR === 'true') {
       config.watchOptions = {

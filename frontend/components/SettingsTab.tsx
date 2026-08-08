@@ -1,21 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  Save, Key, Shield, Server, Check, X, RefreshCw, MessageCircle, DollarSign, 
-  TrendingUp, Plane, Bell, Send, Brain, Hash, Palette, Cog, Link as LinkIcon, 
-  Cpu, Globe, Briefcase, Lock, Activity, AlertTriangle 
-} from 'lucide-react';
-import { Toast } from '@/app/page';
+import { Save, Key, Shield, Check, X, DollarSign, TrendingUp, Plane, Cpu, Briefcase, Lock, Brain } from 'lucide-react';
+import { Toast } from '@/app/types';
 import { SkeletonCard, SkeletonText } from './Skeleton';
 import TradingCapsSection from './TradingCapsSection';
 import PayoutSection from './PayoutSection';
 import MarketDataSection from './settings/MarketDataSection';
-import CTraderConnection from './settings/CTraderConnection';
-import TroveSettings from './settings/TroveSettings';
-import AKShareSettings from './settings/AKShareSettings';
-import BrokerSettings from './settings/BrokerSettings';
-import CurrencyToggle from './settings/CurrencyToggle';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
@@ -142,11 +133,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   });
   const [showLeaders, setShowLeaders] = useState(false);
 
-  // State tracking for broker connection status used in completion counting
-  const [accounts, setAccounts] = useState<any[]>([]);  // cTrader accounts
-  const [troveSettings, setTroveSettings] = useState<any>(null);
-  const [akShareConfig, setAkShareConfig] = useState<any>(null);
-
   // Environment variable status from backend
   const [envStatus, setEnvStatus] = useState<{
     environment_variables: Record<string, {
@@ -161,27 +147,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       missing: number;
     };
   } | null>(null);
-
-  // Universal paper trading state (replaces per-broker sandbox modes)
-  const [universalPaperTrading, setUniversalPaperTrading] = useState<any>({
-    enabled: true,
-    initial_capital: 10000,
-    current_balance: 10000,
-    total_pnl: 0,
-    currency: 'USD'
-  });
-
-  const [troveEnabled, setTroveEnabled] = useState<boolean>(false);
-  const [akshareEnabled, setAkshareEnabled] = useState<boolean>(false);
-
-  const getBrokerConnectedCount = () => {
-    let count = 0;
-    if (accounts && accounts.length > 0) count++;  // cTrader
-    if (troveEnabled) count++;                      // Trove
-    if (akshareEnabled) count++;                    // AKShare
-    if (polymarket.connected) count++;              // Polymarket
-    return count;
-  };
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -242,29 +207,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       }
 
       // Load broker connection status for completion counting
-      if (data.ctrader_accounts) {
-        setAccounts(data.ctrader_accounts);
-      }
-      if (data.trove_config) {
-        setTroveSettings(data.trove_config);
-        setTroveEnabled(data.trove_config.enabled || false);
-      }
-      if (data.akshare_config) {
-        setAkShareConfig(data.akshare_config);
-        setAkshareEnabled(data.akshare_config.enabled || false);
-      }
-
-      // Load universal paper trading config
-      if (data.universal_paper_trading) {
-        setUniversalPaperTrading({
-          enabled: data.universal_paper_trading.enabled,
-          initial_capital: data.universal_paper_trading.initial_capital,
-          current_balance: data.universal_paper_trading.current_balance || data.universal_paper_trading.initial_capital,
-          total_pnl: data.universal_paper_trading.total_pnl || 0,
-          currency: data.universal_paper_trading.currency || 'USD'
-        });
-      }
-
       // Load environment variable status
       await fetchEnvStatus();
 
@@ -310,8 +252,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         binance_api_secret: formData.binance_api_secret,
         trove_api_key: formData.trove_api_key,
         akshare_token: formData.akshare_token,
-        trove_enabled: troveEnabled,
-        akshare_enabled: akshareEnabled,
       };
 
       const response = await fetch(`${API_URL}/api/v1/settings`, {
@@ -793,8 +733,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   return (
     <div className="w-full max-w-5xl mx-auto p-2 sm:p-3 md:p-4 overflow-x-hidden">
       <div className="mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">Settings & Configuration</h1>
-        <p className="text-gray-400 text-xs sm:text-sm">{deviceInfo} • All keys encrypted before storage</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">Settings & Configuration</h1>
+        <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm">{deviceInfo} • All keys encrypted before storage</p>
       </div>
 
       {saved && (
@@ -808,19 +748,62 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         {/* Group 1: AI & External Services */}
         <CollapsibleSection
           title="AI & External Services"
-          subtitle="NVIDIA NIM, Binance, and market data providers"
+          subtitle="Gemini (primary), NVIDIA NIM (deprecated), Binance, and market data providers"
           icon={Key}
           defaultOpen={true}
           storageKey="settings-ai-services-open"
-          completionStatus={`${getApiConfiguredCount(formData)} of 2 configured`}
+          completionStatus={
+            envStatus?.environment_variables?.gemini_api_keys?.configured
+              ? 'Gemini ready'
+              : `${getApiConfiguredCount(formData)} of 2 configured`
+          }
         >
           <div className="space-y-4">
-            {/* NVIDIA NIM API */}
-            <div data-tour="api-keys-section" className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+            {/* Gemini (primary LLM) */}
+            <div data-tour="ai-keys-section" className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Brain className="w-5 h-5 text-[#8B5CF6]" />
+                  <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Gemini (Primary AI)</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  {envStatus?.environment_variables?.gemini_api_keys?.configured ? (
+                    <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> ENV
+                    </span>
+                  ) : (
+                    <span className="text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      Not configured
+                    </span>
+                  )}
+                </div>
+              </div>
+              {envStatus?.environment_variables?.gemini_api_keys?.configured ? (
+                <div className="p-2 bg-green-500/10 border border-green-500/30 rounded">
+                  <p className="text-xs text-green-400 flex items-center gap-1 font-medium">
+                    <Lock className="w-3 h-3" />
+                    <span>Managed via Render: GEMINI_API_KEYS detected</span>
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Gemini 2.5 Flash is the primary engine for AI chat, trade analysis, and trade reasoning.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Gemini is the primary AI model. Set <code className="text-[#8B5CF6]">GEMINI_API_KEYS</code> (comma-separated) in the Render dashboard to enable AI chat, analysis, and trade reasoning.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* NVIDIA NIM API (deprecated fallback) */}
+            <div data-tour="api-keys-section" className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Cpu className="w-5 h-5 text-[#3B82F6]" />
-                  <h3 className="text-md font-semibold text-white">NVIDIA NIM API</h3>
+                  <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">NVIDIA NIM API</h3>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/40 text-slate-300 uppercase">Deprecated fallback</span>
                 </div>
                 <div className="flex items-center gap-2">
                   {envStatus?.environment_variables?.nvidia_api_key?.configured && (
@@ -848,7 +831,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                 }
                 disabled={envStatus?.environment_variables?.nvidia_api_key?.configured}
                 placeholder="nvapi-..."
-                className={`w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm ${
+                className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm ${
                   envStatus?.environment_variables?.nvidia_api_key?.configured
                     ? 'opacity-60 cursor-not-allowed'
                     : ''
@@ -859,9 +842,9 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   <p className="text-xs text-green-400 flex items-center gap-1 font-medium">
                     <Lock className="w-3 h-3" />
                     <span>Managed via Render:</span>
-                    <span className="ml-1 text-gray-300">NVIDIA_API_KEY environment variable detected</span>
+                    <span className="ml-1 text-slate-600 dark:text-slate-300">NVIDIA_API_KEY environment variable detected</span>
                   </p>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     This field is locked. Update Render Dashboard variables to edit this value.
                   </p>
                 </div>
@@ -875,11 +858,11 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
             </div>
 
             {/* Binance API */}
-            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-[#F7931A]" />
-                  <h3 className="text-md font-semibold text-white">Binance</h3>
+                  <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Binance</h3>
                 </div>
                 <div className="flex items-center gap-2">
                   {(envStatus?.environment_variables?.binance_api_key?.configured &&
@@ -901,7 +884,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
               </div>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">API Key</label>
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Key</label>
                   <input
                     type="password"
                     value={formData.binance_api_key}
@@ -911,7 +894,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                     }
                     disabled={envStatus?.environment_variables?.binance_api_key?.configured}
                     placeholder="Binance API Key"
-                    className={`w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm ${
+                    className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm ${
                       envStatus?.environment_variables?.binance_api_key?.configured
                         ? 'opacity-60 cursor-not-allowed'
                         : ''
@@ -925,7 +908,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">API Secret</label>
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Secret</label>
                   <input
                     type="password"
                     value={formData.binance_api_secret}
@@ -935,7 +918,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                     }
                     disabled={envStatus?.environment_variables?.binance_api_secret?.configured}
                     placeholder="Binance API Secret"
-                    className={`w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm ${
+                    className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm ${
                       envStatus?.environment_variables?.binance_api_secret?.configured
                         ? 'opacity-60 cursor-not-allowed'
                         : ''
@@ -955,7 +938,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   <p className="text-xs text-green-400 flex items-center gap-1 font-medium">
                     <Lock className="w-3 h-3" />
                     <span>Credentials Locked:</span>
-                    <span className="ml-1 text-gray-300">Set via system environment variables</span>
+                    <span className="ml-1 text-slate-600 dark:text-slate-300">Set via system environment variables</span>
                   </p>
                 </div>
               ) : (
@@ -974,240 +957,55 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           </div>
         </CollapsibleSection>
 
-        {/* Group 2: Broker Integrations */}
+        {/* Group 2: Prediction Markets */}
         <CollapsibleSection
-          title="Broker Integrations"
-          subtitle="Trading platforms for automated execution"
+          title="Prediction Markets"
+          subtitle="Polymarket account for AI-powered trading and copytrading"
           icon={Briefcase}
-          storageKey="settings-brokers-open"
-          completionStatus={`${getBrokerConnectedCount()} of 4 connected`}
+          storageKey="settings-polymarket-open"
+          completionStatus={polymarket.connected ? '✓ Connected' : 'Not connected'}
         >
           <div className="space-y-4">
-            
-            {/* Universal Paper Trading Configuration */}
-            <BrokerSettings
-              triggerToast={triggerToast}
-              onSave={() => fetchSettings()}
-            />
-
-            {/* Global Trading Mode Indicator */}
-            <div className={`p-3 rounded-lg border ${
-              universalPaperTrading.enabled
-                ? 'bg-blue-500/10 border-blue-500/30'
-                : 'bg-red-500/10 border-red-500/30'
-            }`}>
-              <div className="flex items-center gap-2">
-                {universalPaperTrading.enabled ? (
-                  <>
-                    <Check className="w-4 h-4 text-blue-400" />
-                    <p className="text-sm text-blue-400">
-                      <strong>Paper Trading Active:</strong> All broker integrations will run in simulation mode
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle className="w-4 h-4 text-red-400" />
-                    <p className="text-sm text-red-400">
-                      <strong>Live Trading Mode:</strong> Real capital will be used with connected brokers
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* cTrader Execution Panel */}
-            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569] space-y-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-[#10B981]" />
-                  <h3 className="text-md font-semibold text-white">cTrader Execution Mode</h3>
-                </div>
-                {envStatus?.environment_variables?.ctrader_client_id?.configured && (
-                  <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> ENV
-                  </span>
-                )}
-              </div>
-
-              <div data-tour="ctrader-section" className="pt-2">
-                <CTraderConnection
-                  onConnected={(accountId) => {
-                    triggerToast('success', 'cTrader Connected', 'Account validated and synced.');
-                  }}
-                />
-              </div>
-
-              <div className="text-xs text-gray-400 bg-[#0F172A] p-3 rounded border border-[#475569]/30">
-                <p>💡 <strong>Note:</strong> cTrader authentication utilizes high-security OAuth2 redirects. No client secrets are stored directly on the device.</p>
-              </div>
-            </div>
-
-            {/* Trove Finance Panel */}
-            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569] space-y-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-[#8B5CF6]" />
-                  <h3 className="text-md font-semibold text-white">Trove Finance</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  {envStatus?.environment_variables?.trove_api_key?.configured && (
-                    <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
-                      <Lock className="w-3 h-3" /> ENV
-                    </span>
-                  )}
-                  <label className="inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={troveEnabled}
-                      onChange={(e) => setTroveEnabled(e.target.checked)}
-                      className="sr-only"
-                    />
-                    <span className={`w-10 h-5 rounded-full transition-colors ${
-                      troveEnabled ? 'bg-[#10B981]' : 'bg-[#6B7280]'
-                    } relative`}>
-                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
-                        troveEnabled ? 'translate-x-5' : ''
-                      }`} />
-                    </span>
-                    <span className="ml-2 text-xs text-gray-300">{troveEnabled ? 'Enabled' : 'Disabled'}</span>
-                  </label>
-                </div>
-              </div>
-
-              {troveEnabled && (
-                <>
-                  {envStatus?.environment_variables?.trove_api_key?.configured ? (
-                    <div className="p-2 bg-green-500/10 border border-green-500/30 rounded text-xs text-green-400 flex items-center gap-1">
-                      <Lock className="w-3 h-3" />
-                      <span>Configured globally in Render settings (TROVE_API_KEY).</span>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <label className="block text-xs text-gray-400">Trove Account Token / Key</label>
-                      <input
-                        type="password"
-                        value={formData.trove_api_key || ''}
-                        onChange={(e) => setFormData({...formData, trove_api_key: e.target.value})}
-                        placeholder="TRV-..."
-                        className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
-                      />
-                    </div>
-                  )}
-
-                  <div data-tour="trove-section">
-                    <TroveSettings triggerToast={triggerToast} />
-                  </div>
-                </>
-              )}
-
-              <div className="text-xs text-gray-400 bg-[#0F172A] p-3 rounded border border-[#475569]/30">
-                <p>💡 <strong>About Trove Finance:</strong> Integrates custom API structures to execute trades across US markets and NGX equities.</p>
-              </div>
-            </div>
-
-            {/* AKShare Chinese Equities Panel */}
-            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569] space-y-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Globe className="w-5 h-5 text-[#38BDF8]" />
-                  <h3 className="text-md font-semibold text-white">AKShare Chinese Markets</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  {envStatus?.environment_variables?.akshare_token?.configured && (
-                    <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
-                      <Lock className="w-3 h-3" /> ENV
-                    </span>
-                  )}
-                  <label className="inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={akshareEnabled}
-                      onChange={(e) => setAkshareEnabled(e.target.checked)}
-                      className="sr-only"
-                    />
-                    <span className={`w-10 h-5 rounded-full transition-colors ${
-                      akshareEnabled ? 'bg-[#10B981]' : 'bg-[#6B7280]'
-                    } relative`}>
-                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
-                        akshareEnabled ? 'translate-x-5' : ''
-                      }`} />
-                    </span>
-                    <span className="ml-2 text-xs text-gray-300">{akshareEnabled ? 'Enabled' : 'Disabled'}</span>
-                  </label>
-                </div>
-              </div>
-
-              {akshareEnabled && (
-                <>
-                  {envStatus?.environment_variables?.akshare_token?.configured ? (
-                    <div className="p-2 bg-green-500/10 border border-green-500/30 rounded text-xs text-green-400 flex items-center gap-1">
-                      <Lock className="w-3 h-3" />
-                      <span>Configured via system env (AKSHARE_TOKEN).</span>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <label className="block text-xs text-gray-400">AKShare Token Credentials</label>
-                      <input
-                        type="password"
-                        value={formData.akshare_token || ''}
-                        onChange={(e) => setFormData({...formData, akshare_token: e.target.value})}
-                        placeholder="AKShare Access Key / Token"
-                        className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
-                      />
-                    </div>
-                  )}
-
-                  <div data-tour="akshare-section">
-                    <AKShareSettings triggerToast={triggerToast} />
-                  </div>
-                </>
-              )}
-
-              <div className="text-xs text-gray-400 bg-[#0F172A] p-3 rounded border border-[#475569]/30">
-                <p>💡 <strong>About AKShare:</strong> Feeds strategy models real-time data metrics spanning equities, index rates, and SSE/SZSE options packages.</p>
-              </div>
-            </div>
-
             {/* Polymarket (Prediction Markets) */}
-            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
               <div className="flex items-center gap-2 mb-3">
                 <TrendingUp className="w-5 h-5 text-purple-400" />
-                <h3 className="text-md font-semibold text-white">Polymarket (Prediction Markets)</h3>
+                <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Polymarket (Prediction Markets)</h3>
               </div>
 
               {!polymarket.connected ? (
                 <>
-                  <p className="text-sm text-gray-300 mb-3">
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
                     Connect your Polymarket account for AI-powered prediction market trading and copytrading.
                   </p>
                   
                   <div className="space-y-3 mb-3">
                     <div>
-                      <label className="text-xs text-gray-400 block mb-1">API Key</label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">API Key</label>
                       <input
                         type="password"
                         value={polymarket.api_key}
                         onChange={(e) => setPolymarket({...polymarket, api_key: e.target.value})}
                         placeholder="Enter your Polymarket API key"
-                        className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm"
                       />
                     </div>
                     
                     <div>
-                      <label className="text-xs text-gray-400 block mb-1">API Secret</label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">API Secret</label>
                       <input
                         type="password"
                         value={polymarket.api_secret}
                         onChange={(e) => setPolymarket({...polymarket, api_secret: e.target.value})}
                         placeholder="Enter your API secret"
-                        className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm"
                       />
                     </div>
                   </div>
 
-                  <div className="mb-3 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
-                    <p className="text-xs text-gray-400 mb-2">🔐 Security Features:</p>
-                    <ul className="text-xs text-gray-400 space-y-1">
+                  <div className="mb-3 p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">ðŸ” Security Features:</p>
+                    <ul className="text-xs text-slate-500 dark:text-slate-400 space-y-1">
                       <li>• Credentials encrypted with AES-128 before storage</li>
                       <li>• Only you can access your API keys</li>
                       <li>• AI can trade automatically (when enabled)</li>
@@ -1225,38 +1023,38 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                 </>
               ) : (
                 <>
-                  <div className="mb-3 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
+                  <div className="mb-3 p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-green-400 flex items-center gap-2">
                         <Check className="w-4 h-4" />
                         Connected
                       </span>
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
                         Wallet: {polymarket.wallet_address?.slice(0, 6)}...{polymarket.wallet_address?.slice(-4)}
                       </span>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
-                        <span className="text-gray-400">Balance:</span>
-                        <p className="text-white font-medium">${polymarket.balance?.toLocaleString() || '0.00'}</p>
+                        <span className="text-slate-500 dark:text-slate-400">Balance:</span>
+                        <p className="text-slate-900 dark:text-slate-100 font-medium">${polymarket.balance?.toLocaleString() || '0.00'}</p>
                       </div>
                       <div>
-                        <span className="text-gray-400">Equity:</span>
-                        <p className="text-white font-medium">${polymarket.equity?.toLocaleString() || '0.00'}</p>
+                        <span className="text-slate-500 dark:text-slate-400">Equity:</span>
+                        <p className="text-slate-900 dark:text-slate-100 font-medium">${polymarket.equity?.toLocaleString() || '0.00'}</p>
                       </div>
                     </div>
 
                     <div className="mt-3 flex gap-2">
                       <button
                         onClick={() => setShowLeaders(!showLeaders)}
-                        className="flex-1 py-1.5 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-xs"
+                        className="flex-1 py-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-md text-xs"
                       >
                         {showLeaders ? 'Hide Leaders' : 'Browse Leaders'} ({polymarket.leaders?.length || 0})
                       </button>
                       <button
                         onClick={refreshBalance}
-                        className="px-3 py-1.5 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-xs"
+                        className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-md text-xs"
                       >
                         Refresh
                       </button>
@@ -1266,14 +1064,14 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   {/* Copytrading Leaders Section */}
                   {showLeaders && polymarket.leaders && polymarket.leaders.length > 0 && (
                     <div className="mb-3">
-                      <h3 className="text-sm font-medium text-white mb-2">Top Polymarket Leaders</h3>
+                      <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-2">Top Polymarket Leaders</h3>
                       <div className="space-y-2 max-h-60 overflow-y-auto">
                         {polymarket.leaders.map((leader: any) => (
-                          <div key={leader.leader_id} className="p-2 bg-[#0F172A] rounded border border-[#475569]">
+                          <div key={leader.leader_id} className="p-2 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700">
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="text-sm text-white">{leader.leader_name}</p>
-                                <p className="text-xs text-gray-400">
+                                <p className="text-sm text-slate-900 dark:text-slate-100">{leader.leader_name}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
                                   Win Rate: {(leader.win_rate * 100).toFixed(1)}% | PnL: ${leader.total_pnl.toLocaleString()}
                                 </p>
                               </div>
@@ -1304,7 +1102,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                         onChange={(e) => setPolymarket({...polymarket, ai_trading_enabled: e.target.checked})}
                         className="w-4 h-4"
                       />
-                      <span className="text-sm text-gray-300">🤖 Enable AI trading</span>
+                      <span className="text-sm text-slate-600 dark:text-slate-300">ðŸ¤– Enable AI trading</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1314,7 +1112,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                         onChange={(e) => setPolymarket({...polymarket, copytrading_enabled: e.target.checked})}
                         className="w-4 h-4"
                       />
-                      <span className="text-sm text-gray-300">📊 Enable copytrading leaders</span>
+                      <span className="text-sm text-slate-600 dark:text-slate-300">ðŸ“Š Enable copytrading leaders</span>
                     </label>
                   </div>
 
@@ -1336,210 +1134,6 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           </div>
         </CollapsibleSection>
 
-        {/* Group 3: Notifications */}
-        <CollapsibleSection
-          title="Notifications"
-          subtitle="Telegram alerts and 2-way chat"
-          icon={Bell}
-          storageKey="settings-notifications-open"
-          completionStatus={telegram.is_verified ? '✓ Verified' : 'Not configured'}
-        >
-          <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
-            <div className="flex items-center gap-2 mb-3">
-              <Bell className="w-5 h-5 text-[#25D366]" />
-              <h3 className="text-md font-semibold text-white">Telegram Notifications</h3>
-            </div>
-            <p className="text-xs text-gray-400 mb-4">
-              Receive trade alerts, daily summaries, and 2-way chat via Telegram.
-              Verify your chat ID and configure your notification preferences below.
-            </p>
-
-            {/* Setup Instructions */}
-            <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#25D366]/30">
-              <h4 className="text-sm font-semibold text-white mb-2">📱 Setup in 3 Steps:</h4>
-              <ol className="text-xs text-gray-400 space-y-2">
-                <li className="flex items-start gap-2">
-                  <span className="text-[#25D366] font-bold">1.</span>
-                  <span>Click "Open on Telegram" below to start @jasper_trades_bot</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-[#25D366] font-bold">2.</span>
-                  <span>The bot will send you a Chat ID - copy it and paste in the field above, then click "Send Code"</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-[#25D366] font-bold">3.</span>
-                  <span>The bot will send a 6-digit verification code - enter it below to complete setup</span>
-                </li>
-              </ol>
-              <p className="text-xs text-gray-500 mt-3 italic">
-                💡 Your Chat ID links your Telegram account to this device's trading portfolio. You'll only receive notifications for YOUR trades.
-              </p>
-            </div>
-
-            {/* Open on Telegram Button */}
-            <div className="mb-4 p-3 bg-gradient-to-r from-[#25D366]/10 to-[#25D366]/5 rounded-lg border border-[#25D366]/30">
-              <div className="flex items-start gap-3">
-                <div className="flex-1">
-                  <h4 className="text-sm font-semibold text-white mb-1">🤖 Start Jasper Trades Bot</h4>
-                  <p className="text-xs text-gray-400 mb-2">
-                    Click below to open Telegram and start the bot. You'll receive a verification code there.
-                  </p>
-                  <a
-                    href="https://t.me/jasper_trades_bot"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-md text-sm transition-colors"
-                  >
-                    <Send className="w-4 h-4" />
-                    Open on Telegram
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            {/* Chat ID Verification */}
-            <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
-              <label className="text-xs text-gray-400 mb-2 block">Step 1: Enter Your Telegram Chat ID</label>
-              <div className="mb-2 p-2 bg-[#1E293B] rounded border border-[#25D366]/30">
-                <p className="text-xs text-gray-300">
-                  <strong>What is a Chat ID?</strong> Your unique Telegram identifier (starts with <code className="bg-[#0F172A] px-1 py-0.5 rounded">@username</code> or <code className="bg-[#0F172A] px-1 py-0.5 rounded">123456789</code>).
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  <strong>How to find it:</strong> After clicking "Open on Telegram" below, the bot will tell you your Chat ID in the first message.
-                </p>
-              </div>
-              <div className="flex gap-2 mb-2">
-                <input
-                  type="text"
-                  value={telegram.chat_id}
-                  onChange={(e) => setTelegram({...telegram, chat_id: e.target.value})}
-                  placeholder="@username or 123456789"
-                  className="flex-1 bg-[#1E293B] border border-[#475569] rounded-md px-3 py-2 text-white text-sm font-mono"
-                />
-                <button
-                  onClick={requestVerification}
-                  disabled={telegramRequestStatus.requesting || telegram.is_verified}
-                  className="px-4 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-md text-sm disabled:opacity-50 whitespace-nowrap"
-                >
-                  {telegramRequestStatus.requesting ? 'Sending...' : telegram.is_verified ? 'Verified ✓' : 'Send Code'}
-                </button>
-              </div>
-              
-              {/* Verification Code Input */}
-              {!telegram.is_verified && telegramRequestStatus.codeSent && (
-                <div className="mt-2 flex gap-2">
-                  <input
-                    type="text"
-                    value={verificationCode}
-                    onChange={(e) => setVerificationCode(e.target.value)}
-                    placeholder="Enter 6-digit code"
-                    maxLength={6}
-                    className="flex-1 bg-[#1E293B] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
-                  />
-                  <button
-                    onClick={confirmVerification}
-                    disabled={telegramRequestStatus.verifying}
-                    className="px-4 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm disabled:opacity-50"
-                  >
-                    {telegramRequestStatus.verifying ? 'Verifying...' : 'Verify'}
-                  </button>
-                </div>
-              )}
-              {telegramRequestStatus.message && (
-                <p className={`text-xs mt-2 ${telegramRequestStatus.success ? 'text-green-400' : 'text-red-400'}`}>
-                  {telegramRequestStatus.message}
-                </p>
-              )}
-            </div>
-
-            {/* Notification Preferences */}
-            {telegram.is_verified && (
-              <>
-                <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
-                  <label className="text-xs text-gray-400 mb-3 block">Step 2: Notification Preferences</label>
-                  
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={telegram.trade_notifications_enabled}
-                        onChange={(e) => setTelegram({...telegram, trade_notifications_enabled: e.target.checked})}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm text-gray-300">📈 Trade executions (real-time)</span>
-                    </label>
-                    
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={telegram.daily_summary_enabled}
-                        onChange={(e) => setTelegram({...telegram, daily_summary_enabled: e.target.checked})}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm text-gray-300">📊 Daily summary at 8:00 PM WAT</span>
-                    </label>
-                    
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={telegram.chat_enabled}
-                        onChange={(e) => setTelegram({...telegram, chat_enabled: e.target.checked})}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm text-gray-300">💬 2-way chat (ask about portfolio)</span>
-                    </label>
-                    
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={telegram.ai_explanations_enabled}
-                        onChange={(e) => setTelegram({...telegram, ai_explanations_enabled: e.target.checked})}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm text-gray-300">🤖 AI trade explanations</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Daily Summary Schedule */}
-                <div className="mb-4 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
-                  <label className="text-xs text-gray-400 mb-2 block">Daily Summary Schedule</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="time"
-                      value={telegram.summary_time_wat || '20:00'}
-                      onChange={(e) => setTelegram({...telegram, summary_time_wat: e.target.value})}
-                      className="bg-[#1E293B] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
-                    />
-                    <span className="text-xs text-gray-400">WAT (West Africa Time)</span>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-2">
-                  <button onClick={saveTelegramPreferences} className="flex-1 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-md text-sm">
-                    Save Preferences
-                  </button>
-                  <button onClick={testTelegram} className="flex-1 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm">
-                    Test Connection
-                  </button>
-                </div>
-                {telegramTestStatus.message && (
-                  <p className={`text-xs mt-2 ${telegramTestStatus.success ? 'text-green-400' : 'text-red-400'}`}>
-                    {telegramTestStatus.message}
-                  </p>
-                )}
-              </>
-            )}
-
-            {!telegram.is_verified && (
-              <div className="text-xs text-gray-400 mt-3">
-                💡 <strong>How it works:</strong> Enter your chat ID, receive a verification code via Telegram, then configure your notification preferences. All messages are sent from "Jasper Trades".
-              </div>
-            )}
-          </div>
-        </CollapsibleSection>
-
         {/* Group 4: Portfolio & Payouts */}
         <CollapsibleSection
           title="Portfolio & Payouts"
@@ -1549,31 +1143,31 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         >
           <div className="space-y-4">
             {/* Auto-Payout Settings */}
-            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
               <div className="flex items-center gap-2 mb-3">
                 <DollarSign className="w-5 h-5 text-[#10B981]" />
-                <h3 className="text-md font-semibold text-white">Auto-Payout (50% Daily Profit)</h3>
+                <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Auto-Payout (50% Daily Profit)</h3>
               </div>
               
-              <p className="text-xs text-gray-400 mb-3">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
                 Automatically send 50% of your daily trading profits to your crypto wallet. 
                 Executes at your scheduled time (ET) each day.
               </p>
 
               {/* Crypto Wallet */}
               <div className="mb-3">
-                <label className="block text-sm text-gray-300 mb-2">Crypto Wallet Address (USDC/USDT)</label>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Crypto Wallet Address (USDC/USDT)</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={payoutSettings.crypto_wallet}
                     onChange={(e) => setPayoutSettings({...payoutSettings, crypto_wallet: e.target.value})}
                     placeholder="0x... (Ethereum USDT/USDC) or Solana USDT/USDC"
-                    className="flex-1 bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white font-mono text-sm"
+                    className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 font-mono text-sm"
                   />
                   <button
                     onClick={validateWallet}
-                    className="px-3 py-2 bg-[#1E293B] border border-[#475569] hover:bg-[#334155] text-white text-sm rounded-md"
+                    className="px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-md"
                   >
                     Validate
                   </button>
@@ -1592,13 +1186,13 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                     onChange={(e) => setPayoutSettings({...payoutSettings, payout_enabled: e.target.checked})}
                     className="w-4 h-4"
                   />
-                  <span className="text-sm text-gray-300">Enable Auto-Payout</span>
+                  <span className="text-sm text-slate-600 dark:text-slate-300">Enable Auto-Payout</span>
                 </label>
               </div>
 
               {/* Payout Percentage */}
               <div className="mb-3">
-                <label className="block text-sm text-gray-300 mb-2">Payout Percentage</label>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Payout Percentage</label>
                 <input
                   type="range"
                   min="0"
@@ -1607,7 +1201,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   onChange={(e) => setPayoutSettings({...payoutSettings, payout_percentage: parseInt(e.target.value)})}
                   className="w-full"
                 />
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-1">
                   <span>0%</span>
                   <span className="text-[#10B981] font-semibold">{payoutSettings.payout_percentage}%</span>
                   <span>100%</span>
@@ -1619,11 +1213,11 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
               {/* Payout Schedule Time */}
               <div className="mb-3">
-                <label className="block text-sm text-gray-300 mb-2">Payout Time (ET)</label>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Payout Time (ET)</label>
                 <select
                   value={payoutSettings.payout_schedule_hour}
                   onChange={(e) => setPayoutSettings({...payoutSettings, payout_schedule_hour: parseInt(e.target.value)})}
-                  className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm"
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm"
                 >
                   {[...Array(24)].map((_, i) => {
                     const hour = i % 12 || 12;
@@ -1643,7 +1237,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
               {/* Info Box */}
               <div className="bg-[#10B981]/10 border border-[#10B981]/30 rounded-lg p-3 mb-3">
                 <p className="text-xs text-[#10B981]">
-                  💡 Auto-payout runs once per day at your scheduled time. It calculates your total realized 
+                  ðŸ’¡ Auto-payout runs once per day at your scheduled time. It calculates your total realized 
                   profit for the day and sends {payoutSettings.payout_percentage}% to your wallet. 
                   No profit = no payout.
                 </p>
@@ -1659,15 +1253,15 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
             </div>
 
             {/* Payment Gateways - Nigerian Banks */}
-            <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]" data-tour="payment-gateways">
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700" data-tour="payment-gateways">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <DollarSign className="w-5 h-5 text-[#10B981]" />
-                  <h3 className="text-md font-semibold text-white">Payment Gateways (Nigerian Banks)</h3>
+                  <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Payment Gateways (Nigerian Banks)</h3>
                 </div>
               </div>
 
-              <p className="text-xs text-gray-400 mb-4">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
                 Configure Paystack or Flutterwave to enable dynamic Nigerian bank list fetching and 
                 CBN-mandated account validation for Naira payouts.
               </p>
@@ -1682,7 +1276,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                       onChange={(e) => setPaymentGateways({...paymentGateways, paystack_enabled: e.target.checked})}
                       className="w-4 h-4 rounded border-gray-600 text-[#10B981] focus:ring-[#10B981]"
                     />
-                    <span className="text-sm text-gray-300 font-medium">Paystack</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-300 font-medium">Paystack</span>
                   </label>
                   <a
                     href="https://dashboard.paystack.com/settings/api"
@@ -1698,7 +1292,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   value={paymentGateways.paystack_api_key}
                   onChange={(e) => setPaymentGateways({...paymentGateways, paystack_api_key: e.target.value})}
                   placeholder="sk_live_xxx or sk_test_xxx"
-                  className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#10B981]"
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-[#10B981]"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Secret key for account validation and bank list fetching
@@ -1715,7 +1309,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                       onChange={(e) => setPaymentGateways({...paymentGateways, flutterwave_enabled: e.target.checked})}
                       className="w-4 h-4 rounded border-gray-600 text-[#F59E0B] focus:ring-[#F59E0B]"
                     />
-                    <span className="text-sm text-gray-300 font-medium">Flutterwave</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-300 font-medium">Flutterwave</span>
                   </label>
                   <a
                     href="https://dashboard.flutterwave.com/settings/api"
@@ -1731,7 +1325,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   value={paymentGateways.flutterwave_api_key}
                   onChange={(e) => setPaymentGateways({...paymentGateways, flutterwave_api_key: e.target.value})}
                   placeholder="FLWSECK_xxx"
-                  className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#F59E0B]"
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-[#F59E0B]"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Secret key for account validation and bank list fetching
@@ -1740,33 +1334,11 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
               <div className="mt-4 p-3 bg-[#3B82F6]/10 border border-[#3B82F6]/30 rounded-md">
                 <p className="text-xs text-[#3B82F6]">
-                  <strong>💡 Why configure this?</strong> Nigerian regulations (CBN NIP) require account validation 
+                  <strong>ðŸ’¡ Why configure this?</strong> Nigerian regulations (CBN NIP) require account validation 
                   before transfers. Your users will see verified account holder names before payouts, preventing fraud.
                 </p>
               </div>
             </div>
-          </div>
-        </CollapsibleSection>
-
-        {/* Group 5: Display Settings */}
-        <CollapsibleSection
-          title="Display"
-          subtitle="Currency and regional settings"
-          icon={Globe}
-          storageKey="settings-display-open"
-        >
-          <div className="bg-[#1E293B] rounded-lg p-4 border border-[#475569]">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Globe className="w-5 h-5 text-[#10B981]" />
-                <h3 className="text-md font-semibold text-white">Currency Display</h3>
-              </div>
-            </div>
-            <p className="text-xs text-gray-400 mb-3">
-              Toggle between US Dollar (USD) and Nigerian Naira (NGN) for all monetary values.
-              Exchange rates update every 60 seconds.
-            </p>
-            <CurrencyToggle />
           </div>
         </CollapsibleSection>
 
@@ -1796,11 +1368,11 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         {/* Global Save and Onboarding controllers */}
         <div
           data-onboarding="save-reset"
-          className="flex items-center justify-between gap-3 pt-6 border-t border-[#475569]"
+          className="flex items-center justify-between gap-3 pt-6 border-t border-slate-200 dark:border-slate-700"
         >
           <button
             onClick={() => { resetTours(); triggerToast('success', 'Tours Reset', 'Onboarding tours will show again on next page navigation'); }}
-            className="px-4 py-2 border border-[#475569] hover:bg-[#334155] text-white rounded-md text-sm flex items-center gap-2"
+            className="px-4 py-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-md text-sm flex items-center gap-2"
           >
             <Plane className="w-4 h-4" /> Reset Onboarding Tours
           </button>

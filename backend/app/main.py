@@ -30,15 +30,6 @@ from app.services import init_scheduler, get_scheduler
 from app.services.market_data_service import market_data_service
 from app.services.forex_polling_service import start_forex_polling, stop_forex_polling
 
-# Kronos integration (optional - 4GB RAM optimized)
-try:
-    from app.services.kronos import set_memory_limits, configure_torch_cpu
-    KRONOS_AVAILABLE = True
-except Exception:
-    KRONOS_AVAILABLE = False
-    set_memory_limits = lambda **kwargs: None  # type: ignore
-    configure_torch_cpu = lambda: None  # type: ignore
-
 # Import API routes
 from app.api.v1 import trading, agents, signals, portfolio, health, system, learning, risk, circuit_breaker
 from app.api.v1 import market_intelligence
@@ -55,13 +46,16 @@ from app.api.v1 import telegram_webhook
 from app.api.v1 import telegram_chat
 from app.api.v1 import telegram_bot_data
 from app.api.v1 import broker_connections
-from app.api.v1 import copytrade
+from app.api.v1 import signal_sources
 from app.api.v1 import forex  # Trove forex conversion
 from app.api.v1 import banks  # Nigerian bank list
 from app.api.v1 import trove  # Trove stocks (Nigerian/US stocks)
 from app.api.v1 import akshare  # AKShare Chinese stocks
 from app.api.v1 import akshare_settings  # AKShare settings
 from app.api.v1 import exchanges
+from app.api.v1 import geo  # geo-availability probe (Nigeria-safe sources)
+from app.api.v1 import paper_trading  # Universal Paper Trading engine
+from app.api.v1 import memecoin  # Solana memecoin discovery (DexScreener)
 
 # cTrader OAuth token refresh scheduler
 try:
@@ -97,11 +91,6 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
     logger.info("Starting up Jasper Trades...")
-
-    # Configure for 4GB RAM systems
-    set_memory_limits(max_ram_mb=2048)  # Limit to 2GB for safety
-    configure_torch_cpu()
-    logger.info("Configured memory limits for 4GB RAM system")
 
     # Initialize database
     await init_db()
@@ -273,6 +262,65 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CRITICAL: Security validation on startup
+def validate_security_config():
+    """Validate critical security configuration."""
+    errors = []
+    warnings = []
+    
+    # 1. Check SECRET_KEY is not default
+    if settings.SECRET_KEY == "change-this-in-production":
+        errors.append(
+            "CRITICAL: SECRET_KEY is set to default 'change-this-in-production'. "
+            "This allows attackers to forge valid JWT tokens. "
+            "Generate a strong key: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+        )
+    
+    if len(settings.SECRET_KEY) < 32:
+        errors.append(
+            f"CRITICAL: SECRET_KEY is too short ({len(settings.SECRET_KEY)} chars). "
+            "Must be at least 32 characters for security. "
+            "Generate: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+        )
+    
+    # 2. Check CORS configuration
+    if "*" in settings.cors_origins_list:
+        if settings.CORS_ALLOW_CREDENTIALS:
+            errors.append(
+                "SECURITY: CORS is configured with wildcard origins (*) AND allow_credentials=True. "
+                "This allows cross-origin requests with credentials, enabling CSRF-like attacks. "
+                "Either: (a) Use specific origins, or (b) Set allow_credentials=False"
+            )
+        else:
+            warnings.append(
+                "WARNING: CORS allows wildcard origins (*). This is generally permissive. "
+                "Consider restricting to specific frontend URLs."
+            )
+    
+    # 3. Environment validation
+    if settings.ENVIRONMENT == "production":
+        if settings.DEBUG:
+            errors.append("SECURITY: DEBUG=true in production. This exposes sensitive information.")
+        
+        if not settings.using_postgres:
+            warnings.append(
+                "WARNING: Production environment but using SQLite database. "
+                "Recommended: Use PostgreSQL/Supabase for production deployments."
+            )
+    
+    # Log errors and exit
+    if errors:
+        for error in errors:
+            logger.error(error)
+        raise RuntimeError(f"Security validation failed with {len(errors)} critical issue(s). See logs above.")
+    
+    # Log warnings
+    for warning in warnings:
+        logger.warning(warning)
+
+# Run security validation
+validate_security_config()
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -329,13 +377,16 @@ app.include_router(settings_extensions.router, prefix="/api/v1", tags=["settings
 app.include_router(exchanges.router, prefix="/api/v1", tags=["exchanges"])
 app.include_router(crypto_connector.router, prefix="/api/v1", tags=["crypto-connector"])
 app.include_router(broker_connections.router, prefix="/api/v1", tags=["brokers"])
-app.include_router(copytrade.router, tags=["Copy Trading"])
+app.include_router(signal_sources.router, prefix="/api/v1", tags=["signals"])
 app.include_router(forex.router, tags=["forex"])  # Trove forex conversion
 app.include_router(banks.router, prefix="/api/v1", tags=["banks"])  # Nigerian bank list
 app.include_router(symbols.router, prefix="/api/v1", tags=["symbols"])  # Symbol listing (US + NGX)
 app.include_router(trove.router, prefix="/api/v1", tags=["trove"])  # Trove trading (Nigerian/US stocks)
 app.include_router(akshare.router, prefix="/api/v1", tags=["akshare"])  # AKShare Chinese stocks
 app.include_router(akshare_settings.router, tags=["akshare-settings"])  # AKShare settings
+app.include_router(geo.router, prefix="/api/v1", tags=["geo"])  # geo-availability
+app.include_router(paper_trading.router, prefix="/api/v1", tags=["paper-trading"])  # paper engine
+app.include_router(memecoin.router, prefix="/api/v1", tags=["memecoin"])  # Solana memecoins
 
 
 @app.get("/")
@@ -431,3 +482,4 @@ else:
             "status": "API-only mode (frontend not built)",
             "docs": "/docs",
         }
+

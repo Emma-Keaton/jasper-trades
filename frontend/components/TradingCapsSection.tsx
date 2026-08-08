@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Shield, Check, DollarSign, Percent, AlertTriangle } from 'lucide-react';
-import { Toast } from '@/app/page';
+import { Toast } from '@/app/types';
 
 interface TradingCaps {
   configured: boolean;

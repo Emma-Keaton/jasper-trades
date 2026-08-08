@@ -657,3 +657,91 @@ class TelegramUser(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_active_at = Column(DateTime, nullable=True)  # Last Telegram interaction
+    last_active_at = Column(DateTime, nullable=True)  # Last Telegram interaction
+
+
+# ===================== Signal Sources & Telegram Watch =====================
+
+
+class SignalSource(Base):
+    """A single thing the app watches (an RSS feed, subreddit, symbol, or a
+    Telegram channel the user picked). NOT the Telegram login - that lives in
+    TelegramAccount."""
+    __tablename__ = "signal_sources"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, index=True)
+
+    source_type = Column(String(64), nullable=False)  # telegram | rss | reddit | stocktwits
+    config = Column(JSON, nullable=False, default=dict)  # e.g. {channel_id, username} for telegram
+
+    display_name = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True)
+    fetch_interval_minutes = Column(Integer, default=30)
+    last_fetched_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TelegramAccount(Base):
+    """A user's Telegram login credential (one per device). The session string
+    lives here so it survives redeploys. The app reads channels the user has
+    added as SignalSource rows using this account's session."""
+    __tablename__ = "telegram_accounts"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, unique=True, index=True)
+
+    tg_phone = Column(String(64), nullable=False)
+    tg_session = Column(Text, nullable=True)
+    tg_user_id = Column(String(64), nullable=True)
+    tg_username = Column(String(128), nullable=True)
+    tg_first_name = Column(String(128), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SignalTip(Base):
+    """One tradeable tip extracted from a signal source."""
+    __tablename__ = "signal_tips"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, index=True)
+    source_id = Column(Integer, ForeignKey("signal_sources.id"), nullable=False)
+
+    slug = Column(String(255), nullable=False, index=True)    # SYMBOL-side
+    symbol = Column(String(64), nullable=False)
+    side = Column(String(16), nullable=False)                 # long | short
+    timeframe = Column(String(16), nullable=True)
+    confidence = Column(Float, default=0.0)
+    rationale = Column(String, nullable=True)
+
+    text = Column(String, nullable=True)
+    url = Column(String, nullable=True)
+    source_created_at = Column(DateTime, nullable=True)
+
+    # Outcome / scoring
+    entry_price = Column(Float, nullable=True)
+    exit_price = Column(Float, nullable=True)
+    pnl = Column(Float, nullable=True)
+    pnl_percent = Column(Float, nullable=True)
+    hit = Column(Boolean, nullable=True)
+    executed = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SourceFollow(Base):
+    """User follows/unfollows a signal source."""
+    __tablename__ = "source_follows"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, index=True)
+    source_id = Column(Integer, ForeignKey("signal_sources.id"), nullable=False)
+    active = Column(Boolean, default=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

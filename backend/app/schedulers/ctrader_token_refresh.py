@@ -26,8 +26,9 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from contextlib import asynccontextmanager
 import structlog
 
-from app.models_ext.ctrader import TradingAccount, TokenRefreshLog
+from app.models_ext.broker_connections import BrokerConnection
 from app.services.ctrader_oauth import CTraderOAuthService
+from app.services.token_encryption import decrypt_token
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -51,6 +52,10 @@ class CTraderTokenRefreshScheduler:
         self.oauth_service = CTraderOAuthService()
         self.refresh_interval_hours = 6
         self.expiry_threshold_hours = 24  # Refresh if <24h left
+        # Consecutive refresh-failure counts per account (3-strike rule).
+        # In-memory to avoid a schema migration; wrong on restart only in that
+        # an account starts fresh (which is safe).
+        self._failure_counts: dict[int, int] = {}
 
     async def refresh_expiring_tokens(self):
         """
@@ -61,13 +66,15 @@ class CTraderTokenRefreshScheduler:
         logger.info("Starting cTrader token refresh check...")
 
         async with AsyncSession(self.engine) as db:
-            # Fetch all connected cTrader accounts
+            # Fetch all connected cTrader accounts from BrokerConnection (the
+            # source of truth written by the OAuth callback).
             result = await db.execute(
-                select(TradingAccount).where(
-                    TradingAccount.is_connected == True,
-                    TradingAccount.connection_status == "connected",
-                    TradingAccount.encrypted_access_token.isnot(None),
-                    TradingAccount.encrypted_refresh_token.isnot(None),
+                select(BrokerConnection).where(
+                    BrokerConnection.broker_type == "ctrader",
+                    BrokerConnection.is_connected == True,
+                    BrokerConnection.connection_status == "connected",
+                    BrokerConnection.encrypted_access_token.isnot(None),
+                    BrokerConnection.encrypted_refresh_token.isnot(None),
                 )
             )
 
@@ -84,10 +91,19 @@ class CTraderTokenRefreshScheduler:
                             refreshed_count += 1
                         else:
                             failed_count += 1
-                            # Mark account as needing attention
-                            account.connection_status = "expired"
-                            account.is_connected = False
-                            await db.commit()
+                            # 3-strike rule: only disconnect after repeated
+                            # consecutive failures (transient blips shouldn't
+                            # kill the connection).
+                            n = self._failure_counts.get(account.id, 0) + 1
+                            self._failure_counts[account.id] = n
+                            if n >= 3:
+                                logger.warning(
+                                    "cTrader token refresh failed 3x; marking expired",
+                                    account_id=account.id,
+                                )
+                                account.connection_status = "expired"
+                                account.is_connected = False
+                                await db.commit()
 
                 except Exception as e:
                     logger.error(
@@ -122,84 +138,57 @@ class CTraderTokenRefreshScheduler:
     async def _refresh_account_token(
         self,
         db: AsyncSession,
-        account: TradingAccount,
+        account: BrokerConnection,
     ) -> bool:
         """
-        Refresh OAuth token for a single account.
+        Refresh OAuth token for a single BrokerConnection (cTrader).
 
-        Args:
-            db: Database session
-            account: TradingAccount record
-
-        Returns:
-            True if refresh successful, False otherwise
+        Uses CTRADER_ENCRYPTION_KEY consistently (decrypt via token_encryption,
+        encrypt via oauth_service) so stored tokens round-trip correctly.
         """
-        from app.services.token_encryption import decrypt_token, encrypt_token
-
         old_token_expires_at = account.token_expires_at
 
         try:
-            # Decrypt refresh token
+            # Decrypt refresh token (CTRADER_ENCRYPTION_KEY)
             refresh_token = decrypt_token(account.encrypted_refresh_token)
 
-            # Request new access token
-            token_data = self.oauth_service.refresh_access_token(refresh_token)
+            # Request new access token (async)
+            token_data = await self.oauth_service.refresh_access_token(refresh_token)
 
-            # Encrypt new access token
+            # Encrypt new access token (same key)
             new_encrypted_access = self.oauth_service.encrypt_token(
                 token_data["access_token"]
             )
 
-            # Update account
+            # Update BrokerConnection
             account.encrypted_access_token = new_encrypted_access
+            # Persist a rotated refresh token if the server issued one.
+            if token_data.get("refresh_token"):
+                account.encrypted_refresh_token = self.oauth_service.encrypt_token(
+                    token_data["refresh_token"]
+                )
             account.token_expires_at = token_data["expires_at"]
-            account.token_last_refreshed = datetime.utcnow()
+            account.last_sync_at = datetime.utcnow()
             account.connection_status = "connected"
             account.is_connected = True
+            # Reset failure counter on success.
+            self._failure_counts[account.id] = 0
 
-            await db.commit()
-
-            # Log successful refresh
-            log_entry = TokenRefreshLog(
-                trading_account_id=account.id,
-                old_token_expires_at=old_token_expires_at,
-                new_token_expires_at=token_data["expires_at"],
-                refresh_successful=True,
-                error_message=None,
-            )
-            db.add(log_entry)
             await db.commit()
 
             logger.info(
-                f"Successfully refreshed token for account {account.id}",
+                "Successfully refreshed cTrader token",
                 account_id=account.id,
                 new_expires_at=token_data["expires_at"].isoformat(),
             )
-
             return True
 
         except Exception as e:
             logger.error(
-                f"Failed to refresh token for account {account.id}: {e}",
+                "Failed to refresh cTrader token",
                 account_id=account.id,
                 error=str(e),
             )
-
-            # Log failed refresh
-            log_entry = TokenRefreshLog(
-                trading_account_id=account.id,
-                old_token_expires_at=old_token_expires_at,
-                new_token_expires_at=old_token_expires_at,  # Unchanged
-                refresh_successful=False,
-                error_message=str(e),
-            )
-            db.add(log_entry)
-
-            try:
-                await db.commit()
-            except Exception:
-                pass
-
             return False
 
 

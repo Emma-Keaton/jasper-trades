@@ -45,10 +45,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 # WebSocket URL (optional, defaults to API URL)
 NEXT_PUBLIC_WS_URL=ws://localhost:8000
-
-# NVIDIA NIM API Key (for frontend AI features)
-NEXT_PUBLIC_NVIDIA_API_KEY=your_nvidia_api_key_here
 ```
+
+> AI features (Gemini primary / NVIDIA NIM fallback) run on the **backend**.
+> Configure `GEMINI_API_KEYS` and `NVIDIA_API_KEY` in `backend/.env` (see root `DEPLOYMENT.md`),
+> not the frontend — no `NEXT_PUBLIC_*` AI keys are read by this app.
 
 ### 3. Run Development Server
 
@@ -75,14 +76,17 @@ npm start
 
 ## AI Integration
 
-This frontend uses **NVIDIA NIM API** for AI-powered features:
+AI features run on the **backend** with a dual-provider proxy:
+**Gemini 2.5 Flash is the primary LLM** (multi-key rotation via `GEMINI_API_KEYS`);
+**NVIDIA NIM is the automatic fallback** (`NVIDIA_API_KEY`). Task-tier model routing:
 
-- **Llama-3.2-3B-Instruct**: Fast risk checks and order execution (~50-100ms)
-- **Llama-3.3-70B-Instruct**: News analysis and signal generation (~200-400ms)
-- **Llama-3.1-8B-Instruct**: Copy trading decisions (~100-150ms)
-- **Nemotron-3-Super-120B**: Complex portfolio analysis (~500-800ms)
+- **Executions / risk checks**: `nvidia/nemotron-mini-4b-instruct`
+- **Analysis / news / sentiment / copy trading**: `meta/llama-3.1-8b-instruct`
+- **Portfolio / deep reasoning**: `nvidia/llama-3.3-nemotron-super-49b-v1`
+- **Ensemble (background)**: `openai/gpt-oss-20b`
 
-Get your NVIDIA API key from: https://build.nvidia.com/
+Get an NVIDIA key from: https://build.nvidia.com/ (only needed to use NVIDIA as fallback).
+See root `DEPLOYMENT.md` for the full env setup.
 
 ## Project Structure
 

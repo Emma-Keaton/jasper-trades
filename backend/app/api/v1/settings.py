@@ -25,6 +25,19 @@ class ValidateKeyRequest(BaseModel):
     key: str
 
 
+@router.get("/public")
+async def get_public_config():
+    """
+    Public, unauthenticated config for the frontend.
+
+    Exposes only non-sensitive values needed at startup (e.g. the WalletConnect
+    project ID so it never has to be compiled into the frontend build).
+    """
+    return {
+        "walletconnect_project_id": settings.WALLETCONNECT_PROJECT_ID,
+    }
+
+
 @router.post("")
 async def save_settings(
     settings: Dict[str, str],
@@ -138,10 +151,16 @@ async def get_env_status():
     environment variables during deployment.
     """
     env_status = {
+        "gemini_api_keys": {
+            "configured": bool(settings.GEMINI_API_KEYS),
+            "env_var": "GEMINI_API_KEYS",
+            "description": "Google Gemini 2.5 API keys (primary LLM). Comma-separated for multi-key rotation",
+            "required_for": "AI chat, trade analysis, explanation, tip extraction"
+        },
         "nvidia_api_key": {
             "configured": bool(settings.NVIDIA_API_KEY and settings.NVIDIA_API_KEY != "" and settings.NVIDIA_API_KEY != "CHANGE_THIS_BEFORE_PRODUCTION"),
             "env_var": "NVIDIA_API_KEY",
-            "description": "NVIDIA NIM API key for AI model inference",
+            "description": "NVIDIA NIM API key for AI model inference (DEPRECATED - fallback only)",
             "required_for": "AI chat, trade analysis, Kronos predictions"
         },
         "binance_api_key": {

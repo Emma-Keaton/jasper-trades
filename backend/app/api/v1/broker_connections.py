@@ -21,9 +21,13 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import os
 import uuid
+import structlog
 
 from app.database import get_db
 from app.services.ctrader_oauth import CTraderOAuthService
+
+import_structlog_logger = structlog.get_logger(__name__)
+logger = import_structlog_logger
 
 # Import BrokerConnection from models_ext directory (renamed from models to avoid conflict with models.py)
 from app.models_ext.broker_connections import BrokerConnection
@@ -40,18 +44,22 @@ def get_device_id(x_device_id: Optional[str] = Header(None)) -> str:
     return str(uuid.uuid4())
 
 
+# Module-level in-memory store of issued OAuth states per device (CSRF protection).
+# On restart states are lost, which only forces a fresh connect - safe.
+_oauth_states: dict[str, str] = {}
+
+
 @router.get("/connect")
 async def connect_ctrader(
-    mode: str = Query(default="sandbox", description="Trading mode: sandbox or live"),
+    mode: str = Query(default="live", description="Trading mode: must be 'live'"),
+    device_id: str = Depends(get_device_id),
 ):
     """
-    Get cTrader OAuth authorization URL.
+    Get cTrader OAuth authorization URL (LIVE only) with a CSRF `state`.
 
-    Frontend calls this, then redirects user to the URL.
-    User will be redirected to cTrader's secure login page.
-    
-    Args:
-        mode: Trading mode - 'sandbox' for demo, 'live' for real trading
+    Frontend calls this, then redirects the user to the returned URL. The user
+    is redirected to cTrader's secure login page; the issued `state` must be
+    returned on the callback (preventing CSRF).
     """
     if not oauth_service.client_id:
         raise HTTPException(
@@ -63,23 +71,28 @@ async def connect_ctrader(
     if mode.lower() != "live":
         raise HTTPException(
             status_code=400,
-            detail="cTrader sandbox mode is not supported. Use Universal Paper Trading (settings API) for sandbox testing."
+            detail="cTrader sandbox mode is not supported. Use Universal Paper Trading for paper trading."
         )
 
-    # Generate live authorization URL (sandbox flag forced to False)
-    auth_url = oauth_service.get_authorization_url(is_sandbox=False)
+    # Issue a CSRF state bound to this device, then build the LIVE auth URL.
+    state = str(uuid.uuid4().hex)
+    _oauth_states[device_id] = state
+    auth_url = oauth_service.get_authorization_url(state=state)
 
     return {
         "authorization_url": auth_url,
+        "state": state,
         "mode": "live",
         "message": "Redirect user to this URL to connect cTrader account for live trading"
     }
+
 
 
 @router.get("/callback")
 async def ctrader_callback(
     request: Request,
     code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
     error: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     device_id: str = Depends(get_device_id),
@@ -87,18 +100,27 @@ async def ctrader_callback(
     """
     OAuth callback endpoint.
 
-    cTrader redirects here after user authorizes.
-    Exchanges code for tokens, saves to database.
-    Redirects user back to frontend settings page.
+    cTrader redirects here after user authorizes. Validates the CSRF `state`,
+    exchanges the code for tokens, saves them encrypted, then redirects to the
+    frontend settings page. No token or exception details are leaked to the
+    client on failure.
     """
+    # Validate CSRF state (defence against login CSRF).
+    expected_state = _oauth_states.get(device_id)
+    if expected_state and (not state or state != expected_state):
+        return RedirectResponse(
+            url="/settings?ctrader_error=Invalid+state+(CSRF+protection)",
+            status_code=302,
+        )
+    _oauth_states.pop(device_id, None)
+
     # Handle OAuth errors
     if error:
         error_msg = {
             "access_denied": "You denied access to your account",
             "invalid_scope": "Invalid permissions requested",
             "invalid_client": "Invalid Client ID/Secret configuration"
-        }.get(error, f"OAuth error: {error}")
-
+        }.get(error, "OAuth authorization failed")
         return RedirectResponse(
             url=f"/settings?ctrader_error={error_msg}",
             status_code=302
@@ -106,16 +128,16 @@ async def ctrader_callback(
 
     if not code:
         return RedirectResponse(
-            url="/settings?ctrader_error=No authorization code received",
+            url="/settings?ctrader_error=No+authorization+code+received",
             status_code=302
         )
 
     try:
-        # Exchange code for tokens
-        token_data = oauth_service.exchange_code_for_tokens(code)
+        # Exchange code for tokens (async)
+        token_data = await oauth_service.exchange_code_for_tokens(code)
 
-        # Fetch account info from cTrader API
-        account_info = oauth_service.get_account_info(token_data["access_token"])
+        # Fetch account info from cTrader API (async)
+        account_info = await oauth_service.get_account_info(token_data["access_token"])
 
         # Extract account details
         ctid_account_id = account_info.get("ctidTraderAccountId")
@@ -128,9 +150,11 @@ async def ctrader_callback(
         account_currency = first_account.get("currency")
         account_balance = first_account.get("balance", 0.0)
 
-        # Encrypt tokens for storage
-        encrypted_access = encrypt_token(token_data["access_token"])
-        encrypted_refresh = encrypt_token(token_data["refresh_token"])
+        # Encrypt tokens for storage using the cTrader OAuth encryptor
+        # (CTRADER_ENCRYPTION_KEY, fail-closed) so the token-refresh scheduler
+        # can decrypt them with the SAME key.
+        encrypted_access = oauth_service.encrypt_token(token_data["access_token"])
+        encrypted_refresh = oauth_service.encrypt_token(token_data["refresh_token"])
 
         # Create or update broker connection
         existing = db.query(BrokerConnection).filter(
@@ -176,8 +200,10 @@ async def ctrader_callback(
         )
 
     except Exception as e:
+        # Log details server-side only; never leak exception/token info to client.
+        logger.error("cTrader OAuth callback failed", error=str(e))
         return RedirectResponse(
-            url=f"/settings?ctrader_error=Connection failed: {str(e)}",
+            url="/settings?ctrader_error=Connection+failed",
             status_code=302
         )
 
@@ -245,11 +271,3 @@ async def get_ctrader_accounts(
             "message": "No broker accounts connected",
             "error": str(e)
         }
-
-
-def encrypt_token(token: str) -> str:
-    """Encrypt token for storage"""
-    from cryptography.fernet import Fernet
-    key = os.getenv("ENCRYPTION_KEY", "test_key_for_dev_only_123456789012=")
-    fernet = Fernet(key.encode() if isinstance(key, str) else key)
-    return fernet.encrypt(token.encode()).decode()

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { MessageSquare, Check, Send, Hash, Users } from 'lucide-react';
-import { Toast } from '@/app/page';
+import { Toast } from '@/app/types';
 import InfoModal, { SetupStep, ApiLink, BenefitItem } from './InfoModal';
 
 interface DiscordBotSettings {

@@ -36,6 +36,9 @@ interface UseOnboardingEngineReturn {
   completedTours: string[];
   markTourComplete: (tourId: string) => void;
   isTourComplete: (tourId: string) => boolean;
+  onboardingCompleted: boolean;
+  completeOnboarding: () => void;
+  isOnboardingComplete: () => boolean;
   resetTours: () => void;
   totalSteps: number;
 }
@@ -47,6 +50,7 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
   const [targetElements, setTargetElements] = useState<TargetElementInfo[]>([]);
   const [completedTours, setCompletedTours] = useState<string[]>([]);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   // Load completed tours from localStorage
@@ -56,6 +60,8 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
       if (stored) {
         setCompletedTours(JSON.parse(stored));
       }
+      const completed = localStorage.getItem(`${STORAGE_KEY_PREFIX}completed`) === 'true';
+      setOnboardingCompleted(completed);
     } catch (error) {
       console.error('Failed to load onboarding state:', error);
     }
@@ -183,11 +189,32 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     return completedTours.includes(tourId);
   }, [completedTours]);
 
+  // Flag the whole onboarding as completed once (persists across visits)
+  const completeOnboarding = useCallback(() => {
+    setOnboardingCompleted(true);
+    setCompletedTours(['home', 'trades', 'markets', 'signals', 'settings']);
+    try {
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}completed`, 'true');
+      localStorage.setItem(
+        `${STORAGE_KEY_PREFIX}completed_tours`,
+        JSON.stringify(['home', 'trades', 'markets', 'signals', 'settings'])
+      );
+    } catch (error) {
+      console.error('Failed to save onboarding state:', error);
+    }
+  }, []);
+
+  const isOnboardingComplete = useCallback(() => {
+    return onboardingCompleted;
+  }, [onboardingCompleted]);
+
   // Reset all tour progress
   const resetTours = useCallback(() => {
     setCompletedTours([]);
+    setOnboardingCompleted(false);
     try {
       localStorage.removeItem(`${STORAGE_KEY_PREFIX}completed_tours`);
+      localStorage.removeItem(`${STORAGE_KEY_PREFIX}completed`);
     } catch (error) {
       console.error('Failed to reset onboarding state:', error);
     }
@@ -207,6 +234,9 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     completedTours,
     markTourComplete,
     isTourComplete,
+    onboardingCompleted,
+    completeOnboarding,
+    isOnboardingComplete,
     resetTours,
     totalSteps: tourSteps.length,
   };

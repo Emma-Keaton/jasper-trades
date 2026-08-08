@@ -22,6 +22,9 @@ interface OnboardingContextType {
   completedTours: string[];
   markTourComplete: (tourId: string) => void;
   isTourComplete: (tourId: string) => boolean;
+  onboardingCompleted: boolean;
+  completeOnboarding: () => void;
+  isOnboardingComplete: () => boolean;
   showWelcome: boolean;
   setShowWelcome: (show: boolean) => void;
   totalSteps: number;
@@ -32,7 +35,17 @@ const OnboardingContext = createContext<OnboardingContextType | undefined>(undef
 
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const engine = useOnboardingEngine();
-  const [showWelcome, setShowWelcome] = React.useState(true);
+
+  // Initial hidden if the welcome was already dismissed or onboarding completed once
+  const [showWelcome, setShowWelcome] = React.useState(() => {
+    try {
+      const completed = localStorage.getItem('jasper_onboarding_completed') === 'true';
+      const dismissed = localStorage.getItem('jasper_welcome_done') === 'true';
+      return !completed && !dismissed;
+    } catch {
+      return true;
+    }
+  });
 
   const value = {
     ...engine,

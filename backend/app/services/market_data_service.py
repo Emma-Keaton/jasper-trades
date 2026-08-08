@@ -150,8 +150,9 @@ class MarketDataService:
         
         # Active WebSocket connections
         self.finnhub_ws = None
-        self.binance_ws = None
-        
+        # (Binance WebSocket removed - geo-blocked for Nigeria; crypto uses
+        #  _start_crypto_polling via the market-data router instead.)
+
         # Subscribed symbols
         self.stock_symbols: Set[str] = set()
         self.crypto_symbols: Set[str] = set()
@@ -184,7 +185,7 @@ class MarketDataService:
         # Start Finnhub WebSocket for stocks (BEST option)
         if self.stock_symbols and FINNHUB_AVAILABLE:
             try:
-                finnhub = get_finnhub_service(settings.FINNHub_API_KEY if hasattr(settings, 'FINNHUB_API_KEY') else None)
+                finnhub = get_finnhub_service(settings.FINNHUB_API_KEY if hasattr(settings, 'FINNHUB_API_KEY') else None)
                 if await finnhub.connect():
                     await finnhub.subscribe(list(self.stock_symbols))
                     self.finnhub_ws = finnhub
@@ -196,16 +197,16 @@ class MarketDataService:
         if self.stock_symbols and ALPHAVANTAGE_AVAILABLE:
             try:
                 alphavantage = get_alphavantage_service(
-                    settings.ALPHA_VANTAGE_KEY if hasattr(settings, 'ALPHA_VANTAGE_KEY') else None
+                    settings.ALPHAVANTAGE_API_KEY if hasattr(settings, 'ALPHAVANTAGE_API_KEY') else None
                 )
                 # Alpha Vantage is HTTP-only, no WebSocket to start
                 logger.info("Alpha Vantage HTTP API available as backup")
             except Exception as e:
                 logger.warning(f"Alpha Vantage not configured: {e}")
         
-        # Start Binance WebSocket for crypto
+        # Start crypto price polling (CoinGecko -> CCXT -> CoinLore; geo-probe gated)
         if self.crypto_symbols:
-            asyncio.create_task(self._start_binance_ws(list(self.crypto_symbols)))
+            asyncio.create_task(self._start_crypto_polling(list(self.crypto_symbols)))
         
         # Start HTTP polling fallback (for when WebSocket unavailable)
         if self.stock_symbols and not self.finnhub_ws:
@@ -221,68 +222,45 @@ class MarketDataService:
         
         if self.finnhub_ws:
             await self.finnhub_ws.disconnect()
-        
-        if self.binance_ws:
-            await self.binance_ws.close()
-        
+
+        # (Binance WS close removed - no longer used.)
+
         logger.info("Market data service stopped")
     
-    async def _start_binance_ws(self, symbols: List[str]):
-        """Start Binance WebSocket for crypto."""
+    async def _start_crypto_polling(self, symbols: List[str]):
+        """Poll crypto prices via the market-data router (CoinGecko -> CCXT -> CoinLore).
+
+        Replaces the old Binance WebSocket (geo-blocked for Nigeria). Polls every
+        few seconds and publishes updates to the frontend WebSocket.
+        """
         if not symbols:
             return
-        
-        binance_symbols = [s.lower() + "@trade" for s in symbols]
-        ws_url = f"wss://stream.binance.com:9443/ws/{'/'.join(binance_symbols)}"
-        
-        attempt = 0
+        from app.services.market_data_router import get_market_data_router
+
+        router = get_market_data_router()
+        logger.info(f"Starting crypto price polling for {len(symbols)} symbols")
         while self.is_running:
             try:
-                async with websockets.connect(ws_url) as websocket:
-                    logger.info(f"Connected to Binance WebSocket for {len(symbols)} crypto symbols")
-                    
-                    async for message in websocket:
-                        if not self.is_running:
-                            break
-                        
-                        try:
-                            data = json.loads(message)
-                            await self._handle_binance_message(data)
-                        except:
-                            pass
-                            
+                for symbol in symbols:
+                    try:
+                        result = await router.get_price(symbol)
+                        price = result.get("price")
+                        if price:
+                            self.price_cache.set(symbol, price, {"source": result.get("provider")})
+                            await publish_price_update({
+                                "symbol": symbol,
+                                "price": price,
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "source": result.get("provider"),
+                            })
+                    except Exception:
+                        pass
+                await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                break
             except Exception as e:
-                logger.error(f"Binance WebSocket error: {e}")
-                if self.is_running:
-                    delay = min(self._reconnect_delays[min(attempt, len(self._reconnect_delays)-1)], self._max_delay)
-                    await asyncio.sleep(delay)
-                    attempt += 1
-    
-    async def _handle_binance_message(self, data: dict):
-        """Handle Binance trade message."""
-        symbol = data.get("s", "").upper()
-        price_str = data.get("p", "0")
-        volume_str = data.get("q", "0")
-        
-        try:
-            price = float(price_str)
-            volume = float(volume_str)
-        except ValueError:
-            return
-        
-        # Update cache
-        self.price_cache.set(symbol, price, {"volume": volume, "source": "binance_ws"})
-        
-        # Publish to frontend WebSocket
-        await publish_price_update({
-            "symbol": symbol,
-            "price": price,
-            "volume": volume,
-            "timestamp": datetime.utcnow().isoformat(),
-            "source": "binance_ws",
-        })
-        
-        logger.debug(f"Binance price update: {symbol} @ ${price}")
+                logger.error(f"Crypto polling error: {e}")
+                await asyncio.sleep(10)
     
     async def _http_polling_loop(self):
         """HTTP polling fallback for stocks when WebSocket unavailable."""

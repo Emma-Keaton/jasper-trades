@@ -16,10 +16,21 @@ Architecture:
 """
 
 import os
-import requests
+import secrets
+import httpx
+import structlog
 from datetime import datetime, timedelta
 from cryptography.fernet import Fernet, InvalidToken
 from typing import Optional, Dict
+
+logger = structlog.get_logger(__name__)
+
+# cTrader OAuth endpoints - LIVE ONLY (cTrader = live trading; all paper trading
+# goes through the Universal Paper Trading engine, so the sandbox endpoints are
+# intentionally removed to prevent accidental use of a malformed sandbox URL).
+LIVE_AUTH_URL = "https://connect.spotware.com/oauth/authorize"
+LIVE_TOKEN_URL = "https://connect.spotware.com/apps/token"
+LIVE_API_URL = "https://api.spotware.com"
 
 
 class CTraderOAuthService:
@@ -35,23 +46,11 @@ class CTraderOAuthService:
     Note: CTRADER_SANDBOX is deprecated - use per-user environment_mode field instead
     """
 
-    # cTrader OAuth endpoints
-    SANDBOX_AUTH_URL = "https://-sandbox.connect.spotware.com/oauth/authorize"
-    LIVE_AUTH_URL = "https://connect.spotware.com/oauth/authorize"
-
-    SANDBOX_TOKEN_URL = "https://-sandbox.connect.spotware.com/apps/token"
-    LIVE_TOKEN_URL = "https://connect.spotware.com/apps/token"
-
-    SANDBOX_API_URL = "https://-sandbox.api.spotware.com"
-    LIVE_API_URL = "https://api.spotware.com"
-
     def __init__(self):
         self.client_id = os.getenv("CTRADER_CLIENT_ID")
         self.client_secret = os.getenv("CTRADER_CLIENT_SECRET")
         self.redirect_uri = os.getenv("CTRADER_REDIRECT_URI")
         self.encryption_key = os.getenv("CTRADER_ENCRYPTION_KEY")
-        # Default sandbox for backward compatibility
-        self.default_sandbox = os.getenv("CTRADER_SANDBOX", "true").lower() == "true"
 
         # Initialize Fernet encryption only if key is available
         self.encryptor = None
@@ -71,140 +70,102 @@ class CTraderOAuthService:
 
     # === Public Methods ===
 
-    def get_authorization_url(self, is_sandbox: Optional[bool] = None) -> str:
+    def get_authorization_url(self, state: Optional[str] = None, is_sandbox: Optional[bool] = None) -> str:
         """
-        Generate OAuth authorization URL for user redirect.
+        Generate the LIVE OAuth authorization URL for user redirect.
 
-        Args:
-            is_sandbox: User's environment mode (True=sandbox, False=live)
-                       If None, uses default_sandbox from env
-
-        Call this when user clicks "Connect cTrader" on the frontend.
-        User will be redirected to cTrader login page.
-
-        Returns:
-            str: Full authorization URL (redirect user to this)
+        Includes a random `state` param (CSRF protection) that must be validated
+        on the callback. cTrader is LIVE-only in this app; paper trading is
+        handled by the Universal Paper Trading engine.
         """
         self._ensure_configured()
-        
-        # Use user's mode if provided, otherwise fall back to default
-        sandbox = is_sandbox if is_sandbox is not None else self.default_sandbox
-        auth_url = self.SANDBOX_AUTH_URL if sandbox else self.LIVE_AUTH_URL
+        # URL-encode params defensively.
+        from urllib.parse import urlencode
 
+        state = state or secrets.token_urlsafe(16)
         params = {
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
             "response_type": "code",
             "scope": "communications information trading non_trading",
+            "state": state,
         }
+        return f"{LIVE_AUTH_URL}?{urlencode(params)}"
 
-        return f"{auth_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
-
-    def exchange_code_for_tokens(self, auth_code: str, is_sandbox: Optional[bool] = None) -> Dict:
+    async def exchange_code_for_tokens(self, auth_code: str) -> Dict:
         """
-        Exchange authorization code for access/refresh tokens.
-
-        Args:
-            auth_code: Authorization code from callback URL
-            is_sandbox: User's environment mode (for API URL selection)
-
-        Call this in your /auth/ctrader/callback endpoint.
-        cTrader redirects user back with ?code=XYZ parameter.
-
-        Returns:
-            dict: {
-                'access_token': str (decrypted),
-                'refresh_token': str (decrypted),
-                'expires_in': int (seconds),
-                'expires_at': datetime
-            }
+        Exchange authorization code for access/refresh tokens (async, live).
         """
-        sandbox = is_sandbox if is_sandbox is not None else self.default_sandbox
-        token_url = self.SANDBOX_TOKEN_URL if sandbox else self.LIVE_TOKEN_URL
-
+        self._ensure_configured()
         payload = {
             "grant_type": "authorization_code",
             "code": auth_code,
             "redirect_uri": self.redirect_uri,
             "client_id": self.client_id,
-            "client_secret": self.client_secret
+            "client_secret": self.client_secret,
         }
-
-        response = requests.get(token_url, params=payload, timeout=30)
-        response.raise_for_status()
-
-        result = response.json()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(LIVE_TOKEN_URL, data=payload)
+            response.raise_for_status()
+            result = response.json()
 
         if "error" in result:
-            raise Exception(f"cTrader OAuth error: {result['error']} - {result.get('error_description')}")
+            desc = result.get("error_description")
+            logger.error("cTrader OAuth code exchange failed", error=result["error"], detail=desc)
+            raise Exception(f"cTrader OAuth error: {result['error']}")
 
         access_token = result.get("accessToken")
         refresh_token = result.get("refreshToken")
-        expires_in = result.get("expiresIn", 2592000)  # Default 30 days
+        expires_in = result.get("expiresIn", 2592000)  # 30 days
+
+        if not access_token or not refresh_token:
+            raise Exception("cTrader did not return access/refresh tokens")
 
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "expires_in": expires_in,
-            "expires_at": datetime.utcnow() + timedelta(seconds=expires_in)
+            "expires_at": datetime.utcnow() + timedelta(seconds=expires_in),
         }
 
-    def refresh_access_token(self, refresh_token: str, is_sandbox: Optional[bool] = None) -> Dict:
+    async def refresh_access_token(self, refresh_token: str) -> Dict:
         """
-        Refresh an expired access token using refresh token.
+        Refresh an expired access token using the refresh token (async, live).
 
-        Call this automatically when access token is near expiry (<24h left).
-
-        Args:
-            refresh_token: Decrypted refresh token from database
-            is_sandbox: User's environment mode
-
-        Returns:
-            dict: {
-                'access_token': str (decrypted),
-                'expires_in': int,
-                'expires_at': datetime
-            }
+        Also returns a possibly-rotated refresh token if the server issues one.
         """
-        sandbox = is_sandbox if is_sandbox is not None else self.default_sandbox
-        token_url = self.SANDBOX_TOKEN_URL if sandbox else self.LIVE_TOKEN_URL
-
+        self._ensure_configured()
         payload = {
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
             "client_id": self.client_id,
-            "client_secret": self.client_secret
+            "client_secret": self.client_secret,
         }
-
-        response = requests.get(token_url, params=payload, timeout=30)
-        response.raise_for_status()
-
-        result = response.json()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(LIVE_TOKEN_URL, data=payload)
+            response.raise_for_status()
+            result = response.json()
 
         if "error" in result:
+            logger.error("cTrader token refresh failed", error=result["error"])
             raise Exception(f"cTrader token refresh error: {result['error']}")
 
         access_token = result.get("accessToken")
         expires_in = result.get("expiresIn", 2592000)
+        new_refresh_token = result.get("refreshToken")
 
         return {
             "access_token": access_token,
+            # Include a new refresh token IF the server rotates it.
+            "refresh_token": new_refresh_token,
             "expires_in": expires_in,
-            "expires_at": datetime.utcnow() + timedelta(seconds=expires_in)
+            "expires_at": datetime.utcnow() + timedelta(seconds=expires_in),
         }
 
     def get_api_base_url(self, is_sandbox: Optional[bool] = None) -> str:
-        """
-        Get cTrader API base URL (sandbox or live).
-        
-        Args:
-            is_sandbox: User's environment mode
-            
-        Returns:
-            API base URL
-        """
-        sandbox = is_sandbox if is_sandbox is not None else self.default_sandbox
-        return self.SANDBOX_API_URL if sandbox else self.LIVE_API_URL
+        """cTrader API base URL - LIVE only."""
+        del is_sandbox  # sandbox intentionally unsupported
+        return LIVE_API_URL
 
     # === Token Encryption (Security) ===
 
@@ -237,38 +198,32 @@ class CTraderOAuthService:
 
     # === Utility Methods ===
 
-    def get_account_info(
-        self, 
-        access_token: str, 
+    async def get_account_info(
+        self,
+        access_token: str,
         ctid_trader_account_id: Optional[str] = None,
         is_sandbox: Optional[bool] = None,
     ) -> Dict:
         """
-        Fetch account balance, equity, and metadata from cTrader API.
+        Fetch account balance, equity, and metadata from cTrader API (async).
 
-        Call this to sync account data periodically.
-
-        Args:
-            access_token: Decrypted access token
-            ctid_trader_account_id: User's cTrader account ID
-            is_sandbox: User's environment mode
-
-        Returns:
-            dict: Account info from cTrader API
+        Call this to sync account data periodically. FAILS CLOSED: raises on any
+        HTTP error so callers never treat an expired token as a valid account.
         """
-        api_url = f"{self.get_api_base_url(is_sandbox)}/user/accounts"
+        del is_sandbox
+        api_url = f"{self.get_api_base_url()}/user/accounts"
         if ctid_trader_account_id:
             api_url += f"/{ctid_trader_account_id}"
 
         headers = {
             "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
-        response = requests.get(api_url, headers=headers, timeout=30)
-        response.raise_for_status()
-
-        return response.json()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(api_url, headers=headers)
+            response.raise_for_status()
+            return response.json()
 
 
 # Global singleton instance

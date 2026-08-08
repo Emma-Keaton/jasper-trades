@@ -6,9 +6,10 @@ import { useOnboarding } from './OnboardingProvider';
 interface InteractiveTooltipProps {
   position?: 'top' | 'bottom' | 'left' | 'right';
   targetRect?: DOMRect | null;
+  tourKey?: string;
 }
 
-export default function InteractiveTooltip({ position = 'right', targetRect }: InteractiveTooltipProps) {
+export default function InteractiveTooltip({ position = 'right', targetRect, tourKey = 'home' }: InteractiveTooltipProps) {
   const { currentStep, nextStep, prevStep, endTour, markTourComplete, currentStepIndex, totalSteps } = useOnboarding();
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
@@ -75,25 +76,15 @@ export default function InteractiveTooltip({ position = 'right', targetRect }: I
 
   // Handle tour completion
   const handleFinishTour = () => {
-    // Mark current tour as complete
-    const tourKey = getTourKeyFromPath();
     markTourComplete(tourKey);
     endTour();
   };
 
   // Handle tour cancellation (ESC or X button)
   const handleCancelTour = () => {
-    const tourKey = getTourKeyFromPath();
     // Mark as complete so it doesn't show again on reload
     markTourComplete(tourKey);
     endTour();
-  };
-
-  // Helper to get tour key from current path
-  const getTourKeyFromPath = () => {
-    const path = window.location.pathname.slice(1);
-    const tourKey = path || 'dashboard';
-    return tourKey;
   };
 
   // Show cancellation confirmation

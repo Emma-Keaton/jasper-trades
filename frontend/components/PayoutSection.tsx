@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Save, DollarSign, Wallet, Percent, Clock, Split, RefreshCw, Check, AlertCircle, Loader2 } from 'lucide-react';
-import { Toast } from '@/app/page';
+import { Toast } from '@/app/types';
 
 interface Bank {
   name: string;

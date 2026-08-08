@@ -39,15 +39,17 @@ class CCXTBrokerService(BaseBrokerService):
 
     def __init__(
         self,
-        exchange_id: str = "binance",
+        exchange_id: str = "bybit",
         config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(name=f"ccxt-{exchange_id}", config=config or {})
 
         self.exchange_id = exchange_id
-        self.api_key = config.get("api_key") if config else settings.BINANCE_API_KEY
-        self.api_secret = config.get("api_secret") if config else settings.BINANCE_API_SECRET
-        self.sandbox = config.get("sandbox", True) if config else True
+        # Binance default removed - crypto live uses a Nigeria-accessible exchange
+        # (Bybit default, geo-probe gated); Binance is opt-in only.
+        self.api_key = config.get("api_key") if config else None
+        self.api_secret = config.get("api_secret") if config else None
+        self.sandbox = False  # paper trading is handled by Universal Paper Trading, not exchange sandboxes
 
         # Exchange instance
         self.exchange: Optional[ccxt.Exchange] = None

@@ -1,94 +1,29 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  LayoutDashboard,
-  Bot,
-  Radio,
-  Users,
-  TrendingUp,
-  Compass,
-  Briefcase,
-  Settings,
-  Search,
-  Bell,
-  Menu,
-  ChevronLeft,
-  ChevronRight,
-  X,
-  Sparkles,
-  Check,
-  AlertTriangle,
-  Info,
-  Globe
+  Home as HomeIcon, Briefcase, TrendingUp, Radio, Settings as SettingsIcon,
+  Compass, Microscope, Sun, Moon, Coins, Bell, Menu, X,
 } from 'lucide-react';
-
-// Types
-export interface Holding {
-  symbol: string;
-  name: string;
-  type: 'Stock' | 'Crypto' | 'Cash';
-  shares: number;
-  avgPrice: number;
-  currentPrice: number;
-  pnlPercent: number;
-}
-
-export interface TradeHistoryItem {
-  id: string;
-  date: string;
-  type: 'BUY' | 'SELL';
-  symbol: string;
-  side: 'Long' | 'Short';
-  shares: number;
-  price: number;
-  total: number;
-  agent: string;
-}
-
-export interface Toast {
-  id: string;
-  type: 'success' | 'error' | 'info' | 'warning';
-  title: string;
-  message: string;
-}
-
-export interface AgentState {
-  id: string;
-  name: string;
-  status: 'Running' | 'Stopped' | 'Error';
-  latency: string;
-  successRate: string;
-  uptime: string;
-}
-
-export interface NotificationItem {
-  id: string;
-  title: string;
-  body: string;
-  time: string;
-  unread: boolean;
-}
-
 import { usePriceStream } from '@/hooks/usePriceStream';
+import { usePortfolioHistory } from '@/hooks/usePortfolioHistory';
 import { websocketClient, ConnectionStatus } from '@/lib/websocket';
+import { useCurrency } from '@/lib/currencyContext';
+import { useTheme } from '@/lib/theme';
+import { Holding, TradeHistoryItem, Toast } from '@/app/types';
+import { Badge } from '@/components/ui';
 import ChatWidget from '@/components/ChatWidget';
-import { SkeletonCard, SkeletonChart, SkeletonConsole, SkeletonTable } from '@/components/Skeleton';
 import { OnboardingProvider } from '@/components/onboarding/OnboardingProvider';
 import OnboardingTour from '@/components/onboarding/OnboardingTour';
-import { usePortfolioHistory } from '@/hooks/usePortfolioHistory';
+import WelcomeWizard from '@/components/onboarding/WelcomeWizard';
+import HomeScreen from '@/components/screens/HomeScreen';
+import TradesScreen from '@/components/screens/TradesScreen';
+import MarketsScreen from '@/components/screens/MarketsScreen';
+import SignalsScreen from '@/components/screens/SignalsScreen';
+import SettingsScreen from '@/components/screens/SettingsScreen';
+import BacktestScreen from '@/components/screens/BacktestScreen';
+import AlphaZooScreen from '@/components/screens/AlphaZooScreen';
 
-// Import tab components
-import DashboardTab from '@/components/DashboardTab';
-import AgentsTab from '@/components/AgentsTab';
-import SignalsTab from '@/components/SignalsTab';
-import CopyTradeTab from '@/components/CopyTradeTab';
-import BacktestTab from '@/components/BacktestTab';
-import AlphaZooTab from '@/components/AlphaZooTab';
-import PortfolioTab from '@/components/PortfolioTab';
-import SettingsTab from '@/components/SettingsTab';
-
-// API utility
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<{ data?: T; error?: string }> {
@@ -98,55 +33,43 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<{
       headers: { 'Content-Type': 'application/json', ...options?.headers },
     });
     const data = await response.json();
-    if (!response.ok) {
-      return { error: data.detail || data.error || `HTTP ${response.status}` };
-    }
+    if (!response.ok) return { error: data.detail || data.error || `HTTP ${response.status}` };
     return { data };
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Network error' };
   }
 }
 
+const PRIMARY_TABS = [
+  { id: 'home', label: 'Home', icon: HomeIcon },
+  { id: 'trades', label: 'Trades', icon: Briefcase },
+  { id: 'markets', label: 'Markets', icon: TrendingUp },
+  { id: 'signals', label: 'Signals', icon: Radio },
+  { id: 'settings', label: 'Settings', icon: SettingsIcon },
+] as const;
+
+const ADVANCED_TABS = [
+  { id: 'backtest', label: 'Backtesting', icon: Microscope },
+  { id: 'alphazoo', label: 'Alpha Zoo', icon: Compass },
+] as const;
+
 export default function Home() {
-  // Navigation state
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [sidebarExpanded, setSidebarExpanded] = useState<boolean>(true);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
-  const [currentSettingsTab, setCurrentSettingsTab] = useState<string>('api');
+  const [activeTab, setActiveTab] = useState<string>('home');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Search state
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [showCommandPalette, setShowCommandPalette] = useState<boolean>(false);
-
-  // Backend sync state - starts with defaults, syncs to backend
-  const [cash, setCash] = useState<number>(0); // Start at $0 until loaded from backend
+  const [cash, setCash] = useState<number>(0);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
-  const [portfolioLoaded, setPortfolioLoaded] = useState<boolean>(false);
-  const [portfolioInitialized, setPortfolioInitialized] = useState<boolean>(false); // Track if portfolio has real trading activity
-  const [agents, setAgents] = useState<AgentState[]>([
-    { id: 'director', name: 'Director', status: 'Stopped', latency: '-', successRate: '-', uptime: '-' },
-    { id: 'quant', name: 'Quant', status: 'Stopped', latency: '-', successRate: '-', uptime: '-' },
-    { id: 'risk', name: 'Risk', status: 'Stopped', latency: '-', successRate: '-', uptime: '-' },
-    { id: 'execution', name: 'Execution', status: 'Stopped', latency: '-', successRate: '-', uptime: '-' },
-  ]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [selectedAlphaFactors, setSelectedAlphaFactors] = useState<string[]>([]);
-
-  // Toast state
+  const [portfolioInitialized, setPortfolioInitialized] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
-
-  // Connection state
   const [backendConnected, setBackendConnected] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
-  const [currentTimeStr, setCurrentTimeStr] = useState<string>('00:00:00');
   const [wsStatus, setWsStatus] = useState<ConnectionStatus>('disconnected');
+  const [selectedAlphaFactors, setSelectedAlphaFactors] = useState<string[]>([]);
 
-  // WebSocket price stream
-  const { isConnected: wsConnected, status: priceStreamStatus } = usePriceStream({
+  const { isConnected: wsConnected } = usePriceStream({
     onPriceUpdate: (update) => {
-      // Update holding prices in real-time
-      setHoldings(prev => prev.map(h => 
+      setHoldings(prev => prev.map(h =>
         h.symbol === update.symbol
           ? { ...h, currentPrice: update.price, pnlPercent: ((update.price - h.avgPrice) / h.avgPrice) * 100 }
           : h
@@ -155,582 +78,317 @@ export default function Home() {
     onStatusChange: setWsStatus,
   });
 
-  // Portfolio history for equity curve chart (Recharts)
-  const { data: portfolioHistory, loading: historyLoading, error: historyError } = usePortfolioHistory({
-    portfolioId: 1,
-    period: '1m',
-    refreshInterval: 30000, // 30 seconds
-  });
+  const { data: portfolioHistory } = usePortfolioHistory({ portfolioId: 1, period: '1m', refreshInterval: 30000 });
 
-  // Auto-redirect to /settings when Settings tab is selected
-  useEffect(() => {
-    if (activeTab === 'settings') {
-      setCurrentSettingsTab('api');
-    }
-  }, [activeTab]);
-
-  // Kronos memory monitoring state (4GB RAM optimization)
-  const [memoryUsage, setMemoryUsage] = useState<{
-    rss_mb: number;
-    system_percent: number;
-    is_safe_for_inference: boolean;
-  } | null>(null);
-
-  // Clock effect
-  useEffect(() => {
-    const updateTime = () => setCurrentTimeStr(new Date().toISOString().slice(11, 19));
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Fetch initial data from backend (with loading state)
-  const fetchBackendData = useCallback(async () => {
-    setLoading(true);
-
-    // Fetch system status
-    const statusResult = await apiRequest<any>('/api/v1/status');
-    if (statusResult.data) {
-      setBackendConnected(true);
-      // Update agents from backend
-      if (statusResult.data.agents) {
-        setAgents(prev => prev.map(a => ({
-          ...a,
-          status: statusResult.data.agents.includes(a.id.toUpperCase()) ? 'Running' : 'Stopped'
-        })));
-      }
-    } else {
-      setBackendConnected(false);
-    }
-
-    // Fetch memory status (Kronos 4GB monitoring)
-    const memoryResult = await apiRequest<any>('/api/v1/system/memory');
-    if (memoryResult.data) {
-      setMemoryUsage({
-        rss_mb: memoryResult.data.rss_mb || 0,
-        system_percent: memoryResult.data.system_percent || 0,
-        is_safe_for_inference: memoryResult.data.is_safe_for_inference ?? true,
-      });
-    }
-
-    // Fetch portfolio data
-    const portfoliosResult = await apiRequest<any[]>('/api/v1/portfolio');
-    if (portfoliosResult.data && portfoliosResult.data.length > 0) {
-      const portfolio = portfoliosResult.data[0];
-      const portfolioId = portfolio.id;
-
-      // Fetch initialization status to determine if PnL should be shown
-      const initStatusResult = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/initialization-status`);
-      if (initStatusResult.data) {
-        setPortfolioInitialized(initStatusResult.data.is_initialized);
-      }
-
-      setCash(portfolio.cash || 0);
-      setPortfolioLoaded(true);
-
-      // Fetch holdings
-      const holdingsResult = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/holdings`);
-      if (holdingsResult.data) {
-        // Backend returns { holdings: [...] } not direct array
-        const holdingsArray = Array.isArray(holdingsResult.data) 
-          ? holdingsResult.data 
-          : (holdingsResult.data.holdings || []);
-        setHoldings(holdingsArray.map((h: any) => ({
-          symbol: h.symbol,
-          name: h.name || h.symbol,
-          type: h.type || 'Stock',
-          shares: h.shares || h.quantity || 0,
-          avgPrice: h.avg_price || 0,
-          currentPrice: h.current_price || h.avg_price || 0,
-          pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0
-        })));
-      }
-
-      // Fetch trades
-      const tradesResult = await apiRequest<any[]>(`/api/v1/portfolio/${portfolioId}/trades`);
-      if (tradesResult.data) {
-        setTradeHistory(tradesResult.data.map((t: any) => ({
-          id: t.id,
-          date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          type: t.type,
-          symbol: t.symbol,
-          side: 'Long',
-          shares: t.shares,
-          price: t.price,
-          total: t.total,
-          agent: 'Director'
-        })));
-      }
-    }
-
-    setLoading(false);
-  }, []);
-
-  // Silent background refresh (no loading state)
-  const refreshBackendData = useCallback(async () => {
-    try {
-      // Refresh portfolio data silently
-      const portfoliosResult = await apiRequest<any[]>('/api/v1/portfolio');
-      if (portfoliosResult.data && portfoliosResult.data.length > 0) {
-        const portfolio = portfoliosResult.data[0];
-        const portfolioId = portfolio.id;
-
-        // Update cash only (don't re-fetch entire portfolio)
-        const freshPortfolio = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}`);
-        if (freshPortfolio.data) {
-          setCash(prev => {
-            const newCash = freshPortfolio.data.cash || 0;
-            return Math.abs(prev - newCash) > 0.01 ? newCash : prev; // Only update if changed
-          });
-        }
-
-        // Update holdings prices silently
-        const holdingsResult = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/holdings`);
-        const holdingsResponse = holdingsResult.data;
-        const holdingsData = Array.isArray(holdingsResponse) 
-          ? holdingsResponse 
-          : (holdingsResponse?.holdings || []);
-        if (holdingsData.length > 0) {
-          setHoldings(prev => {
-            const newHoldings = holdingsData.map((h: any) => ({
-              symbol: h.symbol,
-              name: h.name || h.symbol,
-              type: h.type || 'Stock',
-              shares: h.shares || h.quantity || 0,
-              avgPrice: h.avg_price || 0,
-              currentPrice: h.current_price || h.avg_price || 0,
-              pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0
-            }));
-            // Only update if data actually changed (prevent unnecessary re-renders)
-            const hasChanged = JSON.stringify(prev) !== JSON.stringify(newHoldings);
-            return hasChanged ? newHoldings : prev;
-          });
-        }
-
-        // Update only recent trades (last 10)
-        const tradesResult = await apiRequest<any[]>(`/api/v1/portfolio/${portfolioId}/trades?limit=10`);
-        const tradesData = tradesResult.data || [];
-        if (tradesData.length > 0) {
-          const newTrades = tradesData.slice(0, 10).map((t: any) => ({
-            id: t.id,
-            date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-            type: t.type,
-            symbol: t.symbol,
-            side: 'Long' as 'Long' | 'Short',
-            shares: t.shares,
-            price: t.price,
-            total: t.total,
-            agent: 'Director'
-          }));
-          // Only update if trades changed
-          setTradeHistory(currentTrades => {
-            const hasChanged = JSON.stringify(currentTrades) !== JSON.stringify(newTrades);
-            return hasChanged ? newTrades : currentTrades;
-          });
-        }
-      }
-
-      // Refresh agent status silently
-      const statusResult = await apiRequest<any>('/api/v1/status');
-      if (statusResult.data && statusResult.data.agents) {
-        setAgents(prev => {
-          const newAgents = prev.map(a => ({
-            ...a,
-            status: statusResult.data.agents.includes(a.id.toUpperCase()) ? 'Running' as 'Running' | 'Stopped' | 'Error' : 'Stopped' as 'Running' | 'Stopped' | 'Error'
-          }));
-          // Only update if status changed
-          const hasChanged = JSON.stringify(prev) !== JSON.stringify(newAgents);
-          return hasChanged ? newAgents : prev;
-        });
-      }
-    } catch (error) {
-      // Silently ignore background refresh errors
-      console.error('Background refresh failed:', error);
-    }
-  }, []);
-
-  // Initial load and poll for updates (WebSocket handles real-time prices)
-  useEffect(() => {
-    fetchBackendData();
-    // Silent background refresh every 30s - uses optimized refreshBackendData
-    const interval = setInterval(refreshBackendData, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Toast helpers
   const triggerToast = useCallback((type: Toast['type'], title: string, message: string) => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts(prev => [...prev, { id, type, title, message }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
   }, []);
 
-  const removeToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
+  const removeToast = useCallback((id: string) => setToasts(prev => prev.filter(t => t.id !== id)), []);
+
+  const fetchBackendData = useCallback(async () => {
+    setLoading(true);
+    const statusResult = await apiRequest<any>('/api/v1/status');
+    setBackendConnected(!!statusResult.data);
+
+    const portfoliosResult = await apiRequest<any[]>('/api/v1/portfolio');
+    if (portfoliosResult.data && portfoliosResult.data.length > 0) {
+      const portfolio = portfoliosResult.data[0];
+      const portfolioId = portfolio.id;
+      const initRes = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/initialization-status`);
+      if (initRes.data) setPortfolioInitialized(!!initRes.data.is_initialized);
+      setCash(portfolio.cash || 0);
+      const hRes = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/holdings`);
+      if (hRes.data) {
+        const arr = Array.isArray(hRes.data) ? hRes.data : (hRes.data.holdings || []);
+        setHoldings(arr.map((h: any) => ({
+          symbol: h.symbol, name: h.name || h.symbol, type: h.type || 'Stock',
+          shares: h.shares || h.quantity || 0, avgPrice: h.avg_price || 0,
+          currentPrice: h.current_price || h.avg_price || 0, pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0,
+        })));
+      }
+      const tRes = await apiRequest<any[]>(`/api/v1/portfolio/${portfolioId}/trades?limit=30`);
+      if (tRes.data) {
+        setTradeHistory(tRes.data.map((t: any) => ({
+          id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          type: t.type, symbol: t.symbol, side: 'Long', shares: t.shares, price: t.price, total: t.total, agent: 'Director',
+        })));
+      }
+    }
+    setLoading(false);
   }, []);
 
-  // Trade execution
-  const executeTradeFromSignal = useCallback(async (
-    symbol: string,
-    type: 'BUY' | 'SELL',
-    shares: number,
-    price: number,
-    total: number,
-    agentName: string
-  ) => {
+  const refreshBackendData = useCallback(async () => {
+    try {
+      const portfoliosResult = await apiRequest<any[]>('/api/v1/portfolio');
+      if (portfoliosResult.data && portfoliosResult.data.length > 0) {
+        const portfolio = portfoliosResult.data[0];
+        const portfolioId = portfolio.id;
+        const fresh = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}`);
+        if (fresh.data) setCash(prev => Math.abs(prev - (fresh.data.cash || 0)) > 0.01 ? (fresh.data.cash || 0) : prev);
+        const hRes = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/holdings`);
+        const arr = hRes.data ? (Array.isArray(hRes.data) ? hRes.data : (hRes.data.holdings || [])) : [];
+        if (arr.length) {
+          const next = arr.map((h: any) => ({
+            symbol: h.symbol, name: h.name || h.symbol, type: h.type || 'Stock',
+            shares: h.shares || h.quantity || 0, avgPrice: h.avg_price || 0,
+            currentPrice: h.current_price || h.avg_price || 0, pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0,
+          }));
+          setHoldings(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
+        }
+        const tRes = await apiRequest<any[]>(`/api/v1/portfolio/${portfolioId}/trades?limit=10`);
+        if (tRes.data && tRes.data.length) {
+          const next = tRes.data.slice(0, 10).map((t: any) => ({
+            id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            type: t.type, symbol: t.symbol, side: 'Long' as 'Long' | 'Short', shares: t.shares, price: t.price, total: t.total, agent: 'Director',
+          }));
+          setTradeHistory(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
+        }
+      }
+      const statusResult = await apiRequest<any>('/api/v1/status');
+      setBackendConnected(!!statusResult.data);
+    } catch {
+      /* silent */
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBackendData();
+    const t = setInterval(refreshBackendData, 30000);
+    return () => clearInterval(t);
+  }, [fetchBackendData, refreshBackendData]);
+
+  const executeTradeFromSignal = useCallback(async (symbol: string, type: 'BUY' | 'SELL', shares: number, price: number, total: number, agentName: string) => {
     if (type === 'BUY' && total > cash) {
-      triggerToast('error', 'Insufficient Cash', `Required: $${total.toLocaleString()}. Available: $${cash.toLocaleString()}.`);
+      triggerToast('error', 'Not enough cash', `Available: ${cash.toLocaleString()}.`);
       return;
     }
-
     const portfolioResult = await apiRequest<any[]>('/api/v1/portfolio');
     if (!portfolioResult.data || portfolioResult.data.length === 0) {
-      triggerToast('error', 'No Portfolio', 'Please create a portfolio first.');
+      triggerToast('error', 'No portfolio', 'Please create a portfolio first.');
       return;
     }
     const portfolioId = portfolioResult.data[0].id;
-
-    // Execute via backend API
     const tradeResult = await apiRequest<any>('/api/v1/trading/execute', {
       method: 'POST',
-      body: JSON.stringify({
-        portfolio_id: portfolioId,
-        symbol,
-        type,
-        shares,
-        order_type: 'MARKET',
-      }),
+      body: JSON.stringify({ portfolio_id: portfolioId, symbol, type, shares, order_type: 'MARKET' }),
     });
-
-    if (tradeResult.error) {
-      triggerToast('error', 'Trade Failed', tradeResult.error);
-      return;
-    }
-
-    triggerToast('success', 'Trade Executed', `${type} ${shares} ${symbol} @ $${price.toLocaleString()}`);
-
-    // Refresh data after trade
+    if (tradeResult.error) { triggerToast('error', 'Trade failed', tradeResult.error); return; }
+    triggerToast('success', 'Trade placed', `${type} ${shares} ${symbol}.`);
     setTimeout(fetchBackendData, 1000);
   }, [cash, fetchBackendData, triggerToast]);
 
-  // Alpha factor management
-  const addAlphaFactorToStrategy = useCallback((factorName: string) => {
+  const addAlphaFactor = useCallback((name: string) => {
     setSelectedAlphaFactors(prev => {
-      if (prev.includes(factorName)) {
-        triggerToast('info', 'Already Added', `${factorName} is already in your strategy.`);
-        return prev;
-      }
-      triggerToast('success', 'Factor Added', `${factorName} added to backtest strategy.`);
-      return [...prev, factorName];
+      if (prev.includes(name)) { triggerToast('info', 'Already added', `${name} is in your strategy.`); return prev; }
+      triggerToast('success', 'Factor added', `${name} added to backtest strategy.`);
+      return [...prev, name];
     });
   }, [triggerToast]);
 
-  const removeAlphaFactorFromStrategy = useCallback((factorName: string) => {
-    setSelectedAlphaFactors(prev => {
-      triggerToast('info', 'Factor Removed', `${factorName} removed from strategy.`);
-      return prev.filter(f => f !== factorName);
-    });
+  const removeAlphaFactor = useCallback((name: string) => {
+    setSelectedAlphaFactors(prev => { triggerToast('info', 'Factor removed', `${name} removed.`); return prev.filter(f => f !== name); });
   }, [triggerToast]);
 
-  // Calculate portfolio value
-  const portfolioValue = holdings.reduce((sum, h) => sum + (h.shares * h.currentPrice), 0) + cash;
-  const activeAgentsCount = agents.filter(a => a.status === 'Running').length;
 
-  // Connection status indicator
-  const connectionColor = backendConnected ? '#10B981' : '#EF4444';
-  const connectionText = backendConnected ? 'Connected' : 'Disconnected';
-  const wsColor = wsConnected ? '#10B981' : '#F59E0B';
-  const wsText = wsConnected ? 'Live' : 'Connecting';
+  const { currency, toggleCurrency } = useCurrency();
+  const { theme, toggleTheme } = useTheme();
+
+  const nav = (t: string) => { setActiveTab(t); setSidebarOpen(false); };
+
+  let content: React.ReactNode;
+  switch (activeTab) {
+    case 'trades':
+      content = <TradesScreen cash={cash} holdings={holdings} tradeHistory={tradeHistory} loading={loading} portfolioInitialized={portfolioInitialized} onNavigate={nav} triggerToast={triggerToast} />;
+      break;
+    case 'markets':
+      content = <MarketsScreen onNavigate={nav} triggerToast={triggerToast} />;
+      break;
+    case 'signals':
+      content = <SignalsScreen triggerToast={triggerToast} executeTrade={executeTradeFromSignal} />;
+      break;
+    case 'settings':
+      content = <SettingsScreen triggerToast={triggerToast} onNavigate={nav} />;
+      break;
+    case 'backtest':
+      content = <BacktestScreen selectedAlphaFactors={selectedAlphaFactors} removeAlphaFactor={removeAlphaFactor} triggerToast={triggerToast} onNavigate={nav} />;
+      break;
+    case 'alphazoo':
+      content = <AlphaZooScreen addAlphaFactor={addAlphaFactor} triggerToast={triggerToast} />;
+      break;
+    case 'home':
+    default:
+      content = (
+        <HomeScreen
+          cash={cash}
+          holdings={holdings}
+          tradeHistory={tradeHistory}
+          equityData={portfolioHistory?.equity || []}
+          portfolioInitialized={portfolioInitialized}
+          loading={loading}
+          backendConnected={backendConnected}
+          onNavigate={nav}
+        />
+      );
+  }
 
   return (
     <OnboardingProvider>
-      <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC] font-sans flex flex-col selection:bg-[#3B82F6] selection:text-white pb-8 md:pb-0">
-
-      {/* TOP HEADER */}
-      <header className="fixed top-0 left-0 right-0 h-16 bg-[#1E293B] border-b border-[#475569] px-4 flex items-center justify-between z-50">
-        {/* Logo */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setMobileMenuOpen(prev => !prev)}
-            className="p-1.5 hover:bg-[#334155] rounded-md transition md:hidden text-[#94A3B8]"
-          >
-            <Menu className="w-6 h-6" />
-          </button>
-
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
-            <img 
-              src="/logo.png" 
-              alt="Jasper Trades" 
-              className="w-8 h-8 object-contain"
-            />
-            <div className="flex flex-col">
-              <span className="font-extrabold text-[#F8FAFC] text-md tracking-tight">JASPER</span>
-              <span className="text-[10px] text-[#10B981] font-mono leading-none font-semibold">TRADES</span>
-            </div>
+      <div className="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+        {/* ===== Mobile top bar ===== */}
+        <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/85 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 md:hidden">
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="Jasper" className="h-7 w-7 object-contain" />
+            <span className="font-display text-base font-bold tracking-tight">Jasper</span>
           </div>
-        </div>
-
-        {/* Search */}
-        <div className="hidden md:flex items-center relative w-[320px] lg:w-[450px]">
-          <Search className="w-4 h-4 text-[#94A3B8] absolute left-3" />
-          <input
-            type="text"
-            placeholder="Search commands, symbols, agents..."
-            value={searchQuery}
-            onChange={(e) => { setSearchQuery(e.target.value); setShowCommandPalette(true); }}
-            onFocus={() => setShowCommandPalette(true)}
-            className="w-full bg-[#0F172A] border border-[#475569] rounded-lg h-9 pl-10 pr-12 text-sm focus:outline-none focus:border-[#3B82F6] text-[#F8FAFC] placeholder-[#94A3B8] font-mono"
-          />
-          <span className="absolute right-3 text-[10px] font-mono border border-[#475569] px-1.5 py-0.5 rounded text-[#94A3B8] bg-[#1E293B]">⌘K</span>
-        </div>
-
-        {/* Connection status & Profile */}
-        <div className="flex items-center gap-3">
-          {/* API Connection */}
-          <div className="flex items-center gap-2 text-xs font-mono">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: connectionColor }} />
-            <span className="hidden lg:inline text-[#94A3B8]">{connectionText}</span>
-          </div>
-
-          {/* WebSocket Status */}
-          <div className="flex items-center gap-2 text-xs font-mono border-l border-[#475569] pl-2">
-            <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: wsColor }} />
-            <span className="hidden lg:inline text-[#94A3B8]">Price Stream: <span style={{ color: wsColor }}>{wsText}</span></span>
-          </div>
-
-          <div className="flex items-center gap-2 pl-2 border-l border-[#475569]">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#3B82F6] to-pink-500 flex items-center justify-center font-extrabold text-sm text-white">
-              ET
-            </div>
-            <div className="hidden lg:flex flex-col text-left">
-              <span className="text-xs font-bold text-[#F8FAFC] leading-none">Trader Account</span>
-              <span className="text-[10px] text-[#10B981] font-mono font-semibold">Verified</span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Body */}
-      <div className="pt-16 flex flex-1 h-full relative">
-
-        {/* SIDEBAR */}
-        <aside className={`hidden md:flex flex-col bg-[#1E293B] border-r border-[#475569] fixed top-16 bottom-8 z-30 transition-all ${sidebarExpanded ? 'w-60' : 'w-16'}`}>
-          <div className="p-3 flex justify-end border-b border-[#475569]">
-            <button onClick={() => setSidebarExpanded(prev => !prev)} className="p-1 hover:bg-[#334155] rounded-md text-[#94A3B8]">
-              {sidebarExpanded ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          <div className="flex items-center gap-1">
+            <button onClick={toggleTheme} aria-label="Toggle theme" className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </button>
+            <button onClick={toggleCurrency} className="rounded-full px-2.5 py-1.5 text-xs font-semibold text-brand-600 dark:text-brand-300">{currency}</button>
           </div>
+        </header>
 
-          <nav className="flex-1 p-2 flex flex-col gap-1 overflow-y-auto">
-            {[
-              { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-              { id: 'agents', label: 'Agents config', icon: Bot, badge: `${activeAgentsCount}/4` },
-              { id: 'signals', label: 'Signals Feed', icon: Radio, badge: 'Live' },
-              { id: 'copytrade', label: 'Copy Trading', icon: Users },
-              { id: 'backtest', label: 'Backtests', icon: TrendingUp },
-              { id: 'alphazoo', label: 'Alpha Factor Zoo', icon: Compass, badge: '452' },
-              { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
-              { id: 'settings', label: 'Settings', icon: Settings },
-            ].map(item => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
+        <div className="mx-auto flex w-full max-w-shell">
+          {/* ===== Desktop sidebar ===== */}
+          <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 md:flex">
+            <div className="flex items-center gap-2.5 px-6 pb-6 pt-6">
+              <img src="/logo.png" alt="Jasper" className="h-9 w-9 object-contain" />
+              <div>
+                <p className="font-display text-lg font-bold leading-none tracking-tight">Jasper</p>
+                <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.18em] text-brand-600 dark:text-brand-300">AI Trader</p>
+              </div>
+            </div>
+
+            <nav className="flex-1 space-y-1 overflow-y-auto px-3">
+              <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Main</p>
+              {PRIMARY_TABS.map(t => {
+                const active = activeTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => nav(t.id)}
+                    className={`flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition ${
+                      active
+                        ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300'
+                        : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <t.icon className="h-[18px] w-[18px]" />
+                    {t.label}
+                  </button>
+                );
+              })}
+
+              <div className="pt-4">
+                <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">For pros</p>
+                {ADVANCED_TABS.map(t => {
+                  const active = activeTab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => nav(t.id)}
+                      className={`flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition ${
+                        active
+                          ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300'
+                          : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <t.icon className="h-[18px] w-[18px]" />
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </nav>
+
+            <div className="space-y-2 border-t border-slate-100 px-4 py-4 dark:border-slate-800">
+              <button onClick={toggleTheme} className="flex w-full items-center justify-between rounded-control px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                <span className="flex items-center gap-2">{theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />} Theme</span>
+                <span className="text-xs capitalize text-slate-400">{theme}</span>
+              </button>
+              <button onClick={toggleCurrency} className="flex w-full items-center justify-between rounded-control px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                <span className="flex items-center gap-2"><Coins className="h-4 w-4" /> Currency</span>
+                <span className="text-xs font-semibold text-brand-600 dark:text-brand-300">{currency}</span>
+              </button>
+            </div>
+          </aside>
+
+          {/* ===== Main column ===== */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* Desktop top bar */}
+            <header className="sticky top-0 z-30 hidden h-14 items-center justify-between border-b border-slate-200 bg-white/85 px-8 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 md:flex">
+              <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+                <Bell className="h-4 w-4" />
+                <span>Jasper keeps you updated in the chat bubble.</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  <span className={`h-1.5 w-1.5 rounded-full ${backendConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  {backendConnected ? 'Connected' : 'Offline'}
+                </span>
+                <Badge tone="accent">Practice</Badge>
+              </div>
+            </header>
+
+            <main className="flex-1 px-4 py-6 sm:px-6 md:px-8 md:py-8">
+              <div className="mx-auto w-full max-w-5xl">
+                {content}
+              </div>
+            </main>
+          </div>
+        </div>
+
+        {/* ===== Mobile bottom nav ===== */}
+        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:hidden">
+          <div className="grid grid-cols-5">
+            {PRIMARY_TABS.map(t => {
+              const active = activeTab === t.id;
               return (
                 <button
-                  key={item.id}
-                  onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }}
-                  className={`flex items-center h-11 px-3 rounded-lg text-sm transition ${
-                    isActive
-                      ? 'bg-[#3B82F6]/10 text-[#3B82F6] font-semibold border-l-2 border-[#3B82F6]'
-                      : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#334155]'
-                  }`}
+                  key={t.id}
+                  onClick={() => nav(t.id)}
+                  className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition ${active ? 'text-brand-600 dark:text-brand-300' : 'text-slate-400 dark:text-slate-500'}`}
                 >
-                  <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-[#3B82F6]' : 'text-[#94A3B8]'}`} />
-                  {sidebarExpanded && (
-                    <div className="flex-1 flex items-center justify-between ml-3">
-                      <span>{item.label}</span>
-                      {item.badge && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#0F172A] text-[#94A3B8]">{item.badge}</span>
-                      )}
-                    </div>
-                  )}
+                  <t.icon className="h-5 w-5" />
+                  {t.label}
                 </button>
               );
             })}
-          </nav>
-        </aside>
-
-        {/* Mobile menu overlay */}
-        {mobileMenuOpen && (
-          <div className="fixed inset-0 z-40 bg-[#0F172A]/80 flex md:hidden" onClick={() => setMobileMenuOpen(false)}>
-            <div className="w-64 bg-[#1E293B] border-r border-[#475569] p-4 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
-              <div className="flex justify-between items-center pb-3 border-b border-[#475569]">
-                <span className="font-bold font-mono text-[#F8FAFC]">Navigation</span>
-                <button onClick={() => setMobileMenuOpen(false)}><X className="w-5 h-5 text-[#94A3B8]" /></button>
-              </div>
-              {[
-                { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                { id: 'agents', label: 'Agents', icon: Bot },
-                { id: 'signals', label: 'Signals', icon: Radio },
-                { id: 'copytrade', label: 'Copy Trading', icon: Users },
-                { id: 'backtest', label: 'Backtests', icon: TrendingUp },
-                { id: 'alphazoo', label: 'Alpha Zoo', icon: Compass },
-                { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
-                { id: 'settings', label: 'Settings', icon: Settings },
-              ].map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }}
-                  className="flex items-center gap-3 p-3 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#334155] rounded-lg"
-                >
-                  <item.icon className="w-5 h-5" />
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </div>
           </div>
+        </nav>
+
+        {/* ===== Mobile advanced drawer trigger ===== */}
+        {(activeTab === 'backtest' || activeTab === 'alphazoo') && (
+          <button
+            onClick={() => nav('settings')}
+            className="fixed bottom-20 right-4 z-30 rounded-full bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-card dark:bg-slate-800 md:hidden"
+          >
+            Back to app
+          </button>
         )}
 
-        {/* Main Content */}
-        <main className={`flex-1 transition-all ${sidebarExpanded ? 'md:pl-60' : 'md:pl-16'} pb-12`}>
-          <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-6">
-            {loading ? (
-              <div className="flex flex-col gap-6 w-full animate-pulse">
-                {/* Portfolio Value Cards Skeleton */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {[...Array(4)].map((_, i) => (
-                    <SkeletonCard key={i} />
-                  ))}
-                </div>
-
-                {/* Chart Skeleton */}
-                <div className="bg-[#1E293B] rounded-lg p-6 border border-[#475569]">
-                  <SkeletonChart />
-                </div>
-
-                {/* Holdings & Agents Row */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-[#1E293B] rounded-lg p-6 border border-[#475569]">
-                    <div className="h-6 w-32 bg-gray-700 rounded animate-pulse mb-4" />
-                    <SkeletonTable />
-                  </div>
-                  <div className="bg-[#1E293B] rounded-lg p-6 border border-[#475569]">
-                    <div className="h-6 w-32 bg-gray-700 rounded animate-pulse mb-4" />
-                    <SkeletonConsole />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <>
-                {activeTab === 'dashboard' && (
-                  <DashboardTab
-                    cash={cash}
-                    holdings={holdings}
-                    agents={agents}
-                    tradeHistory={tradeHistory}
-                    triggerToast={triggerToast}
-                    loading={loading}
-                    portfolioInitialized={portfolioInitialized}
-                    equityData={portfolioHistory?.equity || []}
-                  />
-                )}
-                {activeTab === 'agents' && (
-                  <AgentsTab agents={agents} setAgents={setAgents} triggerToast={triggerToast} loading={loading} />
-                )}
-                {activeTab === 'signals' && (
-                  <SignalsTab executeTrade={executeTradeFromSignal} triggerToast={triggerToast} />
-                )}
-                {activeTab === 'copytrade' && (
-                  <CopyTradeTab triggerToast={triggerToast} />
-                )}
-                {activeTab === 'backtest' && (
-                  <BacktestTab selectedAlphaFactors={selectedAlphaFactors} removeAlphaFactor={removeAlphaFactorFromStrategy} triggerToast={triggerToast} setActiveTab={setActiveTab} />
-                )}
-                {activeTab === 'alphazoo' && (
-                  <AlphaZooTab addAlphaFactor={addAlphaFactorToStrategy} triggerToast={triggerToast} />
-                )}
-                {activeTab === 'portfolio' && (
-                  <PortfolioTab cash={cash} setCash={setCash} holdings={holdings} setHoldings={setHoldings} tradeHistory={tradeHistory} triggerToast={triggerToast} portfolioInitialized={portfolioInitialized} />
-                )}
-                {activeTab === 'settings' && (
-                  <SettingsTab onNavigate={setCurrentSettingsTab} initialTab={currentSettingsTab} triggerToast={triggerToast} />
-                )}
-              </>
-            )}
-          </div>
-        </main>
-      </div>
-
-      {/* Footer Status Bar */}
-      <footer className="fixed bottom-0 left-0 right-0 h-8 bg-[#0F172A] border-t border-[#475569] px-4 flex items-center justify-between text-xs text-[#94A3B8] font-mono z-40">
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: connectionColor }} />
-          <span>System: {connectionText}</span>
-        </div>
-        <div className="hidden md:flex items-center gap-4">
-          <span>Agents: {activeAgentsCount} Running</span>
-          <span className="border-l border-[#475569] h-3" />
-          <span className="text-[#3B82F6]">UTC: {currentTimeStr}</span>
-        </div>
-        <div>
-          <span>Portfolio: </span>
-          <span className="font-bold text-[#F8FAFC]">${portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-        </div>
-      </footer>
-
-      {/* Mobile Bottom Nav */}
-      <div className="md:hidden fixed bottom-8 left-4 right-4 h-14 bg-[#1E293B] border border-[#475569] rounded-xl flex items-center justify-around z-40">
-        {[
-          { id: 'dashboard', label: 'Dash', icon: LayoutDashboard },
-          { id: 'agents', label: 'AI', icon: Bot },
-          { id: 'signals', label: 'Signals', icon: Radio },
-          { id: 'portfolio', label: 'Holdings', icon: Briefcase },
-          { id: 'settings', label: 'Config', icon: Settings },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === tab.id ? 'text-[#3B82F6]' : 'text-[#94A3B8]'}`}
-          >
-            <tab.icon className="w-5 h-5 mb-0.5" />
-            <span className="text-[10px]">{tab.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Toast Notifications */}
-      <div className="fixed bottom-10 right-4 flex flex-col gap-2 z-50 max-w-sm w-full pointer-events-none p-4">
-        {toasts.map(toast => (
-          <div
-            key={toast.id}
-            className={`pointer-events-auto p-4 rounded-lg shadow-xl flex items-start gap-3 border ${
-              toast.type === 'success' ? 'bg-[#1E293B] border-[#10B981] text-white' :
-              toast.type === 'error' ? 'bg-[#1E293B] border-[#EF4444] text-white' :
-              toast.type === 'warning' ? 'bg-[#1E293B] border-[#F59E0B] text-white' :
-              'bg-[#1E293B] border-[#3B82F6] text-white'
-            }`}
-          >
-            <div className="mt-0.5">
-              {toast.type === 'success' && <Check className="w-5 h-5 text-[#10B981]" />}
-              {toast.type === 'error' && <AlertTriangle className="w-5 h-5 text-[#EF4444]" />}
-              {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-[#F59E0B]" />}
-              {toast.type === 'info' && <Info className="w-5 h-5 text-[#3B82F6]" />}
+        {/* ===== Toasts ===== */}
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-[70] flex flex-col items-center gap-2 p-4 sm:items-end sm:pr-6">
+          {toasts.map(t => (
+            <div
+              key={t.id}
+              className="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-card border bg-white px-4 py-3 shadow-pop dark:bg-slate-900 animate-fade-up"
+              style={{ borderColor: t.type === 'success' ? '#10b981' : t.type === 'error' ? '#e11d48' : t.type === 'warning' ? '#f59e0b' : '#14b8a6' }}
+            >
+              <p className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-slate-50">{t.title}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{t.message}</p>
+              <button onClick={() => removeToast(t.id)} className="ml-auto rounded-full p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"><X className="h-4 w-4" /></button>
             </div>
-            <div className="flex-1">
-              <h4 className="font-bold text-xs uppercase font-mono mb-0.5">{toast.title}</h4>
-              <p className="text-xs text-[#94A3B8]">{toast.message}</p>
-            </div>
-            <button onClick={() => removeToast(toast.id)} className="p-1 hover:bg-[#334155] rounded text-[#94A3B8]">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        ))}
+          ))}
+        </div>
+
+        <ChatWidget />
+        <WelcomeWizard />
+        <OnboardingTour activePage={activeTab} enabled />
       </div>
-
-      {/* AI Chat Widget */}
-      <ChatWidget />
-
-      {/* Onboarding Tour */}
-      <OnboardingTour activePage={activeTab} enabled={true} />
-    </div>
     </OnboardingProvider>
   );
 }

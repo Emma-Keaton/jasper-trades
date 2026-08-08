@@ -193,22 +193,16 @@ export function useAgentControl() {
   return { startAgent, stopAgent, loading, error };
 }
 
-// Copy Trading hooks
-export function useLeaderboard() {
-  return useFetch<any[]>(() => api.copyTradeAPI.getLeaderboard(), {
-    refreshInterval: 10000,
+// Signals hooks
+export function useSignalSources(deviceId: string) {
+  return useFetch<any[]>(() => api.signalsAPI.getSources(deviceId), {
+    refreshInterval: 30000,
   });
 }
 
-export function useStrategies() {
-  return useFetch<any[]>(() => api.copyTradeAPI.getStrategies(), {
-    refreshInterval: 10000,
-  });
-}
-
-export function useMyFollows() {
-  return useFetch<any[]>(() => api.copyTradeAPI.getMyFollows(), {
-    refreshInterval: 5000,
+export function useTips(deviceId: string) {
+  return useFetch<any[]>(() => api.signalsAPI.getTips(deviceId), {
+    refreshInterval: 15000,
   });
 }
 

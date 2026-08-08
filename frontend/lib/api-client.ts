@@ -240,22 +240,83 @@ export const agentAPI = {
     }),
 };
 
-// Copy Trading APIs
-export const copyTradeAPI = {
-  getLeaderboard: () =>
-    apiRequest<any[]>('/api/v1/copy-trading/leaderboard'),
-  getStrategies: () => apiRequest<any[]>('/api/v1/copy-trading/strategies'),
-  followStrategy: (strategyId: string, allocation: number) =>
-    apiRequest<any>('/api/v1/copy-trading/follow', {
-      method: 'POST',
-      body: JSON.stringify({ strategy_id: strategyId, allocation }),
+// Signals APIs
+export const signalsAPI = {
+  getSources: (deviceId: string) =>
+    apiRequest<any[]>(`/api/v1/signals/sources`, {
+      headers: { 'X-Device-ID': deviceId },
     }),
-  unfollowStrategy: (strategyId: string) =>
-    apiRequest<any>('/api/v1/copy-trading/unfollow', {
+  createSource: (deviceId: string, payload: any) =>
+    apiRequest<any>(`/api/v1/signals/sources`, {
       method: 'POST',
-      body: JSON.stringify({ strategy_id: strategyId }),
+      headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     }),
-  getMyFollows: () => apiRequest<any[]>('/api/v1/copy-trading/my-follows'),
+  deleteSource: (deviceId: string, id: number) =>
+    apiRequest<any>(`/api/v1/signals/sources/${id}`, {
+      method: 'DELETE',
+      headers: { 'X-Device-ID': deviceId },
+    }),
+  getTips: (deviceId: string) =>
+    apiRequest<any[]>(`/api/v1/signals/tips`, {
+      headers: { 'X-Device-ID': deviceId },
+    }),
+  fetchSignals: (deviceId: string) =>
+    apiRequest<any>(`/api/v1/signals/fetch`, {
+      method: 'POST',
+      headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
+    }),
+  executeTip: (deviceId: string, tipId: number, payload: any) =>
+    apiRequest<any>(`/api/v1/signals/tips/${tipId}/execute`, {
+      method: 'POST',
+      headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  telegramAccount: (deviceId: string) =>
+    apiRequest<any>(`/api/v1/signals/telegram/account`, {
+      headers: { 'X-Device-ID': deviceId },
+    }),
+  telegramChannels: (deviceId: string, body: any) =>
+    apiRequest<any>(`/api/v1/signals/telegram/channels`, {
+      method: 'POST',
+      headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  telegramCreateSources: (deviceId: string, channels: any[]) =>
+    apiRequest<any>(`/api/v1/signals/telegram/sources`, {
+      method: 'POST',
+      headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channels }),
+    }),
+  followSource: (deviceId: string, sourceId: number) =>
+    apiRequest<any>(`/api/v1/signals/follow`, {
+      method: 'POST',
+      headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_id: sourceId }),
+    }),
+  unfollowSource: (deviceId: string, sourceId: number) =>
+    apiRequest<any>(`/api/v1/signals/follow/${sourceId}`, {
+      method: 'DELETE',
+      headers: { 'X-Device-ID': deviceId },
+    }),
+  resolveTip: (deviceId: string, tipId: number, payload: any) =>
+    apiRequest<any>(`/api/v1/signals/tips/${tipId}/resolve`, {
+      method: 'POST',
+      headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  telegramStart: (deviceId: string, phone: string) =>
+    apiRequest<any>(`/api/v1/signals/telegram/connect/start`, {
+      method: 'POST',
+      headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    }),
+  telegramComplete: (deviceId: string, phone: string, code: string, password?: string) =>
+    apiRequest<any>(`/api/v1/signals/telegram/connect/complete`, {
+      method: 'POST',
+      headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, code, password }),
+    }),
 };
 
 // Backtest APIs

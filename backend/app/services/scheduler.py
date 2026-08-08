@@ -9,6 +9,12 @@ import structlog
 from app.services.portfolio_service import PortfolioService
 from app.services.valuation_service import ValuationService
 from app.services.signal_service import SignalService
+from sqlalchemy import select
+from app.models import SignalSource, SignalTip, TelegramAccount
+from app.services.signal_sources.registry import get_registry
+from app.services.signal_sources.tip_extraction import TipExtractionService
+from app.services.signal_sources.confidence import compute_confidence
+
 from app.agents import agent_registry
 
 logger = structlog.get_logger(__name__)
@@ -37,6 +43,7 @@ class SchedulerService:
             "calculate_pnl": 86400,  # 24 hours
             "cleanup": 86400,  # 24 hours
             "daily_summary": 86400,  # 24 hours - runs at 8 PM WAT (7 PM UTC)
+            "poll_signal_sources": 120,  # every 2 minutes
         }
         self._daily_summary_time = "19:00"  # 7 PM UTC = 8 PM WAT
 
@@ -68,6 +75,10 @@ class SchedulerService:
 
         self._tasks["daily_summary"] = asyncio.create_task(
             self._run_daily_at_time("daily_summary", self._send_daily_summaries, self._daily_summary_time)
+        )
+
+        self._tasks["poll_signal_sources"] = asyncio.create_task(
+            self._run_periodic("poll_signal_sources", self._poll_signal_sources)
         )
 
         logger.info(f"Started {len(self._tasks)} scheduled tasks")
@@ -205,6 +216,85 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Error generating signals: {e}", exc_info=True)
+
+    async def _poll_signal_sources(self):
+        """Poll all active signal sources for every device and ingest tips."""
+        db = self.db_session_factory()
+        try:
+            from sqlalchemy import distinct
+            rows = await db.execute(select(distinct(SignalSource.device_id)).where(SignalSource.is_active == True))
+            device_ids = [r for r in rows.scalars().all()]
+            for device_id in device_ids:
+                try:
+                    await self._poll_one_device(db, device_id)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Poll device failed", device=device_id, error=str(e))
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Poll signal sources error: {e}")
+        finally:
+            await db.close()
+
+    async def _poll_one_device(self, db, device_id: str):
+        res = await db.execute(select(SignalSource).where(SignalSource.device_id == device_id, SignalSource.is_active == True))
+        sources = res.scalars().all()
+        if not sources:
+            return 0
+        tmpl = {}
+        acc_res = await db.execute(select(TelegramAccount).where(TelegramAccount.device_id == device_id))
+        acc = acc_res.scalar_one_or_none()
+        if acc:
+            tmpl = {"tg_session": acc.tg_session or ""}
+        cfg_list = []
+        for s in sources:
+            cfg = {"source_type": s.source_type, "source_id": str(s.id), **(s.config or {})}
+            if s.source_type == "telegram":
+                cfg.update(tmpl)
+            cfg_list.append(cfg)
+
+        reg = get_registry()
+        drafts = await reg.fetch_all(cfg_list, limit=50)
+        extractor = TipExtractionService()
+        tips = await extractor.extract_tips([d.to_dict() if hasattr(d, "to_dict") else d for d in drafts])
+
+        count = 0
+        for t in tips:
+            try:
+                src_id = int(t.get("source_id") or "0")
+            except (TypeError, ValueError):
+                src_id = 0
+            if src_id == 0:
+                continue
+            dup = await db.execute(
+                select(SignalTip.id).where(SignalTip.device_id == device_id, SignalTip.source_id == src_id,
+                                           SignalTip.slug == (t.get("slug") or ""))
+            )
+            if dup.scalar_one_or_none():
+                continue
+            final_conf, _basis = await compute_confidence(
+                t.get("symbol") or "",
+                t.get("side") or "long",
+                float(t.get("confidence") or 0.0),
+                src_id,
+                db,
+            )
+            db.add(SignalTip(
+                device_id=device_id,
+                source_id=src_id,
+                slug=t.get("slug") or "",
+                symbol=t.get("symbol") or "",
+                side=t.get("side") or "long",
+                timeframe=t.get("timeframe"),
+                confidence=final_conf,
+                rationale=t.get("rationale"),
+                text=t.get("text"),
+                url=t.get("url"),
+                source_created_at=t.get("created_at"),
+            ))
+            count += 1
+        if count:
+            await db.commit()
+            logger.info("Signal sources polled", device=device_id, new_tips=count)
+        return count
 
     async def _expire_signals(self):
         """Check and mark expired signals."""

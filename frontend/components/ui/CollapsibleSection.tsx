@@ -41,16 +41,16 @@ export function CollapsibleSection({
     : icon;
 
   return (
-    <div className="border border-[#475569] rounded-xl overflow-hidden mb-4">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 mb-4">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full p-3 sm:p-4 bg-[#1E293B] flex items-center justify-between hover:bg-[#334155] transition gap-3"
+        className="w-full p-3 sm:p-4 bg-white dark:bg-slate-900 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/60 transition gap-3"
       >
         <div className="flex items-start gap-3 flex-1 text-left">
           {/* Icon */}
           {IconComponent && (
             <div className="flex-shrink-0 mt-0.5">
-              <IconComponent className="w-5 h-5 text-[#3B82F6]" />
+              <IconComponent className="w-5 h-5 text-brand-600 dark:text-brand-400" />
             </div>
           )}
           {typeof icon === 'string' && (
@@ -60,22 +60,22 @@ export function CollapsibleSection({
           )}
           {/* Title and subtitle */}
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-bold text-[#F8FAFC]">{title}</h3>
-            {subtitle && <p className="text-xs text-[#94A3B8] mt-0.5">{subtitle}</p>}
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-50">{title}</h3>
+            {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
             {completionStatus && (
-              <p className="text-xs text-[#64748B] mt-0.5">{completionStatus}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{completionStatus}</p>
             )}
           </div>
         </div>
         {/* Chevron */}
         <ChevronDown
-          className={`w-5 h-5 text-[#94A3B8] transition-transform flex-shrink-0 ${
+          className={`w-5 h-5 text-slate-400 dark:text-slate-500 transition-transform flex-shrink-0 ${
             isOpen ? 'rotate-180' : ''
           }`}
         />
       </button>
       {isOpen && (
-        <div className="p-3 sm:p-4 bg-[#0F172A] border-t border-[#475569]">
+        <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800">
           {children}
         </div>
       )}

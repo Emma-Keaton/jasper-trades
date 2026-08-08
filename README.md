@@ -1,279 +1,138 @@
-# Jasper Trades - AI-Powered Trading Platform
+# Jasper Trades — AI-Powered Trading Platform (Nigeria-First)
 
-**Your complete trading solution with AI chat, multi-broker execution, free market data, email/Discord notifications, and risk management.**
+**A simplified, onboarding-guided AI trading assistant for non-traders. It watches
+crypto, forex and shares for you, explains its moves, and tells you about every
+trade it makes through your connected Telegram chat.**
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Node.js 18+](https://img.shields.io/badge/node-18+-green.svg)](https://nodejs.org/)
-[![Next.js 15](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
+Built for beginners: no trading jargon required, guided setup wizards on every
+screen, and a universal paper-trading mode so you can watch the AI trade with
+practice money before risking anything real.
+
+> ⚠️ Educational tool. Not financial advice. Never risk money you can't afford to lose.
+
+---
 
 ## 🚀 Quick Start
 
 ```bash
-install.bat    # Install dependencies
-start.bat      # Run app
+install.bat      # Install backend + frontend dependencies
+start.bat        # Run both servers
 ```
 
-Opens: http://localhost:3000
+- Frontend → http://localhost:3000
+- Backend API → http://localhost:8000 (docs at `/docs`)
 
 ---
 
-## ✨ Features
+## ✨ What This App Does (in plain language)
 
-### 🤖 AI Trading Assistant
-- **4-Stage Agent Pipeline**: Director → Quant → Risk → Execution
-- **WhatsApp AI Chat**: "Should I buy AAPL?", "Portfolio status", "Why sell TSLA?"
-- **NVIDIA NIM API**: Llama-3.2-3B (fast), Llama-3.3-70B (deep analysis), Nemotron-120B (portfolio)
-- **Multi-Model Routing**: Cheapest/fastest model per task
+| You will... | Where |
+|---|---|
+| Watch the AI trade before going live | **Paper Lab** (universal paper trading, practice money) |
+| Connect your Telegram to get notified of every trade | **Settings → Telegram** |
+| Connect a real broker for live trading | **Settings → Connect cTrader** |
+| Ask simple questions ("Should I buy BTC?") | **AI Chat** (bottom-right) |
+| Learn the app step-by-step | Built-in **guided tutorials** on every screen |
 
-### 🏦 Multi-Broker Execution
-Auto-routes trades by asset class:
+### 🤖 The AI Trader (4-stage pipeline)
+A `Director → Quant → Risk → Execution` agent pipeline (powered by the free
+**Google Gemini 2.5 Flash** model with multi-key rotation so it never stalls on
+rate limits) analyzes markets, scores opportunities, checks risk, then executes.
 
-| Asset Class | Broker |
-|-------------|--------|
-| Stocks/Equities (US + Nigerian NGX) | Trove Finance |
-| Crypto | Binance |
-| Forex/CFD | Not supported |
-| Solana Tokens | Solana broker |
+### 💱 Trading & Execution
+- **Live trading** → **cTrader** (forex + shares; Nigerian-accessible brokers).
+- **Live crypto** → **CCXT** on a Nigeria-accessible exchange (default **Bybit**),
+  plus **Solana on-chain** for SPL tokens and memecoins.
+- **Paper trading** (all assets) → the **Universal Paper Trading engine** — test
+  the AI risk-free before going live.
 
-### 📊 Free Market Data
-- **CoinGecko**: Real-time crypto prices (no API key needed!)
-- **Alpha Vantage**: Stocks, forex, news sentiment (FREE 500/day)
-- **Finnhub**: Real-time US stocks (FREE 60/min)
-- **Twelve Data**: 800 calls/day free
-- **FRED**: Economic data (GDP, Treasury yields)
+### 📊 Market Data (Nigeria-safe, priority-chained)
+**CoinGecko (default) → CCXT (Bybit/Binance) → CoinLore (fallback)**. The app
+runtime-probes every data/broker source from its region and automatically
+prunes any service that is geo-blocked or unreachable (including Binance and
+Polymarket unless they respond).
 
-### 📧 Notifications & Chat
-- **WhatsApp**: Embedded OpenWA (no external service)
-- **Discord Bot**: Two-way chat with commands (`!portfolio`, `!trades`, `!help`)
-- **Email (SendGrid)**: 100 emails/day free - trade confirmations, daily summaries
-- **Slack, Telegram**: Webhook support
+### 🔔 Notifications
+- **Telegram** — two-way chat + a message for **every executed trade**.
+- Email (SendGrid), Discord, WhatsApp for summaries and risk alerts.
 
-### 🛡️ Risk Management
-- **Trading Caps**: Max position $, max %, daily loss limits
-- **Circuit Breaker**: Auto-halt on flash crashes, volatility spikes
-- **Hard/Soft Limits**: Block or warn on cap breaches
-- **Real-Time Dashboard**: VaR, drawdown, correlation heatmap
-
-### 💰 Auto-Payout System
-- **Daily Profit Distribution**: 50% of profits (customizable)
-- **Multi-Currency**: USDT (ERC20, TRC20, SOLANA)
-- **Tatum Integration**: Blockchain transfers
-- **Fee Calculation**: Auto-deducts network fees
-
-### 📈 Advanced Analytics
-- **452 Alpha Factors**: Quantitative signals library
-- **Backtesting**: Historical performance testing
-- **Ensemble/Swarm**: Multi-LLM consensus
-- **Kronos Colab**: GPU-accelerated model training
+### 🛡️ Safety
+- Trading caps, circuit breakers, and **paper-first** execution.
+- cTrader OAuth tokens encrypted at rest (one key, fail-closed).
+- Real wallet connections are **signature-verified** (a pasted address can't be saved).
 
 ---
 
-## 🎯 What's Included
-
-### Backend (FastAPI + Python 3.11+)
-- ✅ Real-time trading engine
-- ✅ 4-stage AI agent pipeline
-- ✅ Multi-broker integration (Binance, cTrader)
-- ✅ Risk management & circuit breakers
-- ✅ WhatsApp/Discord/Email notifications
-- ✅ Free market data providers
-- ✅ Auto-payout system
-- ✅ Backtesting & alpha factors
-
-### Frontend (Next.js 15 + React 19 + Tailwind CSS v4)
-- ✅ Trading dashboard with real-time PnL
-- ✅ Portfolio analytics
-- ✅ Settings page for all integrations
-- ✅ Withdrawal management
-- ✅ Mobile responsive design
-
-### Services (40+ modules)
-- Market data providers (CoinGecko, Alpha Vantage, Finnhub)
-- Email service (SendGrid - 100/day free)
-- Discord bot (two-way chat)
-- WhatsApp service (embedded OpenWA)
-- Withdrawal service (Tatum blockchain)
-- Circuit breaker system
-- AI chat assistant
-- Experience buffer (reinforcement learning)
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | Next.js 15, React 19, Tailwind CSS v4, TypeScript |
-| **Backend** | FastAPI, Python 3.11+, SQLAlchemy, SQLite |
-| **AI/LLM** | NVIDIA NIM API (Llama-3.2-3B, Llama-3.3-70B, Nemotron-120B) |
-| **Brokers** | Trove Finance (US + NGX stocks), Binance, Solana |
-| **Market Data** | CoinGecko (free), Alpha Vantage, Finnhub, Twelve Data |
-| **Notifications** | WhatsApp (OpenWA), Discord Bot, SendGrid (email), Slack, Telegram |
-| **Blockchain** | Tatum (USDT transfers), Solana |
-| **Analytics** | DuckDB, QuantLib, TA-Lib |
-
----
-
-## 📦 Installation
-
-### Prerequisites
-- **Node.js 18+** - [Download](https://nodejs.org/)
-- **Python 3.11+** - [Download](https://www.python.org/downloads/)
-- **Git** (optional)
-
-### Quick Install
-```bash
-# Clone repository
-git clone https://github.com/YOUR_USERNAME/jasper-trades.git
-cd jasper-trades
-
-# Install dependencies
-install.bat
+## 🏗️ Architecture
 
 ```
+jasper-trades/
+├── backend/            FastAPI + Python 3.11
+│   ├── app/
+│   │   ├── agents/     4-stage AI pipeline (Director→Quant→Risk→Execution)
+│   │   ├── brokers/    cTrader (live), CCXT (crypto), Solana, Trove, AKShare
+│   │   ├── services/   LLM (Gemini+rotation), geo-probe, paper trading,
+│   │   │               CCXT data, CoinLore, Solana memecoins, market data
+│   │   ├── api/v1/     REST routes (incl. /geo, /paper, /memecoin)
+│   │   └── schedulers/ cTrader token refresh
+│   └── kronos-service/ Optional separate Render service for price forecaster
+├── frontend/           Next.js 15 + React 19 + Tailwind (mobile/tablet/desktop)
+│   ├── components/     Tabs + onboarding tutorials + responsive nav
+│   └── lib/            API client, constants, WebSocket
+└── data/               SQLite database
+```
 
-### Configure API Keys
-
-**Required:**
-- **NVIDIA NIM API** - AI/LLM (FREE $25/month credits)
-  - Get key: https://catalog.ngc.nvidia.com/api-keys
-
-**Optional (all FREE):**
-- **CoinGecko** - Crypto prices ✅ No key needed!
-- **Alpha Vantage** - Stocks/forex (500 calls/day free)
-- **Finnhub** - Real-time stocks (60/min free)
-- **SendGrid** - Email (100/day free)
-- **Discord Bot** - Two-way chat (unlimited free)
-
-Configure all keys in **Settings page** after first run!
+### Deployment (Render-only)
+- **Main app** — free web service (FastAPI + Next.js).
+- **Separate Render services** for RAM-heavy jobs: `kronos-service`, `rd-agent`,
+  `finrl`. **No Colab is used.**
 
 ---
 
-## 🚀 Deployment
+## 🔑 Required Setup (one-time)
 
-### Free Cloud Hosting
+Set these in your `.env` / Render dashboard:
 
-**Frontend:** Vercel (unlimited free)
-**Backend:** Render (free tier 500 hours/month)
-**WhatsApp:** Embedded (no external service)
-
-See **[DEPLOYMENT.md](DEPLOYMENT.md)** for complete guide including:
-- Step-by-step Vercel/Render setup
-- All free API key signup links
-- Discord bot creation
-- SendGrid email setup
-- Trading caps configuration
-
-### Local Development
-```bash
-start.bat  # Runs both backend & frontend
+```
+GEMINI_API_KEYS=key1,key2,key3,key4   # 3-4 keys from separate Google accounts (PRIMARY LLM)
+NVIDIA_API_KEY=                        # NVIDIA NIM fallback (used automatically if Gemini is down)
+CTRADER_CLIENT_ID=                     # cTrader Connect app
+CTRADER_CLIENT_SECRET=
+CTRADER_REDIRECT_URI=
+CTRADER_ENCRYPTION_KEY=               # Fernet key for token encryption
+TELEGRAM_BOT_TOKEN=                   # for trade alerts + chat
+CCXT_EXCHANGES=bybit,okx,...          # Nigeria-accessible CEX set (geo-probe prunes)
+SECRET_KEY=                           # strong random string
 ```
 
-- Backend: http://localhost:8000 (API docs: /docs)
-- Frontend: http://localhost:3000
+See **DEPLOYMENT.md** for the full guide and free-tier signup links.
 
 ---
 
 ## 📚 Documentation
 
-| Doc | Description |
-|-----|-------------|
-| **[DEPLOYMENT.md](DEPLOYMENT.md)** | Complete deployment guide + all free API keys |
-| **[INSTALL.md](INSTALL.md)** | Local installation & troubleshooting |
-| **[SETTINGS_API_KEYS.md](SETTINGS_API_KEYS.md)** | All API keys explained |
-| **[PRODUCTION_READY.md](PRODUCTION_READY.md)** | Production checklist |
-
----
-
-## 🔐 Security
-
-- ✅ All API keys encrypted (AES-256) before database storage
-- ✅ HTTPS in production
-- ✅ Environment variables for secrets
-- ✅ No hardcoded credentials
-- ✅ Input validation & sanitization
-- ✅ Rate limiting on API endpoints
-
----
-
-## 🎓 Perfect For
-
-- **Individual traders** - Automate your trading strategy
-- **Quant developers** - 452 alpha factors + backtesting
-- **Hobbyists** - Learn AI trading with free tools
-- **Portfolios** - Multi-broker, multi-asset support
-- **Students** - Free tier everything, no credit card needed
+| Doc | Purpose |
+|---|---|
+| **DEPLOYMENT.md** | Full Render deployment + all free API keys |
+| **README.md** (this) | Overview & quick start |
+| **plan.md** | Architecture + roadmap |
 
 ---
 
 ## 🗺️ Roadmap
 
-### Phase 1 (Current) ✅
-- [x] Multi-broker trading (Binance, cTrader)
-- [x] AI chat assistant (WhatsApp, Discord, Email)
-- [x] Risk management (Trading caps, circuit breaker)
-- [x] Free market data (CoinGecko, Alpha Vantage, Finnhub)
-- [x] Auto-payout system (50% daily profit)
-
-### Phase 2 (Next)
-- [ ] Multi-model ensemble
-- [ ] Twitter/Reddit sentiment analysis
-- [ ] Smart order routing
-- [ ] Copy trading leaderboards
-
-### Phase 3 (Planned)
-- [ ] Reinforcement learning
-- [ ] On-chain analytics
-- [ ] Portfolio optimizer
-- [ ] Strategy marketplace
+- [x] Gemini 2.5 Flash LLM with multi-key rotation
+- [x] Nigeria-first market data (CoinGecko→CCXT→CoinLore) + geo-probing
+- [x] cTrader live + Universal Paper Trading (all paper)
+- [x] Solana memecoins (DexScreener discovery + Jupiter execution)
+- [x] Telegram trade notifications
+- [x] Responsive UI + guided onboarding tours
+- [ ] Full UI restructure polish & strategy marketplace
+- [ ] Reinforing-learning signals (FinRL, separate Render service)
 
 ---
 
-## 🤝 Contributing
+**📈 Start in Paper Lab** → connect Telegram → let the AI wow you. Upgrade to
+real trading on cTrader only when you're comfortable.
 
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-MIT License - See [LICENSE](LICENSE) file
-
----
-
-## 💬 Support
-
-- **Documentation**: [DEPLOYMENT.md](DEPLOYMENT.md)
-- **Issues**: GitHub Issues
-- **Discord**: [Join our server](YOUR_DISCORD_LINK)
-
----
-
-## 🙏 Acknowledgments
-
-Built with:
-- [NVIDIA NIM API](https://catalog.ngc.nvidia.com/) - LLM inference
-- [CoinGecko](https://www.coingecko.com/) - Crypto data (FREE!)
-- [Alpha Vantage](https://www.alphavantage.co/) - Market data
-- [Finnhub](https://finnhub.io/) - Real-time stocks
-- [SendGrid](https://sendgrid.com/) - Email notifications
-- [Discord.py](https://discordpy.readthedocs.io/) - Discord bot
-- [Next.js](https://nextjs.org/) - Frontend framework
-- [FastAPI](https://fastapi.tiangolo.com/) - Backend framework
-
----
-
-**📈 Ready to trade? [Get Started](#quick-start)**
-
-**🎓 Questions? Check [INSTALL.md](INSTALL.md) or [DEPLOYMENT.md](DEPLOYMENT.md)**
-
-**🚀 Deploy free version in 30 minutes → [DEPLOYMENT.md](DEPLOYMENT.md)**
-
-**Jasper Trades** - Built with Next.js 15, FastAPI, NVIDIA NIM API
+*Built with Next.js 15, FastAPI, Gemini 2.5 Flash, cTrader, CCXT, Solana.*

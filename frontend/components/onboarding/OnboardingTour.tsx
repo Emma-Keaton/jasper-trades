@@ -1,111 +1,75 @@
-'use client';
+﻿'use client';
 
 import React, { useEffect } from 'react';
 import { useOnboarding } from './OnboardingProvider';
 import { TourStep } from './useOnboardingEngine';
 import TourOverlay from './TourOverlay';
 import InteractiveTooltip from './InteractiveTooltip';
-import { dashboardTour } from './tours/dashboard-tour';
-import { agentsTour } from './tours/agents-tour';
-import { signalsTour } from './tours/signals-tour';
-import { copyTradeTour } from './tours/copytrade-tour';
-import { backtestTour } from './tours/backtest-tour';
-import { alphaZooTour } from './tours/alphazoo-tour';
-import { portfolioTour } from './tours/portfolio-tour';
-import { settingsTour } from './tours/settings-tour';
 
 interface OnboardingTourProps {
   activePage: string;
   enabled?: boolean;
 }
 
-const TOUR_MAP: { [key: string]: TourStep[] } = {
-  dashboard: dashboardTour,
-  agents: agentsTour,
-  signals: signalsTour,
-  copytrading: copyTradeTour,
-  backtest: backtestTour,
-  alphazoo: alphaZooTour,
-  portfolio: portfolioTour,
-  settings: settingsTour,
-};
+const T = (
+  id: string,
+  title: string,
+  description: string,
+  position: 'top' | 'bottom' | 'left' | 'right',
+  tip?: string
+): TourStep => ({ id, targetElement: `[data-onboarding="${id}"]`, title, description, position, tip });
 
-// Map route paths to tour keys
-const PATH_TO_TOUR_KEY: { [key: string]: string } = {
-  '': 'dashboard',
-  'dashboard': 'dashboard',
-  'agents': 'agents',
-  'signals': 'signals',
-  'copytrading': 'copytrading',
-  'backtest': 'backtest',
-  'alphazoo': 'alphazoo',
-  'portfolio': 'portfolio',
-  'settings': 'settings',
+const TOUR_MAP: Record<string, TourStep[]> = {
+  home: [
+    T('home-start', 'Press Start', 'This is the only button you need. Jasper begins watching markets and trading with practice money.', 'bottom', 'Practice money only. Nothing real.'),
+    T('home-stats', 'Your balance', 'Here is your practice money and how you are doing today.', 'left', 'Green means you are up today.'),
+    T('recent-trades', 'Recent AI trades', 'Every trade Jasper places appears here, in plain English.', 'top', 'See the full list in Trades.'),
+  ],
+  trades: [
+    T('trades-holdings', 'What you own', 'Everything Jasper has bought, with its current value and a plain-English trend line.', 'bottom', 'Holdings update in real time.'),
+  ],
+  markets: [
+    T('markets-recs', 'AI recommendations', 'Plain-English ideas from the AI, each marked Buy, Hold or Sell.', 'bottom', 'Confidence tells you how sure the AI is.'),
+  ],
+  signals: [
+    T('signals-sources', 'Signal sources', 'Plug in feeds, Reddit, StockTwits or Telegram so Jasper has places to look for ideas.', 'bottom', 'Results are ranked for you.'),
+  ],
+  settings: [
+    T('settings-checklist', 'Set up Jasper', 'A simple checklist to make everything work the way you want. Tap any row to open it.', 'right', 'Start with practice mode.'),
+  ],
 };
 
 export default function OnboardingTour({ activePage, enabled = true }: OnboardingTourProps) {
   const {
-    startTour,
-    endTour,
-    isTourActive,
-    currentStep,
-    targetElement,
-    markTourComplete,
-    isTourComplete,
-    showWelcome,
-    setShowWelcome,
-    completedTours,
+    startTour, endTour, isTourActive, currentStep, targetElement,
+    markTourComplete, isTourComplete, showWelcome, isOnboardingComplete,
   } = useOnboarding();
 
-  // Get current tour key from activePage
-  const currentTourKey = PATH_TO_TOUR_KEY[activePage.toLowerCase()] || activePage.toLowerCase();
-  const hasAnyIncompleteTours = Object.keys(TOUR_MAP).some((key) => !isTourComplete(key));
+  const tourKey = activePage.toLowerCase();
+  const hasTours = Object.prototype.hasOwnProperty.call(TOUR_MAP, tourKey);
 
-  // Keyboard handler for ESC
+  // ESC to stop the current tour
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isTourActive) return;
-
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        // Mark tour as complete so it doesn't show again
-        markTourComplete(currentTourKey);
-        endTour();
-      }
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isTourActive) { e.preventDefault(); markTourComplete(tourKey); endTour(); }
     };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [isTourActive, endTour, markTourComplete, tourKey]);
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isTourActive, endTour, markTourComplete, currentTourKey]);
-
-  // Start tour when page changes (auto-start for incomplete tours)
+  // Auto-start once per screen after the welcome modal has been dismissed
   useEffect(() => {
-    if (!enabled || isTourActive) return;
+    if (!enabled || !hasTours || showWelcome) return;
+    if (isOnboardingComplete()) return;
+    if (isTourActive || isTourComplete(tourKey)) return;
+    const t = setTimeout(() => startTour(TOUR_MAP[tourKey]), 350);
+    return () => clearTimeout(t);
+  }, [activePage, enabled, hasTours, showWelcome, isOnboardingComplete, isTourActive, isTourComplete, startTour, tourKey]);
 
-    const tourKey = activePage.toLowerCase();
-    const tourSteps = TOUR_MAP[tourKey];
-
-    // Auto-start tour if:
-    // 1. Tour exists for this page
-    // 2. User hasn't completed or explicitly cancelled this tour
-    // 3. User hasn't dismissed the welcome modal (showWelcome is still true means they haven't decided yet)
-    if (tourSteps && !isTourComplete(tourKey)) {
-      // Small delay to ensure DOM is ready
-      const timer = setTimeout(() => {
-        startTour(tourSteps);
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [activePage, enabled, isTourActive, isTourComplete, startTour, showWelcome]);
-
-  // Render tour overlay and tooltip when active
   if (isTourActive) {
     return (
       <TourOverlay>
-        <InteractiveTooltip
-          position={currentStep?.position}
-          targetRect={targetElement?.rect || null}
-        />
+        <InteractiveTooltip position={currentStep?.position} targetRect={targetElement?.rect || null} tourKey={tourKey} />
       </TourOverlay>
     );
   }

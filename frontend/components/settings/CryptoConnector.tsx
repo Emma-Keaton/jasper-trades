@@ -14,6 +14,13 @@ type Credential = {
   api_secret?: string | null;
 };
 
+/** Convert bytes to a lowercase hex string (browser-safe, avoids Buffer polyfill). */
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export default function CryptoConnector() {
   const [creds, setCreds] = useState<Credential[]>([]);
   const [editing, setEditing] = useState<Partial<Credential>>({});
@@ -64,21 +71,83 @@ export default function CryptoConnector() {
     setCreds(creds.filter((c) => c.id !== id));
   };
 
-  // Wallet‑Connect modal submission
-  const handleWalletConnect = async () => {
-    const exchange = walletType === "solana" ? "solana" : "ethereum";
+  /* ------------------------- Real Wallet Connect -------------------------
+   * Replaces the old text-input placeholder. Connects to the user's actual
+   * wallet (Phantom/Solflare on Solana, MetaMask on EVM), reads the real
+   * public address, requests a signed message (nonce) for proof-of-ownership,
+   * and POSTs {address, chain, signature, nonce} to the backend.
+   */
+  const connectWallet = async (
+    chain: "solana" | "ethereum"
+  ): Promise<{ address: string; signature: string; nonce: string } | null> => {
+    const nonce = `jasper-trades-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    try {
+      if (chain === "solana") {
+        // Phantom/Solflare inject into window.solana (or window.phantom.solana).
+        const provider =
+          (window as any).phantom?.solana || (window as any).solana || null;
+        if (!provider?.isPhantom && !provider?.isSolflare) {
+          alert("Connect wallet: install Phantom or Solflare, then reload.");
+          return null;
+        }
+        const resp = await provider.connect();
+        const address = resp.publicKey?.toString?.() || (resp.publicKey || "").toString();
+        // Request signature of the nonce (proves ownership).
+        let signature = "";
+        if (provider.signMessage) {
+          const sig = await provider.signMessage(new TextEncoder().encode(nonce));
+          const raw = sig.signature || sig;
+          signature = bytesToHex(new Uint8Array(raw));
+        }
+        return { address, signature, nonce };
+      } else {
+        // EVM (MetaMask) via window.ethereum.
+        const eth = (window as any).ethereum;
+        if (!eth?.request) {
+          alert("Connect wallet: install MetaMask, then reload.");
+          return null;
+        }
+        const accounts = await eth.request({ method: "eth_requestAccounts" });
+        const address = accounts?.[0] || "";
+        let signature = "";
+        if (eth.request) {
+          signature = await eth.request({
+            method: "personal_sign",
+            params: [nonce, address],
+          });
+        }
+        return { address, signature, nonce };
+      }
+    } catch (e) {
+      console.error("Wallet connect failed:", e);
+      alert("Wallet connection was cancelled or failed.");
+      return null;
+    }
+  };
+
+  // Called by the modal "Connect" button with the chosen wallet type.
+  const handleRealWalletConnect = async () => {
     const chain = walletType === "solana" ? "solana" : "ethereum";
+    const connected = await connectWallet(chain);
+    if (!connected) return;
+
     const payload = {
-      exchange,
-      wallet_address: walletAddress,
+      exchange: chain,
+      wallet_address: connected.address,
       chain,
+      signature: connected.signature,
+      nonce: connected.nonce,
     };
-    await fetch(`${API_URL}/api/v1/crypto-connector`, {
+    const res = await fetch(`${API_URL}/api/v1/crypto-connector`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       credentials: "include",
     });
+    if (!res.ok) {
+      alert("Failed to save connection. Check the backend signature verification.");
+      return;
+    }
     const refreshed = await fetch(`${API_URL}/api/v1/crypto-connector`, {
       credentials: "include",
     }).then((r) => r.json());
@@ -213,21 +282,17 @@ export default function CryptoConnector() {
               className="w-full mb-3 p-2 bg-gray-700 text-gray-100 rounded"
             >
               <option value="solana">Phantom / Solflare (Solana)</option>
-              <option value="ethereum">MetaMask (Ethereum)</option>
+              <option value="ethereum">MetaMask (Ethereum / BSC)</option>
             </select>
-            <label className="block text-sm text-gray-400 mb-1">Wallet address</label>
-            <input
-              type="text"
-              placeholder="0x… or Solana address"
-              value={walletAddress}
-              onChange={(e) => setWalletAddress(e.target.value)}
-              className="w-full mb-4 p-2 bg-gray-700 text-gray-100 rounded"
-            />
+            <p className="text-xs text-gray-400 mb-3">
+              You will be asked to approve the connection and sign a message in
+              your wallet extension (this proves you own the address).
+            </p>
             <button
-              onClick={handleWalletConnect}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded"
+              onClick={handleRealWalletConnect}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded flex items-center justify-center gap-2"
             >
-              Connect
+              <Wallet size={16} /> Connect {walletType === "solana" ? "Wallet (Phantom/Solflare)" : "Wallet (MetaMask)"}
             </button>
           </div>
         </div>

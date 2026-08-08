@@ -1,60 +1,105 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Slick dashboard custom scrollbars matching slate theme */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #0F172A;
-}
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+:root {
+  --surface: 248 250 252;
+  --elevated: 255 255 255;
+  --border: 226 232 240;
+  --ink: 15 23 42;
+  --muted: 100 116 139;
+  --faint: 148 163 184;
 }
 
-/* Onboarding Tour Styles */
+.dark {
+  --surface: 2 6 23;
+  --elevated: 15 23 42;
+  --border: 30 41 59;
+  --ink: 241 245 249;
+  --muted: 148 163 184;
+  --faint: 71 85 105;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  @apply bg-slate-50 text-slate-900 font-sans antialiased dark:bg-slate-950 dark:text-slate-100;
+  font-feature-settings: "ss01" 1, "cv01" 1;
+  text-rendering: optimizeLegibility;
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+::selection { @apply bg-brand-600/20 text-brand-900 dark:bg-brand-400/30 dark:text-brand-50; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 dark:bg-slate-700;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { @apply bg-slate-400 dark:bg-slate-600; }
+
+@layer components {
+  .card { @apply bg-white border border-slate-200 rounded-card shadow-card dark:bg-slate-900 dark:border-slate-800; }
+  .card-hover { @apply transition duration-200 hover:shadow-card-hover hover:-translate-y-0.5; }
+  .page-title { @apply text-2xl md:text-3xl font-display font-bold tracking-tight text-slate-900 dark:text-slate-50; }
+  .eyebrow { @apply text-xs font-semibold uppercase tracking-wider text-brand-600 dark:text-brand-300; }
+  .muted-caption { @apply text-sm text-slate-500 dark:text-slate-400; }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-brand-600 px-6 py-3 text-sm font-semibold text-white
+      shadow-card transition hover:bg-brand-700 active:scale-[0.98] focus:outline-none
+      focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-6 py-3 text-sm
+      font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]
+      focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400
+      dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-slate-600
+      transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-50;
+  }
+  .input {
+    @apply w-full rounded-control border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900
+      placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500
+      dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500;
+  }
+  .field-label { @apply block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5; }
+  .skeleton { @apply rounded-card bg-slate-200/70 dark:bg-slate-800; }
+}
+
 .tour-highlight {
   transition: all 0.3s ease;
-  filter: brightness(1.2);
-  border-radius: 8px;
-  box-shadow: 0 0 0 2px #3B82F6,
-              0 0 20px rgba(59, 130, 246, 0.5);
+  border-radius: 10px;
+  box-shadow: 0 0 0 2px #0d9488, 0 0 24px rgba(13, 148, 136, 0.4);
   position: relative;
   z-index: 10001;
 }
-
 .tour-highlight::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: -2px;
   border-radius: inherit;
-  border: 2px solid #3B82F6;
+  border: 2px solid #0d9488;
   pointer-events: none;
-  animation: pulse-blue 2s infinite;
+  animation: pulse-teal 2s infinite;
 }
+@keyframes pulse-teal {
+  0%, 100% { box-shadow: 0 0 0 2px #0d9488, 0 0 10px rgba(13,148,136,0.3); }
+  50% { box-shadow: 0 0 0 4px #0d9488, 0 0 20px rgba(13,148,136,0.6); }
+}
+.tour-active { pointer-events: none; }
+.tour-active .tour-highlight { pointer-events: auto; }
 
-@keyframes pulse-blue {
-  0%, 100% {
-    box-shadow: 0 0 0 2px #3B82F6,
-                0 0 10px rgba(59, 130, 246, 0.3);
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
-  50% {
-    box-shadow: 0 0 0 4px #3B82F6,
-                0 0 20px rgba(59, 130, 246, 0.6);
-  }
-}
-
-/* Disable interactions during tour step (optional) */
-.tour-active {
-  pointer-events: none;
-}
-
-.tour-active .tour-highlight {
-  pointer-events: auto;
 }

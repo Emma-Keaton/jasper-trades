@@ -44,8 +44,26 @@ copy .env.example .env.local
 
 **Backend (`backend/.env`):**
 ```env
-# NVIDIA NIM API (Required)
+# LLM configuration
+# Gemini 2.5 Flash is the PRIMARY LLM. Set one or more keys (comma-separated,
+# ideally from separate Google accounts) to enable multi-key rotation.
+GEMINI_API_KEYS=key1,key2,key3
+
+# NVIDIA NIM is the AUTOMATIC FALLBACK when Gemini is down/unconfigured.
+# The proxy pings Gemini first and falls back to NVIDIA on failure.
 NVIDIA_API_KEY=nvapi-your-key-here
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+# (NVIDIA's per-task model is fixed in backend/app/nvidia_nim.py, e.g.
+#  analysis -> meta/llama-3.1-8b-instruct, portfolio -> nvidia/llama-3.3-nemotron-super-49b-v1)
+
+# Gemini model tiers (only used when Gemini is the provider)
+MODEL_FAST=gemini-2.5-flash-lite
+MODEL_SMART=gemini-2.5-flash
+MODEL_DEEP=gemini-2.5-pro
+
+# WalletConnect project ID (EVM wallet connection). Create at https://cloud.walletconnect.com
+# Served to the frontend via GET /api/v1/settings/public; not baked into the frontend build.
+WALLETCONNECT_PROJECT_ID=your-project-id
 
 
 # Security (change in production)
@@ -146,8 +164,8 @@ See `DATABASE_SETUP.md` for complete migration details.
 │ Frontend (Vercel)    - https://jasper-trades.vercel.app│
 │ Backend (Render)     - https://jasper-backend.onrender │
 │ WhatsApp (Embedded)  - Runs inside backend              │
-│ NVIDIA NIM API       - Free tier ($25 credits/month)   │
-│ Google Colab         - Kronos GPU (optional, free)     │
+│ Google Gemini 2.5 Flash - Free tier (multi-key rotation) │
+│ Kronos (Render service)  - Price forecaster (separate)   │
 └─────────────────────────────────────────────────────────┘
 
 Monthly Cost: $0
@@ -202,6 +220,7 @@ frontend/.env.local
    SECRET_KEY=<generate random 32+ chars>
    API_AUTH_KEY=<generate random string>
    CORS_ORIGINS=https://jasper-trades.vercel.app
+   WALLETCONNECT_PROJECT_ID=<your-walletconnect-project-id>  # optional; enables WalletConnect QR in Settings
    ```
    
    **Note:** Leave API keys blank - configure via Settings page after deployment.
@@ -247,10 +266,10 @@ frontend/.env.local
 
 1. **Open Settings:** `https://jasper-trades.vercel.app/settings`
 
-2. **Configure NVIDIA:**
-   - Get API key: https://build.nvidia.com/
-   - Paste into "NVIDIA NIM API"
-   - Click "Test" → "Save All Settings"
+2. **Configure AI:**
+   - **Gemini (primary):** set `GEMINI_API_KEYS` in your Render dashboard variables (comma-separated). The Settings page reports "Gemini ready" when configured.
+   - **NVIDIA NIM (fallback):** Get API key https://build.nvidia.com/, add as `NVIDIA_API_KEY` in the dashboard. On the advanced settings page, paste into "NVIDIA NIM API" → "Test" → "Save All Settings". NVIDIA is used automatically only if Gemini is down/unset.
+   - The LLM proxy tries Gemini first and falls back to NVIDIA per task (fast tasks → `nemotron-mini-4b`, analysis → `llama-3.1-8b`, portfolio → `nemotron-super-49b-v1`).
 
 3. **Configure :**
    - Sign up: https://.markets/ (free)
@@ -300,11 +319,14 @@ Jasper auto-routes trades by asset class:
 
 ---
 
-## Part 3.25: Kronos Colab Setup (Optional - Enhanced AI Predictions)
+## Part 3.25: Kronos Predictions (Optional)
 
-### What is Kronos Colab?
+Kronos is a time-series forecasting model that predicts price movements. It is
+deployed as a **separate Render service** (`kronos-service`) — **no Colab is used**.
+To enable it, deploy `backend/kronos-service` to Render and set `KRONOS_SERVICE_URL`
+to its URL in the main backend. See `backend/kronos-service/README.md`.
 
-Kronos is a time-series forecasting model that predicts price movements. The Colab integration gives you:
+_(The former Google Colab integration has been removed.)_
 
 | Feature | Local (4GB RAM) | Colab GPU (Free Tier) |
 |---------|-----------------|----------------------|

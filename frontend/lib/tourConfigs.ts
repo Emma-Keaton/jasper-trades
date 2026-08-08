@@ -244,31 +244,6 @@ export const TOURS: Record<string, TourConfig> = {
       },
     ],
   },
-
-  // ==================== COPY TRADING TOUR ====================
-  copytrade: {
-    id: 'copytrade',
-    name: 'Copy Trading',
-    pages: ['copytrade'],
-    autoStart: false,
-    steps: [
-      {
-        id: 'leaderboard',
-        targetElement: '[data-tour="leaderboard"]',
-        title: 'Strategy Leaderboard',
-        description: 'Top performers ranked by win rate, Sharpe ratio, total return. Click any strategy to view details, historical performance, and risk metrics.',
-        position: 'bottom',
-      },
-      {
-        id: 'copy-settings',
-        targetElement: '[data-tour="copy-settings"]',
-        title: 'Copy Configuration',
-        description: 'Set copy percentage (e.g., 20% = copy 20% of each trade). Max position limits apply. Auto-sync: When leader trades, you auto-copy proportionally.',
-        position: 'top',
-      },
-    ],
-  },
-
   // ==================== BACKTEST TOUR ====================
   backtest: {
     id: 'backtest',

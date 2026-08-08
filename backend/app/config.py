@@ -39,36 +39,65 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/sqlite/jasper_trades.db"
     DATA_DIR: str = "./data"
 
-    # NVIDIA NIM API - Use database settings if available
+    # Supabase (Postgres-backed persistence; survives redeploys)
+    # Set DATABASE_URL to your Supabase pooler connection string, e.g.
+    #   postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+    # and the keys below for optional realtime/auth/storage clients.
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_ANON_KEY: Optional[str] = None
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+
+    # NVIDIA NIM API (DEPRECATED - use Gemini 2.5 Flash instead via GEMINI_API_KEYS)
+    # Kept as a fallback; the LLM service prefers Gemini when GEMINI_API_KEYS is set.
     NVIDIA_API_KEY: Optional[str] = None  # Set via Settings page
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
 
-    # Model Routing - Based on actual FREE tier testing (2026-06)
-    # Working FREE models: meta/llama-3.2-3b, meta/llama-3.1-8b, meta/llama-3.1-70b, meta/llama-3.3-70b, mistralai/mixtral-8x7b, nvidia/nemotron-mini-4b, moonshotai/kimi-k2.6
-    # Meta/Llama models (3.2-3b, 3.1-8b, 3.1-70b, 3.3-70b) are FREE and verified ✅
-    # Mistral Mixtral 8x7B is FREE and verified ✅
-    # NVIDIA Nemotron 4B is FREE and verified ✅
-    MODEL_FAST: str = "meta/llama-3.2-3b-instruct"  # 3B, fast, FREE verified ✅
-    MODEL_FREE_FAST: str = "meta/llama-3.2-3b-instruct"  # Same as fast - confirmed FREE ✅
-    MODEL_BALANCED: str = "meta/llama-3.1-8b-instruct"  # Mid-size, FREE verified ✅
-    MODEL_SMART: str = "meta/llama-3.1-70b-instruct"  # 70B reasoning, FREE verified ✅
-    MODEL_SMART_FREE: str = "meta/llama-3.1-70b-instruct"  # Best FREE reasoning ✅
-    MODEL_DEEP: str = "meta/llama-3.3-70b-instruct"  # 70B is deepest FREE available ✅
-    MODEL_ALTERNATIVE: str = "mistralai/mixtral-8x7b-instruct-v0.1"  # Alternative perspective, FREE ✅
+    # Google Gemini 2.5 Flash - PRIMARY LLM provider (free tier, multi-key rotation)
+    # IMPORTANT: Gemini rate limits are PER PROJECT, so each key below should come
+    # from a SEPARATE Google account / AI Studio project to keep quotas independent.
+    # Comma- or newline-separated. Get keys at https://aistudio.google.com/apikey
+    GEMINI_API_KEYS: Optional[str] = None  # e.g. "key1,key2,key3,key4"
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+    # Model Routing - Gemini 2.5 Flash family (FREE tier).
+    # flash-lite: fast/high-RPD (risk checks, execution, simple tasks)
+    # flash: balanced analysis (news, sentiment, quant)
+    # pro: deep reasoning (portfolio), used sparingly (low free-tier RPD)
+    MODEL_FAST: str = "gemini-2.5-flash-lite"        # fast, ~30 RPM / 1500 RPD FREE
+    MODEL_FREE_FAST: str = "gemini-2.5-flash-lite"   # same as fast (FREE verified)
+    MODEL_BALANCED: str = "gemini-2.5-flash"          # ~10 RPM / 250 RPD FREE
+    MODEL_SMART: str = "gemini-2.5-flash"            # analysis model
+    MODEL_SMART_FREE: str = "gemini-2.5-flash"       # analysis (FREE verified)
+    MODEL_DEEP: str = "gemini-2.5-pro"               # ~5 RPM / 25 RPD FREE - use sparingly
+    MODEL_ALTERNATIVE: str = "gemini-2.5-flash"      # ensemble members
 
     # Binance - Use database settings if available
     BINANCE_API_KEY: Optional[str] = None  # Set via Settings page
     BINANCE_API_SECRET: Optional[str] = None  # Set via Settings page
+    FINNHUB_API_KEY: Optional[str] = None  # Set via Settings page
+    ALPHAVANTAGE_API_KEY: Optional[str] = None  # Set via Settings page
 
     # Solana/Jupiter
     SOLANA_RPC_URL: str = "https://api.mainnet-beta.solana.com"
     JUPITER_API_KEY: Optional[str] = None
 
+    # CCXT market data + live crypto (Nigeria-accessible CEX set, geo-probe gated)
+    # Comma-separated exchange IDs; the geo-probe prunes to whatever works.
+    CCXT_EXCHANGES: str = "bybit,okx,kucoin,gate,htx,bingx,bitget,mexc,kraken,coinbase,bitfinex,bitstamp"
+    CCXT_BINANCE_OPT_IN: bool = False  # Binance only if its public market-data API works from the region
+
+    # Solana memecoin market data (DexScreener discovery + Jupiter execution)
+    DEXSCREENER_API: str = "https://api.dexscreener.com"
+    JUPITER_LITE_API: str = "https://lite-api.jup.ag"
+
     # Copy Trading
     GITHUB_TOKEN: Optional[str] = None
 
+    # WalletConnect project ID (served to frontend via public settings endpoint)
+    WALLETCONNECT_PROJECT_ID: Optional[str] = None
+
     # Security - CRITICAL: Must be changed in production
-    SECRET_KEY: str = "change-this-in-production"  # Generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
+    SECRET_KEY: str = "change-this-in-production"  # Generate: python -c "import secrets; print(secrets.token_urlsafe(48))"
     API_AUTH_KEY: str = "jasper-auth-key-change-me"  # Generate secure random key for production
     
     # Environment
@@ -82,6 +111,7 @@ class Settings(BaseSettings):
     # Security Headers
     SECURITY_HSTS_ENABLED: bool = True
     SECURE_COOKIES: bool = True
+    CORS_ALLOW_CREDENTIALS: bool = True  # Allow credentials in CORS (but validate origins)
     CSRF_PROTECTION_ENABLED: bool = False  # Enable when frontend implements CSRF tokens
 
     # CORS - Frontend URLs
@@ -96,8 +126,12 @@ class Settings(BaseSettings):
     KRONOS_FORECAST_HORIZON: int = 50  # Number of bars to predict
     KRONOS_BATCH_SIZE: int = 3  # Micro-batch size for 4GB RAM
     KRONOS_MEMORY_THRESHOLD: float = 85.0  # Pause inference if RAM > 85%
-    KRONOS_USE_CLOUD: bool = False  # Use HuggingFace/Colab fallback
+    KRONOS_USE_CLOUD: bool = False  # Use HuggingFace/remote fallback (Colab removed)
     HUGGINGFACE_API_TOKEN: Optional[str] = None
+    # DEPRECATED: legacy key referenced by kronos/hybrid_service.py for a Colab
+    # code path that is never invoked (KRONOS_USE_CLOUD=false, no Colab URL set).
+    # Kept only so the module imports cleanly; remove when hybrid_service is stripped.
+    KRONOS_COLAB_STRATEGY: str = "cascade"
 
     # Kronos Remote Service (Render Deployment)
     KRONOS_SERVICE_URL: Optional[str] = None  # Remote Kronos service URL (Render)
@@ -129,6 +163,34 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+
+    # Convenience flags indicating if API keys are configured (env or DB)
+    @property
+    def finnhub_configured(self) -> bool:
+        return bool(self.FINNHUB_API_KEY)
+
+    @property
+    def alphavantage_configured(self) -> bool:
+        return bool(self.ALPHAVANTAGE_API_KEY)
+
+    @property
+    def binance_configured(self) -> bool:
+        return bool(self.BINANCE_API_KEY)
+
+    @property
+    def gemini_configured(self) -> bool:
+        """True if at least one Gemini API key is configured."""
+        return bool(self.GEMINI_API_KEYS)
+
+    @property
+    def supabase_configured(self) -> bool:
+        """True if Supabase project URL + service role key are configured."""
+        return bool(self.SUPABASE_URL and self.SUPABASE_SERVICE_ROLE_KEY)
+
+    @property
+    def using_postgres(self) -> bool:
+        """True if the configured database is Postgres/Supabase (not SQLite)."""
+        return (self.DATABASE_URL or "").startswith(("postgres://", "postgresql://"))
 
 
 settings = Settings()
@@ -171,8 +233,6 @@ def get_api_key_from_settings(key_name: str, fallback: Optional[str] = None) -> 
                         return encryption.decrypt(device_settings.binance_key)
                     elif key_name == "binance_api_secret" and device_settings.binance_secret:
                         return encryption.decrypt(device_settings.binance_secret)
-                    elif key_name == "colab_kronos_url" and device_settings.colab_url:
-                        return device_settings.colab_url
                 
                 return None
         

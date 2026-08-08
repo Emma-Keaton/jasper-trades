@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { TrendingUp, Check, RefreshCw, Info, ExternalLink, Copy } from 'lucide-react';
-import { Toast } from '@/app/page';
+import { Toast } from '@/app/types';
 import InfoModal from './InfoModal';
 
 interface MarketDataSettings {

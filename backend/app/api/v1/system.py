@@ -9,14 +9,8 @@ from datetime import datetime
 
 router = APIRouter()
 
-# Local Kronos imports (deprecated - using remote service)
-try:
-    from app.services.kronos import get_memory_usage, check_memory_safe, get_service_stats as get_kronos_stats
-    KRONOS_LOCAL_AVAILABLE = True
-except ImportError:
-    KRONOS_LOCAL_AVAILABLE = False
+KRONOS_LOCAL_AVAILABLE = False
 
-# Remote Kronos client
 try:
     from app.services.kronos_remote import kronos_client
     KRONOS_REMOTE_AVAILABLE = True
