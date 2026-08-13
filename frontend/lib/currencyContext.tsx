@@ -59,7 +59,7 @@ const localeMap: Record<Currency, string> = {
 
 export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<CurrencyState>(initialState);
-  const [wsConnected, setWsConnected] = useState(false);
+  const [, setWsConnected] = useState(false);
 
   // Load currency preference on mount and fetch initial rate
   
@@ -67,11 +67,11 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     loadCurrencyPreference();
     // Fetch initial exchange rate on mount
     refreshRateHelper();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Connect to WebSocket for real-time rate updates
   useEffect(() => {
-    const deviceId = getOrCreateDeviceId();
     let ws: WebSocket | null = null;
     let reconnectTimeout: NodeJS.Timeout;
 
@@ -164,7 +164,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const refreshRateHelper = async () => {
+  const refreshRateHelper = useCallback(async () => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
@@ -211,12 +211,12 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
         error: e instanceof Error ? e.message : 'Failed to fetch rate',
       }));
     }
-  };
+  }, [state.exchangeRates]);
 
   // Public refreshRate that can be called from components
   const refreshRate = useCallback(async () => {
     await refreshRateHelper();
-  }, []);
+  }, [refreshRateHelper]);
 
   const saveCurrencyPreference = async (currency: Currency) => {
     try {

@@ -71,16 +71,16 @@ export default function BacktestScreen({ selectedAlphaFactors, removeAlphaFactor
         <Card className="p-6 lg:col-span-5">
           <h2 className="text-base font-display font-bold text-slate-900 dark:text-slate-50">Configuration</h2>
           <div className="mt-4 space-y-4">
-            <div><label className="field-label">Strategy name</label><input className="input" value={stratName} onChange={e => setStratName(e.target.value)} /></div>
+            <div><label htmlFor="backtest-strategy-name" className="field-label">Strategy name</label><input id="backtest-strategy-name" className="input" value={stratName} onChange={e => setStratName(e.target.value)} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="field-label">Engine</label><select className="input" value={engine} onChange={e => setEngine(e.target.value)}><option>vibetrader</option><option>backtrader</option></select></div>
-              <div><label className="field-label">Feed</label><select className="input" value={feed} onChange={e => setFeed(e.target.value)}><option>dailyohlc</option><option>intraday</option></select></div>
+              <div><label htmlFor="backtest-engine" className="field-label">Engine</label><select id="backtest-engine" className="input" value={engine} onChange={e => setEngine(e.target.value)}><option>vibetrader</option><option>backtrader</option></select></div>
+              <div><label htmlFor="backtest-feed" className="field-label">Feed</label><select id="backtest-feed" className="input" value={feed} onChange={e => setFeed(e.target.value)}><option>dailyohlc</option><option>intraday</option></select></div>
             </div>
-            <div><label className="field-label">Starting capital</label><input type="number" className="input" value={capital} onChange={e => setCapital(Number(e.target.value))} /></div>
-            <div><label className="field-label">Assets (comma separated)</label><input className="input" value={assetScope} onChange={e => setAssetScope(e.target.value)} /></div>
+            <div><label htmlFor="backtest-capital" className="field-label">Starting capital</label><input id="backtest-capital" type="number" className="input" value={capital} onChange={e => setCapital(Number(e.target.value))} /></div>
+            <div><label htmlFor="backtest-assets" className="field-label">Assets (comma separated)</label><input id="backtest-assets" className="input" value={assetScope} onChange={e => setAssetScope(e.target.value)} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="field-label">From</label><input type="date" className="input" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></div>
-              <div><label className="field-label">To</label><input type="date" className="input" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
+              <div><label htmlFor="backtest-from" className="field-label">From</label><input id="backtest-from" type="date" className="input" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></div>
+              <div><label htmlFor="backtest-to" className="field-label">To</label><input id="backtest-to" type="date" className="input" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
             </div>
 
             <div className="rounded-control border border-slate-200 p-3 dark:border-slate-700">

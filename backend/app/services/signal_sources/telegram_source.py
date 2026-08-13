@@ -23,8 +23,15 @@ _PENDING: Dict[str, TelegramClient] = {}
 
 
 def _api_cfg() -> tuple[int, str, str]:
-    api_id = int(os.getenv("TELEGRAM_API_ID", "12345"))
-    api_hash = os.getenv("TELEGRAM_API_HASH", "x")
+    raw_id = os.getenv("TELEGRAM_API_ID", "").strip()
+    raw_hash = os.getenv("TELEGRAM_API_HASH", "").strip()
+    if not raw_id or not raw_hash:
+        raise RuntimeError(
+            "Telegram signal import is not configured: set TELEGRAM_API_ID and "
+            "TELEGRAM_API_HASH (get them from https://my.telegram.org)."
+        )
+    api_id = int(raw_id)
+    api_hash = raw_hash
     session_name = os.getenv("TELEGRAM_SESSION_NAME", "jasper")
     return api_id, api_hash, session_name
 

@@ -29,14 +29,14 @@ router = APIRouter(prefix="/market-intelligence", tags=["Market Intelligence"])
 async def get_news(
     ticker: Optional[str] = Query(None, description="Filter by ticker symbol (e.g., AAPL)"),
     limit: int = Query(20, ge=1, le=100, description="Maximum number of articles"),
-    sources: Optional[str] = Query(None, description="Comma-separated list of sources (twitter,reddit,v2ex)"),
+    sources: Optional[str] = Query(None, description="Comma-separated list of sources (telegram,reddit,rss,stocktwits)"),
     since: Optional[datetime] = Query(None, description="Articles newer than this datetime"),
     service: MarketIntelService = Depends(get_market_intel_service)
 ):
     """
     Get news articles from multiple sources.
     
-    Returns aggregated news from Twitter, Reddit, V2EX, and other configured channels.
+    Returns aggregated news from Telegram, Reddit, RSS and other configured channels.
     Articles are sorted by timestamp (newest first).
     
     **Example:** Get news about Apple
@@ -46,7 +46,7 @@ async def get_news(
     
     **Example:** Get news from specific sources
     ```
-    GET /api/v1/market-intelligence/news?sources=twitter,reddit&limit=50
+    GET /api/v1/market-intelligence/news?sources=telegram,reddit&limit=50
     ```
     """
     try:
@@ -91,9 +91,8 @@ async def get_sentiment(
       "symbol": "AAPL",
       "overall_score": 65,
       "source_scores": {
-        "twitter": 70,
-        "reddit": 60,
-        "v2ex": 65
+        "telegram": 70,
+        "reddit": 60
       },
       "recent_articles": 15,
       "last_updated": "2026-06-26T10:30:00"
@@ -206,9 +205,8 @@ async def health_check(
     {
       "enabled": true,
       "channels": {
-        "twitter": {"enabled": true, "status": "ok"},
-        "reddit": {"enabled": false, "status": "off"},
-        "v2ex": {"enabled": true, "status": "ok"}
+        "telegram": {"enabled": true, "status": "ok"},
+        "reddit": {"enabled": false, "status": "off"}
       },
       "last_update": "2026-06-26T10:30:00",
       "cached_news_count": 150

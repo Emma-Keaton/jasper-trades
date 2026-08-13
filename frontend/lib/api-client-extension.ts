@@ -3,7 +3,7 @@
  * Exness, Trading Caps, and additional endpoints
  */
 
-import { API_URL, apiRequest } from './api-client';
+import { apiRequest } from './api-client';
 
 // ============ Exness Types ============
 

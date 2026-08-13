@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Key, Shield, Check, X, DollarSign, TrendingUp, Plane, Cpu, Briefcase, Lock, Brain } from 'lucide-react';
+import { Save, Key, Shield, Check, DollarSign, TrendingUp, Plane, Cpu, Briefcase, Lock, Brain } from 'lucide-react';
 import { Toast } from '@/app/types';
-import { SkeletonCard, SkeletonText } from './Skeleton';
+import { SkeletonCard } from './Skeleton';
 import TradingCapsSection from './TradingCapsSection';
-import PayoutSection from './PayoutSection';
 import MarketDataSection from './settings/MarketDataSection';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
@@ -37,7 +36,6 @@ interface TelegramSettings {
 interface SettingsTabProps {
   triggerToast: (type: Toast['type'], title: string, message: string) => void;
   initialTab?: string;
-  onNavigate?: (tab: string) => void;
 }
 
 // Helper functions to compute completion status
@@ -48,7 +46,7 @@ const getApiConfiguredCount = (formData: ApiSettings) => {
   return count;
 };
 
-export default function SettingsTab({ triggerToast, initialTab = 'api', onNavigate }: SettingsTabProps) { 
+export default function SettingsTab({ triggerToast }: SettingsTabProps) { 
   const { resetTours } = useOnboarding();
   const [formData, setFormData] = useState<ApiSettings>({
     nvidia_api_key: '',
@@ -58,7 +56,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     akshare_token: '',
   });
 
-  const [telegram, setTelegram] = useState<TelegramSettings>({
+  const [, setTelegram] = useState<TelegramSettings>({
     bot_token: '',
     chat_id: '',
     enabled: true,
@@ -102,18 +100,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
   const [deviceInfo, setDeviceInfo] = useState('');
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<string>(initialTab);
-  const [testing, setTesting] = useState<string | null>(null);
+  const [, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { valid: boolean; message: string }>>({});
-  const [telegramTestStatus, setTelegramTestStatus] = useState<{testing: boolean; success?: boolean; message?: string}>({ testing: false });
-  const [telegramRequestStatus, setTelegramRequestStatus] = useState<{
-    requesting: boolean;
-    verifying: boolean;
-    codeSent: boolean;
-    success?: boolean;
-    message?: string;
-  }>({ requesting: false, verifying: false, codeSent: false });
-  const [verificationCode, setVerificationCode] = useState('');
   const [portfolioId, setPortfolioId] = useState<number | null>(null);
 
   // Polymarket state
@@ -233,7 +221,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         ...prev,
         [service]: { valid: result.valid, message: result.message }
       }));
-    } catch (error) {
+    } catch {
       setTestResults(prev => ({
         ...prev,
         [service]: { valid: false, message: 'Connection failed' }
@@ -258,7 +246,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Device-ID': localStorage.getItem('device_id') || 'unknown',
+          'X-Device-ID': getOrCreateDeviceId(),
         },
         body: JSON.stringify(payload),
       });
@@ -280,7 +268,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
   const savePaymentGateways = async () => {
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       await fetch(`${API_URL}/api/v1/settings/payment-gateways`, {
         method: 'POST',
         headers: {
@@ -290,167 +278,8 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
         body: JSON.stringify(paymentGateways),
       });
       triggerToast('success', 'Payment Gateways Saved', 'Nigerian bank payout configuration saved.');
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Failed', 'Could not save payment gateway settings.');
-    }
-  };
-
-  const saveTelegram = async () => {
-    try {
-      const deviceId = localStorage.getItem('device_id');
-      await fetch(`${API_URL}/api/v1/settings/telegram/configure`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId! },
-        body: JSON.stringify({
-          chat_id: telegram.chat_id,
-          bot_token: telegram.bot_token,
-          enabled: telegram.enabled,
-          chat_enabled: telegram.chat_enabled,
-        }),
-      });
-      setTelegram({ ...telegram, configured: true });
-      triggerToast('success', 'Telegram Configured', 'Telegram notifications enabled.');
-    } catch (error) {
-      triggerToast('error', 'Failed', 'Could not configure Telegram.');
-    }
-  };
-
-  const testTelegram = async () => {
-    setTelegramTestStatus({ testing: true });
-    try {
-      const res = await fetch(`${API_URL}/api/v1/settings/telegram/test`, {
-        method: 'POST',
-        headers: { 'X-Device-ID': localStorage.getItem('device_id')! },
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setTelegramTestStatus({ testing: false, success: true, message: 'Test message sent! Check your Telegram.' });
-        setTimeout(() => setTelegramTestStatus({ testing: false }), 3000);
-      } else {
-        setTelegramTestStatus({ testing: false, success: false, message: data.detail || 'Failed to send test' });
-      }
-    } catch (error) {
-      setTelegramTestStatus({ testing: false, success: false, message: 'Connection failed' });
-    }
-  };
-
-  const requestVerification = async () => {
-    if (!telegram.chat_id) {
-      setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: 'Please enter your chat ID' });
-      return;
-    }
-
-    setTelegramRequestStatus({ requesting: true, verifying: false, codeSent: false });
-    try {
-      const res = await fetch(`${API_URL}/api/v1/settings/telegram/verify/request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
-        body: JSON.stringify({ chat_id: telegram.chat_id }),
-      });
-      const data = await res.json();
-      
-      if (res.ok && data.success) {
-        setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: true, success: true, message: `Verification code sent to ${telegram.chat_id.slice(0, 5)}***` });
-      } else {
-        setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: data.detail || 'Failed to send code' });
-      }
-    } catch (error) {
-      setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: false, success: false, message: 'Failed to send verification code' });
-    }
-  };
-
-  const confirmVerification = async () => {
-    if (!verificationCode || verificationCode.length !== 6) {
-      setTelegramRequestStatus(prev => ({ ...prev, verifying: false, success: false, message: 'Please enter a 6-digit code' }));
-      return;
-    }
-
-    setTelegramRequestStatus(prev => ({ ...prev, verifying: true }));
-    try {
-      const res = await fetch(`${API_URL}/api/v1/settings/telegram/verify/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
-        body: JSON.stringify({ chat_id: telegram.chat_id, verification_code: verificationCode }),
-      });
-      const data = await res.json();
-      
-      if (res.ok && data.success) {
-        setTelegram({ ...telegram, is_verified: true });
-        setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: false, success: true, message: 'Telegram verified successfully!' });
-        setVerificationCode('');
-        loadTelegramPreferences();
-        triggerToast('success', 'Verified', 'Telegram number verified successfully');
-      } else {
-        setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: true, success: false, message: data.detail || 'Invalid or expired code' });
-      }
-    } catch (error) {
-      setTelegramRequestStatus({ requesting: false, verifying: false, codeSent: true, success: false, message: 'Verification failed' });
-    }
-  };
-
-  const saveTelegramPreferences = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/v1/settings/telegram/preferences`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
-        body: JSON.stringify({
-          trade_notifications_enabled: telegram.trade_notifications_enabled,
-          daily_summary_enabled: telegram.daily_summary_enabled,
-          summary_time_wat: telegram.summary_time_wat || '20:00',
-          chat_enabled: telegram.chat_enabled,
-          ai_explanations_enabled: telegram.ai_explanations_enabled,
-        }),
-      });
-      const data = await res.json();
-      
-      if (res.ok && data.success) {
-        triggerToast('success', 'Preferences Saved', 'Telegram notification preferences updated');
-        await saveTelegramLegacy();
-      } else {
-        triggerToast('error', 'Failed', data.detail || 'Could not save preferences');
-      }
-    } catch (error) {
-      triggerToast('error', 'Failed', 'Could not save Telegram preferences');
-    }
-  };
-
-  const saveTelegramLegacy = async () => {
-    try {
-      await fetch(`${API_URL}/api/v1/settings/telegram/configure`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': localStorage.getItem('device_id')! },
-        body: JSON.stringify({
-          chat_id: telegram.chat_id,
-          bot_token: telegram.bot_token,
-          enabled: telegram.trade_notifications_enabled,
-          chat_enabled: telegram.chat_enabled,
-        }),
-      });
-    } catch (error) {
-      // Ignore legacy errors
-    }
-  };
-
-  const loadTelegramPreferences = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/v1/settings/telegram/status`, {
-        headers: { 'X-Device-ID': localStorage.getItem('device_id')! },
-      });
-      const data = await res.json();
-      
-      if (data.is_configured && data.is_verified) {
-        setTelegram(prev => ({
-          ...prev,
-          is_verified: true,
-          trade_notifications_enabled: data.preferences?.trade_notifications_enabled ?? true,
-          daily_summary_enabled: data.preferences?.daily_summary_enabled ?? true,
-          summary_time_wat: data.preferences?.summary_time_wat ?? '20:00',
-          chat_enabled: data.preferences?.chat_enabled ?? true,
-          ai_explanations_enabled: data.preferences?.ai_explanations_enabled ?? true,
-        }));
-      }
-    } catch (error) {
-      // Ignore errors
     }
   };
 
@@ -458,7 +287,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
   const checkPolymarketConnection = async () => {
     try {
-      const deviceId = localStorage.getItem('device_id');
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/polymarket/connection/status`, {
         headers: { 'X-Device-ID': deviceId! },
       });
@@ -491,7 +320,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     setPolymarket(prev => ({ ...prev, loading: true, message: '' }));
 
     try {
-      const deviceId = localStorage.getItem('device_id');
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/polymarket/connection/configure`, {
         method: 'POST',
         headers: {
@@ -524,7 +353,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           success: false,
         }));
       }
-    } catch (error) {
+    } catch {
       setPolymarket(prev => ({
         ...prev,
         loading: false,
@@ -538,7 +367,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     if (!confirm('Are you sure you want to disconnect your Polymarket account?')) return;
 
     try {
-      const deviceId = localStorage.getItem('device_id');
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/polymarket/connection`, {
         method: 'DELETE',
         headers: { 'X-Device-ID': deviceId! },
@@ -567,7 +396,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           success: false,
         }));
       }
-    } catch (error) {
+    } catch {
       setPolymarket(prev => ({
         ...prev,
         message: 'Failed to disconnect',
@@ -578,7 +407,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
   const refreshBalance = async () => {
     try {
-      const deviceId = localStorage.getItem('device_id');
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/polymarket/account/balance`, {
         headers: { 'X-Device-ID': deviceId! },
       });
@@ -596,26 +425,9 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
     }
   };
 
-  const loadLeaders = async () => {
-    try {
-      const deviceId = localStorage.getItem('device_id');
-      const res = await fetch(`${API_URL}/api/v1/polymarket/leaders?limit=10`, {
-        headers: { 'X-Device-ID': deviceId! },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setPolymarket(prev => ({ ...prev, leaders: data.leaders || [] }));
-        setShowLeaders(true);
-      }
-    } catch (error) {
-      console.error('Failed to load leaders:', error);
-    }
-  };
-
   const followLeader = async (leaderId: string, leaderName: string) => {
     try {
-      const deviceId = localStorage.getItem('device_id');
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/polymarket/leader/${leaderId}/follow`, {
         method: 'POST',
         headers: {
@@ -648,7 +460,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
           success: false,
         }));
       }
-    } catch (error) {
+    } catch {
       setPolymarket(prev => ({
         ...prev,
         message: 'Failed to follow leader',
@@ -659,7 +471,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
   const savePayoutSettings = async () => {
     try {
-      const deviceId = localStorage.getItem('device_id');
+      const deviceId = getOrCreateDeviceId();
       await fetch(`${API_URL}/api/v1/withdrawal/payout/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId! },
@@ -672,7 +484,7 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       });
       setPayoutSettings({ ...payoutSettings, configured: true });
       triggerToast('success', 'Auto-Payout Configured', 'Daily profit auto-payout settings saved.');
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Failed', 'Could not save payout settings.');
     }
   };
@@ -694,26 +506,15 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
       } else {
         triggerToast('error', 'Invalid Wallet', data.message);
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Validation Failed', 'Could not validate wallet address');
-    }
-  };
-
-  const testNotification = async (channel: string) => {
-    try {
-      const res = await fetch(`${API_URL}/api/v1/notify/test`, { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        triggerToast('success', 'Test Sent', `Test notification sent to ${channel}`);
-      }
-    } catch (error) {
-      triggerToast('error', 'Test Failed', `Could not send test to ${channel}`);
     }
   };
 
   useEffect(() => {
     fetchSettings();
     checkPolymarketConnection();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {
@@ -884,8 +685,9 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
               </div>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Key</label>
+                  <label htmlFor="binance-api-key" className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Key</label>
                   <input
+                    id="binance-api-key"
                     type="password"
                     value={formData.binance_api_key}
                     onChange={(e) => envStatus?.environment_variables?.binance_api_key?.configured
@@ -908,8 +710,9 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Secret</label>
+                  <label htmlFor="binance-api-secret" className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Secret</label>
                   <input
+                    id="binance-api-secret"
                     type="password"
                     value={formData.binance_api_secret}
                     onChange={(e) => envStatus?.environment_variables?.binance_api_secret?.configured
@@ -981,8 +784,9 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                   
                   <div className="space-y-3 mb-3">
                     <div>
-                      <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">API Key</label>
+                      <label htmlFor="polymarket-api-key" className="text-xs text-slate-500 dark:text-slate-400 block mb-1">API Key</label>
                       <input
+                        id="polymarket-api-key"
                         type="password"
                         value={polymarket.api_key}
                         onChange={(e) => setPolymarket({...polymarket, api_key: e.target.value})}
@@ -992,8 +796,9 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
                     </div>
                     
                     <div>
-                      <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">API Secret</label>
+                      <label htmlFor="polymarket-api-secret" className="text-xs text-slate-500 dark:text-slate-400 block mb-1">API Secret</label>
                       <input
+                        id="polymarket-api-secret"
                         type="password"
                         value={polymarket.api_secret}
                         onChange={(e) => setPolymarket({...polymarket, api_secret: e.target.value})}
@@ -1156,9 +961,10 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
               {/* Crypto Wallet */}
               <div className="mb-3">
-                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Crypto Wallet Address (USDC/USDT)</label>
+                <label htmlFor="crypto-wallet" className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Crypto Wallet Address (USDC/USDT)</label>
                 <div className="flex gap-2">
                   <input
+                    id="crypto-wallet"
                     type="text"
                     value={payoutSettings.crypto_wallet}
                     onChange={(e) => setPayoutSettings({...payoutSettings, crypto_wallet: e.target.value})}
@@ -1192,8 +998,9 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
               {/* Payout Percentage */}
               <div className="mb-3">
-                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Payout Percentage</label>
+                <label htmlFor="payout-percentage" className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Payout Percentage</label>
                 <input
+                  id="payout-percentage"
                   type="range"
                   min="0"
                   max="100"
@@ -1213,8 +1020,9 @@ export default function SettingsTab({ triggerToast, initialTab = 'api', onNaviga
 
               {/* Payout Schedule Time */}
               <div className="mb-3">
-                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Payout Time (ET)</label>
+                <label htmlFor="payout-time" className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Payout Time (ET)</label>
                 <select
+                  id="payout-time"
                   value={payoutSettings.payout_schedule_hour}
                   onChange={(e) => setPayoutSettings({...payoutSettings, payout_schedule_hour: parseInt(e.target.value)})}
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm"

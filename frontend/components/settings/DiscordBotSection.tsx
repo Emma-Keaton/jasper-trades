@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { MessageSquare, Check, Send, Hash, Users } from 'lucide-react';
+import { MessageSquare, Check, Send, Hash } from 'lucide-react';
 import { Toast } from '@/app/types';
 import InfoModal, { SetupStep, ApiLink, BenefitItem } from './InfoModal';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 interface DiscordBotSettings {
   bot_token: string;
@@ -29,7 +30,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
 
   const saveDiscordSettings = async () => {
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/settings/discord-bot`, {
         method: 'POST',
         headers: {
@@ -44,7 +45,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
       } else {
         triggerToast('error', 'Save Failed', 'Could not save Discord bot settings');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Save Failed', 'Could not save Discord bot settings');
     }
   };
@@ -57,7 +58,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
 
     setTesting(true);
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/discord/start`, {
         method: 'POST',
         headers: {
@@ -72,7 +73,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
       } else {
         triggerToast('error', 'Start Failed', 'Could not start Discord bot');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Start Failed', 'Could not start Discord bot');
     } finally {
       setTesting(false);
@@ -87,7 +88,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
 
     setTesting(true);
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/discord/test`, {
         method: 'POST',
         headers: {
@@ -102,7 +103,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
       } else {
         triggerToast('error', 'Send Failed', 'Could not send message');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Send Failed', 'Could not send message');
     } finally {
       setTesting(false);
@@ -177,10 +178,11 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
 
         {/* Guild ID (Server ID) */}
         <div>
-          <label className="block text-sm text-gray-300 mb-2 flex items-center gap-2">
+          <label htmlFor="discordGuildId" className="block text-sm text-gray-300 mb-2 flex items-center gap-2">
             Server ID (Guild ID)
           </label>
           <input
+            id="discordGuildId"
             type="text"
             value={discord.guild_id}
             onChange={(e) => setDiscord({...discord, guild_id: e.target.value})}
@@ -194,11 +196,12 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
 
         {/* Channel ID */}
         <div>
-          <label className="block text-sm text-gray-300 mb-2 flex items-center gap-2">
+          <label htmlFor="discordChannelId" className="block text-sm text-gray-300 mb-2 flex items-center gap-2">
             <Hash className="w-3 h-3" />
             Channel ID
           </label>
           <input
+            id="discordChannelId"
             type="text"
             value={discord.channel_id}
             onChange={(e) => setDiscord({...discord, channel_id: e.target.value})}
@@ -236,9 +239,10 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
         {/* Test Message */}
         {discord.enabled && (
           <div className="border-t border-[#475569] pt-4 mt-4">
-            <label className="block text-sm text-gray-300 mb-2">Send Test Message</label>
+            <label htmlFor="discordTestMessage" className="block text-sm text-gray-300 mb-2">Send Test Message</label>
             <div className="flex gap-2">
               <input
+                id="discordTestMessage"
                 type="text"
                 value={testMessageText}
                 onChange={(e) => setTestMessageText(e.target.value)}
@@ -313,7 +317,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
             <p className="text-gray-300">
               Unlike webhooks (send-only), the Discord bot enables two-way communication.
               Users can type commands like `!portfolio` and get instant responses.
-              The bot can also answer trading questions using Jasper's AI.
+              The bot can also answer trading questions using Jasper&apos;s AI.
             </p>
           </div>
 
@@ -336,10 +340,10 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
                 <ApiLink href="https://discord.com/developers/applications">Discord Developer Portal</ApiLink>
               </SetupStep>
               <SetupStep number={2}>
-                Click "New Application" → Name it "Jasper Trades" → Create
+                Click &quot;New Application&quot; → Name it &quot;Jasper Trades&quot; → Create
               </SetupStep>
               <SetupStep number={3}>
-                Go to "Bot" in left sidebar → Click "Add Bot" → "Yes, do it!"
+                Go to &quot;Bot&quot; in left sidebar → Click &quot;Add Bot&quot; → &quot;Yes, do it!&quot;
               </SetupStep>
             </div>
           </div>
@@ -348,16 +352,16 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
             <h4 className="font-semibold text-white mb-2">Step 2: Get Bot Token</h4>
             <div className="space-y-3">
               <SetupStep number={1}>
-                In Bot settings, find "Token" section
+                In Bot settings, find &quot;Token&quot; section
               </SetupStep>
               <SetupStep number={2}>
-                Click "Reset Bot Token" (or "Copy Token" if already exists)
+                Click &quot;Reset Bot Token&quot; (or &quot;Copy Token&quot; if already exists)
               </SetupStep>
               <SetupStep number={3}>
-                <strong>IMPORTANT:</strong> You'll only see the token ONCE! Copy it immediately.
+                <strong>IMPORTANT:</strong> You&apos;ll only see the token ONCE! Copy it immediately.
               </SetupStep>
               <SetupStep number={4}>
-                Paste the token in the "Bot Token" field above
+                Paste the token in the &quot;Bot Token&quot; field above
               </SetupStep>
             </div>
           </div>
@@ -366,13 +370,13 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
             <h4 className="font-semibold text-white mb-2">Step 3: Add Bot to Your Server</h4>
             <div className="space-y-3">
               <SetupStep number={1}>
-                Go to "OAuth2" → "URL Generator"
+                Go to &quot;OAuth2&quot; → &quot;URL Generator&quot;
               </SetupStep>
               <SetupStep number={2}>
                 Select scopes: <code className="bg-[#0F172A] px-2 py-0.5 rounded text-xs">bot</code> and <code className="bg-[#0F172A] px-2 py-0.5 rounded text-xs">applications.commands</code>
               </SetupStep>
               <SetupStep number={3}>
-                Under "Bot Permissions", select:
+                Under &quot;Bot Permissions&quot;, select:
                 <ul className="mt-2 space-y-1 text-xs">
                   <li>• Send Messages</li>
                   <li>• Read Message History</li>
@@ -393,13 +397,13 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
             <h4 className="font-semibold text-white mb-2">Step 4: Get Server & Channel IDs</h4>
             <div className="space-y-3">
               <SetupStep number={1}>
-                In Discord: User Settings → Advanced → Enable "Developer Mode"
+                In Discord: User Settings → Advanced → Enable &quot;Developer Mode&quot;
               </SetupStep>
               <SetupStep number={2}>
-                <strong>Server ID:</strong> Right-click your server icon → "Copy ID"
+                <strong>Server ID:</strong> Right-click your server icon → &quot;Copy ID&quot;
               </SetupStep>
               <SetupStep number={3}>
-                <strong>Channel ID:</strong> Right-click the channel → "Copy ID"
+                <strong>Channel ID:</strong> Right-click the channel → &quot;Copy ID&quot;
               </SetupStep>
               <SetupStep number={4}>
                 Paste both IDs in the fields above
@@ -411,13 +415,13 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
             <h4 className="font-semibold text-white mb-2">Step 5: Start the Bot</h4>
             <div className="space-y-3">
               <SetupStep number={1}>
-                Make sure "Enable Discord bot" is checked
+                Make sure &quot;Enable Discord bot&quot; is checked
               </SetupStep>
               <SetupStep number={2}>
-                Click "Start Bot" button
+                Click &quot;Start Bot&quot; button
               </SetupStep>
               <SetupStep number={3}>
-                Watch for "Bot Connected" status (green)
+                Watch for &quot;Bot Connected&quot; status (green)
               </SetupStep>
               <SetupStep number={4}>
                 Type <code className="bg-[#0F172A] px-2 py-0.5 rounded text-xs">!help</code> in your Discord channel to test
@@ -432,14 +436,14 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
               <div><code className="bg-[#0F172A] px-2 py-0.5 rounded">!trades</code> - Recent trades today</div>
               <div><code className="bg-[#0F172A] px-2 py-0.5 rounded">!help</code> - List all commands</div>
               <div><code className="bg-[#0F172A] px-2 py-0.5 rounded">!status</code> - Bot connection status</div>
-              <div className="mt-2 text-gray-400">Plus AI chat: Ask questions like "Should I buy AAPL?"</div>
+              <div className="mt-2 text-gray-400">Plus AI chat: Ask questions like &quot;Should I buy AAPL?&quot;</div>
             </div>
           </div>
 
           <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
             <h4 className="font-semibold text-red-400 mb-2">⚠️ Security Warning:</h4>
             <p className="text-gray-300 text-xs">
-              Never share your bot token! It's like a password. If accidentally exposed, 
+              Never share your bot token! It&apos;s like a password. If accidentally exposed, 
               immediately reset it in Discord Developer Portal.
             </p>
           </div>

@@ -317,6 +317,25 @@ export const signalsAPI = {
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone, code, password }),
     }),
+  telegramDisconnect: (deviceId: string) =>
+    apiRequest<any>(`/api/v1/signals/telegram/disconnect`, {
+      method: 'POST',
+      headers: { 'X-Device-ID': deviceId },
+    }),
+  getSignalSettings: (deviceId: string) =>
+    apiRequest<any>(`/api/v1/signals/settings`, {
+      headers: { 'X-Device-ID': deviceId },
+    }),
+  saveSignalSettings: (deviceId: string, payload: any) =>
+    apiRequest<any>(`/api/v1/signals/settings`, {
+      method: 'POST',
+      headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  getSignalsStatus: (deviceId: string) =>
+    apiRequest<any>(`/api/v1/signals/status`, {
+      headers: { 'X-Device-ID': deviceId },
+    }),
 };
 
 // Backtest APIs

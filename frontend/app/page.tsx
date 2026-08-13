@@ -1,14 +1,16 @@
 ﻿'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import {
   Home as HomeIcon, Briefcase, TrendingUp, Radio, Settings as SettingsIcon,
-  Compass, Microscope, Sun, Moon, Coins, Bell, Menu, X,
+  Compass, Microscope, Sun, Moon, Coins, Bell, X,
 } from 'lucide-react';
 import { usePriceStream } from '@/hooks/usePriceStream';
 import { usePortfolioHistory } from '@/hooks/usePortfolioHistory';
-import { websocketClient, ConnectionStatus } from '@/lib/websocket';
+import { ConnectionStatus } from '@/lib/websocket';
 import { useCurrency } from '@/lib/currencyContext';
+import { fetchTradingMode } from '@/lib/preferences';
 import { useTheme } from '@/lib/theme';
 import { Holding, TradeHistoryItem, Toast } from '@/app/types';
 import { Badge } from '@/components/ui';
@@ -20,7 +22,7 @@ import HomeScreen from '@/components/screens/HomeScreen';
 import TradesScreen from '@/components/screens/TradesScreen';
 import MarketsScreen from '@/components/screens/MarketsScreen';
 import SignalsScreen from '@/components/screens/SignalsScreen';
-import SettingsScreen from '@/components/screens/SettingsScreen';
+import SettingsScreen, { StepId } from '@/components/screens/SettingsScreen';
 import BacktestScreen from '@/components/screens/BacktestScreen';
 import AlphaZooScreen from '@/components/screens/AlphaZooScreen';
 
@@ -55,7 +57,9 @@ const ADVANCED_TABS = [
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<string>('home');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [, setSidebarOpen] = useState(false);
+  const [settingsDefaultOpen, setSettingsDefaultOpen] = useState<StepId | null>(null);
+  const [tradingMode, setTradingMode] = useState<'practice' | 'live' | null>(null);
 
   const [cash, setCash] = useState<number>(0);
   const [holdings, setHoldings] = useState<Holding[]>([]);
@@ -64,10 +68,10 @@ export default function Home() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [backendConnected, setBackendConnected] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
-  const [wsStatus, setWsStatus] = useState<ConnectionStatus>('disconnected');
+const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
   const [selectedAlphaFactors, setSelectedAlphaFactors] = useState<string[]>([]);
 
-  const { isConnected: wsConnected } = usePriceStream({
+  usePriceStream({
     onPriceUpdate: (update) => {
       setHoldings(prev => prev.map(h =>
         h.symbol === update.symbol
@@ -87,6 +91,10 @@ export default function Home() {
   }, []);
 
   const removeToast = useCallback((id: string) => setToasts(prev => prev.filter(t => t.id !== id)), []);
+
+  useEffect(() => {
+    fetchTradingMode().then(setTradingMode);
+  }, [activeTab, settingsDefaultOpen]);
 
   const fetchBackendData = useCallback(async () => {
     setLoading(true);
@@ -160,26 +168,6 @@ export default function Home() {
     return () => clearInterval(t);
   }, [fetchBackendData, refreshBackendData]);
 
-  const executeTradeFromSignal = useCallback(async (symbol: string, type: 'BUY' | 'SELL', shares: number, price: number, total: number, agentName: string) => {
-    if (type === 'BUY' && total > cash) {
-      triggerToast('error', 'Not enough cash', `Available: ${cash.toLocaleString()}.`);
-      return;
-    }
-    const portfolioResult = await apiRequest<any[]>('/api/v1/portfolio');
-    if (!portfolioResult.data || portfolioResult.data.length === 0) {
-      triggerToast('error', 'No portfolio', 'Please create a portfolio first.');
-      return;
-    }
-    const portfolioId = portfolioResult.data[0].id;
-    const tradeResult = await apiRequest<any>('/api/v1/trading/execute', {
-      method: 'POST',
-      body: JSON.stringify({ portfolio_id: portfolioId, symbol, type, shares, order_type: 'MARKET' }),
-    });
-    if (tradeResult.error) { triggerToast('error', 'Trade failed', tradeResult.error); return; }
-    triggerToast('success', 'Trade placed', `${type} ${shares} ${symbol}.`);
-    setTimeout(fetchBackendData, 1000);
-  }, [cash, fetchBackendData, triggerToast]);
-
   const addAlphaFactor = useCallback((name: string) => {
     setSelectedAlphaFactors(prev => {
       if (prev.includes(name)) { triggerToast('info', 'Already added', `${name} is in your strategy.`); return prev; }
@@ -196,7 +184,31 @@ export default function Home() {
   const { currency, toggleCurrency } = useCurrency();
   const { theme, toggleTheme } = useTheme();
 
-  const nav = (t: string) => { setActiveTab(t); setSidebarOpen(false); };
+  const nav = (t: string, opts?: { defaultOpen?: StepId }) => {
+    if (t === 'settings' && opts?.defaultOpen) setSettingsDefaultOpen(opts.defaultOpen);
+    setActiveTab(t);
+    setSidebarOpen(false);
+  };
+
+  // Handle cTrader OAuth callback redirect (?ctrader_connected=true&id=… / ?ctrader_error=…)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get('ctrader_connected');
+    const error = params.get('ctrader_error');
+    const id = params.get('id');
+    if (connected === 'true') {
+      triggerToast('success', 'cTrader Connected', `Account connected for auto-trading${id ? ` (id ${id})` : ''}.`);
+      setActiveTab('settings');
+      setSettingsDefaultOpen('wallet');
+    } else if (error) {
+      triggerToast('error', 'cTrader Connection Failed', decodeURIComponent(error));
+    }
+    if (connected || error) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   let content: React.ReactNode;
   switch (activeTab) {
@@ -207,10 +219,10 @@ export default function Home() {
       content = <MarketsScreen onNavigate={nav} triggerToast={triggerToast} />;
       break;
     case 'signals':
-      content = <SignalsScreen triggerToast={triggerToast} executeTrade={executeTradeFromSignal} />;
+      content = <SignalsScreen triggerToast={triggerToast} />;
       break;
     case 'settings':
-      content = <SettingsScreen triggerToast={triggerToast} onNavigate={nav} />;
+      content = <SettingsScreen triggerToast={triggerToast} onNavigate={nav} defaultOpen={settingsDefaultOpen} onDefaultOpenConsumed={() => setSettingsDefaultOpen(null)} />;
       break;
     case 'backtest':
       content = <BacktestScreen selectedAlphaFactors={selectedAlphaFactors} removeAlphaFactor={removeAlphaFactor} triggerToast={triggerToast} onNavigate={nav} />;
@@ -229,6 +241,7 @@ export default function Home() {
           portfolioInitialized={portfolioInitialized}
           loading={loading}
           backendConnected={backendConnected}
+          triggerToast={triggerToast}
           onNavigate={nav}
         />
       );
@@ -240,7 +253,7 @@ export default function Home() {
         {/* ===== Mobile top bar ===== */}
         <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/85 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 md:hidden">
           <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="Jasper" className="h-7 w-7 object-contain" />
+            <Image src="/logo.png" alt="Jasper" width={28} height={28} className="h-7 w-7 object-contain" />
             <span className="font-display text-base font-bold tracking-tight">Jasper</span>
           </div>
           <div className="flex items-center gap-1">
@@ -255,7 +268,7 @@ export default function Home() {
           {/* ===== Desktop sidebar ===== */}
           <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 md:flex">
             <div className="flex items-center gap-2.5 px-6 pb-6 pt-6">
-              <img src="/logo.png" alt="Jasper" className="h-9 w-9 object-contain" />
+              <Image src="/logo.png" alt="Jasper" width={36} height={36} className="h-9 w-9 object-contain" />
               <div>
                 <p className="font-display text-lg font-bold leading-none tracking-tight">Jasper</p>
                 <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.18em] text-brand-600 dark:text-brand-300">AI Trader</p>
@@ -329,7 +342,9 @@ export default function Home() {
                   <span className={`h-1.5 w-1.5 rounded-full ${backendConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                   {backendConnected ? 'Connected' : 'Offline'}
                 </span>
-                <Badge tone="accent">Practice</Badge>
+                <Badge tone={tradingMode === 'live' ? 'accent' : 'up'}>
+                  {tradingMode === 'live' ? 'Live' : 'Practice'}
+                </Badge>
               </div>
             </header>
 

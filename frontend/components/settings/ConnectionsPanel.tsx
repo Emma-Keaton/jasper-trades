@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Briefcase, Coins, Plug, Trash2, Loader2, Zap, Globe, Link as LinkIcon, Save, CheckCircle2 } from 'lucide-react';
+import Image from 'next/image';
+import { Briefcase, Coins, Plug, Trash2, Loader2, Zap, Globe, Link as LinkIcon, Save, CheckCircle2, ExternalLink } from 'lucide-react';
 import { Card, Button } from '@/components/ui';
 import WalletConnect from '@/components/portfolio/WalletConnect';
 import { API_URL } from '@/lib/constants';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 export type ConnectionsTab = 'wallet' | 'broker';
 
@@ -21,6 +23,61 @@ interface ConnectionsPanelProps {
   triggerToast: (type: 'success' | 'error' | 'info', title: string, message: string) => void;
 }
 
+// Fast links to each exchange's API-key management page (shown next to the exchange picker).
+const EXCHANGE_KEY_URLS: Record<string, string> = {
+  binance: 'https://www.binance.com/en/my/settings/api-management',
+  'binanceus': 'https://www.binance.us/en/usercenter/settings/api-management',
+  coinbase: 'https://www.coinbase.com/settings/api',
+  'coinbasepro': 'https://www.coinbase.com/settings/api',
+  'coinbaseexchange': 'https://exchange.coinbase.com/settings/api',
+  kraken: 'https://www.kraken.com/u/security/api',
+  'krakenfutures': 'https://futures.kraken.com/settings/keys',
+  okx: 'https://www.okx.com/account/my-api',
+  bybit: 'https://www.bybit.com/app/user/api-management',
+  kucoin: 'https://www.kucoin.com/account/api',
+  gate: 'https://www.gate.io/myaccount/developers',
+  'gateio': 'https://www.gate.io/myaccount/developers',
+  bitget: 'https://www.bitget.com/account/newapi',
+  mexc: 'https://www.mexc.com/api',
+  huobi: 'https://www.htx.com/account/api/',
+  'htx': 'https://www.htx.com/account/api/',
+  bitfinex: 'https://www.bitfinex.com/api',
+  gemini: 'https://exchange.gemini.com/settings/api',
+  poloniex: 'https://poloniex.com/apiKeys',
+  crypto: 'https://crypto.com/exchange/settings/apiKey',
+  'cryptocom': 'https://crypto.com/exchange/settings/apiKey',
+  binancecoinm: 'https://www.binance.com/en/my/settings/api-management',
+  binanceusdm: 'https://www.binance.com/en/my/settings/api-management',
+  phemex: 'https://phemex.com/account/api-management',
+  deribit: 'https://www.deribit.com/account/api',
+  bitstamp: 'https://www.bitstamp.net/account/security/api/',
+  whitebit: 'https://whitebit.com/settings/api-keys',
+  luno: 'https://www.luno.com/wallet/settings/api_keys',
+};
+
+// Logos for the exchange fast links (commons-safe SVGs / brand CDNs).
+const EXCHANGE_LOGOS: Record<string, string> = {
+  binance: 'https://upload.wikimedia.org/wikipedia/commons/6/6f/Binance_Logo_2024.png',
+  coinbase: 'https://static.coinbase.com/assets/cb-logo.svg',
+  kraken: 'https://www.kraken.com/static/images/favicon.ico',
+  okx: 'https://www.okx.com/favicon.ico',
+  bybit: 'https://www.bybit.com/favicon.ico',
+  kucoin: 'https://www.kucoin.com/favicon.ico',
+  gate: 'https://www.gate.io/favicon.ico',
+  bitfinex: 'https://www.bitfinex.com/favicon.ico',
+  gemini: 'https://exchange.gemini.com/favicon.ico',
+  deribit: 'https://www.deribit.com/favicon.ico',
+  bitstamp: 'https://www.bitstamp.net/favicon.ico',
+};
+
+function exchangeKeyUrl(exchange: string): string | null {
+  return EXCHANGE_KEY_URLS[exchange.toLowerCase()] || null;
+}
+
+function exchangeLogo(exchange: string): string | null {
+  return EXCHANGE_LOGOS[exchange.toLowerCase()] || null;
+}
+
 export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }: ConnectionsPanelProps) {
   const [tab, setTab] = useState<ConnectionsTab>(initialTab);
   const [ccxtCreds, setCcxtCreds] = useState<BrokerCredential[]>([]);
@@ -32,18 +89,20 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
   const [ccxtSecret, setCcxtSecret] = useState('');
   const [savingCcxt, setSavingCcxt] = useState(false);
 
+  const deviceId = getOrCreateDeviceId();
+
   useEffect(() => {
-    fetch(`${API_URL}/api/v1/crypto-connector`, { credentials: 'include' })
+    fetch(`${API_URL}/api/v1/crypto-connector`, { headers: { 'X-Device-ID': deviceId } })
       .then((r) => r.json())
       .then((d) => setCcxtCreds(Array.isArray(d) ? d : []))
       .catch(() => console.error('Failed to load crypto creds'))
       .finally(() => setLoadingCcxt(false));
 
-    fetch(`${API_URL}/api/v1/exchanges/`, { credentials: 'include' })
+    fetch(`${API_URL}/api/v1/exchanges/`)
       .then((r) => r.json())
       .then((d) => setExchanges(Array.isArray(d) ? d : []))
       .catch(() => console.error('Failed to load exchanges'));
-  }, []);
+  }, [deviceId]);
 
   const handleSaveCcxt = async () => {
     if (!ccxtExchange) {
@@ -54,16 +113,15 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
     try {
       const res = await fetch(`${API_URL}/api/v1/crypto-connector`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
         body: JSON.stringify({
           exchange: ccxtExchange,
           api_key: ccxtApiKey || null,
           api_secret: ccxtSecret || null,
         }),
-        credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to save');
-      const refreshed = await fetch(`${API_URL}/api/v1/crypto-connector`, { credentials: 'include' }).then((r) => r.json());
+      const refreshed = await fetch(`${API_URL}/api/v1/crypto-connector`, { headers: { 'X-Device-ID': deviceId } }).then((r) => r.json());
       setCcxtCreds(Array.isArray(refreshed) ? refreshed : []);
       setCcxtApiKey('');
       setCcxtSecret('');
@@ -81,7 +139,7 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
     try {
       await fetch(`${API_URL}/api/v1/crypto-connector/${id}`, {
         method: 'DELETE',
-        credentials: 'include',
+        headers: { 'X-Device-ID': deviceId },
       });
       setCcxtCreds((prev) => prev.filter((c) => c.id !== id));
       triggerToast('success', 'Removed', 'Exchange credential removed.');
@@ -145,8 +203,8 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
 
             <div className="mb-4 space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Exchange</label>
-                <select value={ccxtExchange} onChange={(e) => setCcxtExchange(e.target.value)} className={inputCls}>
+                <label htmlFor="ccxt-exchange" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Exchange</label>
+                <select id="ccxt-exchange" value={ccxtExchange} onChange={(e) => setCcxtExchange(e.target.value)} className={inputCls}>
                   <option value="">Select exchange…</option>
                   {exchanges.map((ex) => (
                     <option key={ex} value={ex}>
@@ -154,10 +212,38 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
                     </option>
                   ))}
                 </select>
+                {ccxtExchange && (() => {
+                  const url = exchangeKeyUrl(ccxtExchange);
+                  const logo = exchangeLogo(ccxtExchange);
+                  if (url) {
+                    return (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-brand-500/50 dark:hover:bg-brand-500/10 dark:hover:text-brand-300"
+                      >
+                        {logo ? (
+                          <Image src={logo} alt={`${ccxtExchange} logo`} width={14} height={14} unoptimized className="h-3.5 w-3.5 rounded-sm object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                        ) : (
+                          <Coins className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
+                        )}
+                        Get API keys on {ccxtExchange}
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    );
+                  }
+                  return (
+                    <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                      Generate an API key on {ccxtExchange}&apos;s website with spot-trading (read) permissions.
+                    </p>
+                  );
+                })()}
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">API Key</label>
+                <label htmlFor="ccxt-api-key" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">API Key</label>
                 <input
+                  id="ccxt-api-key"
                   type="text"
                   value={ccxtApiKey}
                   onChange={(e) => setCcxtApiKey(e.target.value)}
@@ -166,8 +252,9 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">API Secret</label>
+                <label htmlFor="ccxt-api-secret" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">API Secret</label>
                 <input
+                  id="ccxt-api-secret"
                   type="password"
                   value={ccxtSecret}
                   onChange={(e) => setCcxtSecret(e.target.value)}
@@ -236,16 +323,6 @@ function BadgeDot({ tone, label }: { tone: 'up' | 'down' | 'neutral'; label: str
       {label}
     </span>
   );
-}
-
-function getDeviceId(): string {
-  if (typeof window === 'undefined') return 'dev_unknown';
-  let deviceId = localStorage.getItem('device_id');
-  if (!deviceId) {
-    deviceId = 'dev_' + Math.random().toString(36).substring(2, 15);
-    localStorage.setItem('device_id', deviceId);
-  }
-  return deviceId;
 }
 
 function SectionField({ label, children }: { label: string; children: React.ReactNode }) {
@@ -367,7 +444,7 @@ function TroveBroker({
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<'unknown' | 'connected' | 'error'>('unknown');
-  const deviceId = getDeviceId();
+  const deviceId = getOrCreateDeviceId();
 
   useEffect(() => {
     (async () => {
@@ -461,14 +538,17 @@ function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error'
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const deviceId = getOrCreateDeviceId();
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/v1/ctrader/accounts`);
+        const res = await fetch(`${API_URL}/api/v1/brokers/accounts`, { headers: { 'X-Device-ID': deviceId } });
         if (res.ok) {
           const data = await res.json();
           setAccounts(data.accounts || []);
+        } else {
+          setError(`Failed to load accounts (HTTP ${res.status})`);
         }
       } catch (e) {
         console.error('Failed to fetch cTrader accounts:', e);
@@ -476,13 +556,13 @@ function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error'
         setLoading(false);
       }
     })();
-  }, []);
+  }, [deviceId]);
 
   const connect = async () => {
     setConnecting(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/v1/ctrader/connect?mode=sandbox`);
+      const res = await fetch(`${API_URL}/api/v1/brokers/connect?mode=live`, { headers: { 'X-Device-ID': deviceId } });
       const data = await res.json();
       if (data.authorization_url) {
         window.location.href = data.authorization_url;
@@ -500,10 +580,12 @@ function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error'
   const disconnect = async (id: number) => {
     if (!confirm('Disconnect this cTrader account? Auto-trading will stop.')) return;
     try {
-      const res = await fetch(`${API_URL}/api/v1/ctrader/disconnect/${id}`, { method: 'POST' });
+      const res = await fetch(`${API_URL}/api/v1/brokers/disconnect/${id}`, { method: 'POST', headers: { 'X-Device-ID': deviceId } });
       if (res.ok) {
         setAccounts((prev) => prev.filter((a) => a.id !== id));
         triggerToast('success', 'Account Disconnected', 'Auto-trading stopped.');
+      } else {
+        setError('Failed to disconnect account.');
       }
     } catch (e) {
       console.error(e);
@@ -514,7 +596,7 @@ function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error'
   return (
     <div className="space-y-3">
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        cTrader uses high-security OAuth2. You will log in on cTrader's secure site — no secrets stored on device.
+        cTrader uses high-security OAuth2. You will log in on cTrader&apos;s secure site — no secrets stored on device.
       </p>
       {error && <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
       {loading ? (
@@ -525,9 +607,9 @@ function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error'
             <li key={a.id} className="rounded-control border border-slate-200 p-3 text-sm dark:border-slate-700">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <p className="font-semibold text-slate-900 dark:text-slate-100">{a.account_name}</p>
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">{a.broker_name || 'cTrader account'}</p>
                   <p className="text-xs text-slate-400 dark:text-slate-500">
-                    {a.broker_name} · {a.account_currency} · {a.account_balance?.toFixed?.(2)}
+                    {a.broker_type} · {a.account_currency} · {a.account_balance?.toFixed?.(2)}
                   </p>
                 </div>
                 <button onClick={() => disconnect(a.id)} className="rounded-full p-1.5 text-slate-400 hover:text-rose-600" aria-label="Disconnect account">
@@ -560,7 +642,7 @@ function AKShareBroker({
   const [initialCapital, setInitialCapital] = useState('1000000');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<'unknown' | 'connected' | 'error'>('unknown');
-  const deviceId = getDeviceId();
+  const deviceId = getOrCreateDeviceId();
 
   useEffect(() => {
     (async () => {

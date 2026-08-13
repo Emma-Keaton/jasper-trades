@@ -40,7 +40,6 @@ export function applyTheme(theme: Theme) {
 
 /** Rendered in layout <head> to set the class before first paint (no FOUC). */
 export function ThemeInit() {
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const [mounted] = useState(getInitialTheme);
   useEffect(() => {
     applyTheme(mounted);

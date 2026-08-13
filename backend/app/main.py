@@ -203,6 +203,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Forex polling service startup failed: {e}")
 
+    # Start real-time Telegram signal listeners (one client per connected user)
+    try:
+        from sqlalchemy import select as _select
+        from app.models import TelegramAccount
+        from app.services.signal_sources.telegram_listener import get_listener
+
+        async with async_session() as db:
+            acc_res = await db.execute(_select(TelegramAccount))
+            accounts = acc_res.scalars().all()
+        started = 0
+        for acc in accounts:
+            if await get_listener().sync(acc.device_id):
+                started += 1
+        logger.info(f"Telegram signal listeners started: {started}/{len(accounts)}")
+    except Exception as e:
+        logger.warning(f"Telegram signal listener startup failed: {e}")
+
     yield
 
     # Shutdown
@@ -240,6 +257,14 @@ async def lifespan(app: FastAPI):
         logger.info("Forex polling service stopped")
     except Exception as e:
         logger.warning(f"Error stopping forex polling: {e}")
+
+    # Stop real-time Telegram signal listeners
+    try:
+        from app.services.signal_sources.telegram_listener import get_listener
+        await get_listener().stop_all()
+        logger.info("Telegram signal listeners stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping Telegram signal listeners: {e}")
 
     # Stop agents
     await agent_registry.stop_all()

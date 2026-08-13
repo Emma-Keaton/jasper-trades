@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Newspaper, TrendingUp, Search, RefreshCw, AlertCircle } from 'lucide-react';
-import { useCurrencyFormatter } from '@/lib/currencyContext';
+import { Newspaper, TrendingUp, Search, RefreshCw } from 'lucide-react';
 
 interface NewsItem {
   id: string;
@@ -17,12 +16,7 @@ interface NewsItem {
   impact_score?: number;
 }
 
-interface MarketIntelProps {
-  enabled?: boolean;
-}
-
-export default function MarketIntelligence({ enabled = true }: MarketIntelProps) {
-  const { formatMoney } = useCurrencyFormatter();
+export default function MarketIntelligence() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [trending, setTrending] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -46,6 +40,7 @@ export default function MarketIntelligence({ enabled = true }: MarketIntelProps)
     };
 
     initializeData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-refresh every 15 seconds - updates content in-place
@@ -56,6 +51,7 @@ export default function MarketIntelligence({ enabled = true }: MarketIntelProps)
     }, 15000);
 
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchNews = async () => {
@@ -257,17 +253,25 @@ export default function MarketIntelligence({ enabled = true }: MarketIntelProps)
             {searchQuery ? 'No news matches your search' : 'No news available'}
           </div>
         ) : (
-          filteredNews.map((item, index) => {
+          filteredNews.map((item) => {
             const isNew = newArticles.has(item.id);
             return (
               <div
                 key={item.id}
+                role="button"
+                tabIndex={0}
                 className={`p-3 bg-[#0F172A] rounded-lg border hover:border-[#3B82F6] transition-all cursor-pointer
                   ${isNew 
                     ? 'animate-[pulse_1s_ease-in-out_2] border-[#3B82F6] bg-gradient-to-r from-[#1E293B] to-[#0F172A]' 
                     : 'border-[#475569]'
                   }`}
                 onClick={() => window.open(item.url, '_blank')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    window.open(item.url, '_blank');
+                  }
+                }}
                 style={{
                   animation: isNew ? 'slideRight 0.5s ease-out' : 'none',
                 }}

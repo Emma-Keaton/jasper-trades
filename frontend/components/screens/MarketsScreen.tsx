@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, ArrowUpRight, ArrowDownRight, Compass, Microscope } from 'lucide-react';
-import { Card, Badge, RowLink, Spinner } from '@/components/ui';
+import { Card, Badge, RowLink } from '@/components/ui';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -21,7 +21,7 @@ interface MarketsScreenProps {
   triggerToast: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void;
 }
 
-export default function MarketsScreen({ onNavigate, triggerToast }: MarketsScreenProps) {
+export default function MarketsScreen({ onNavigate }: MarketsScreenProps) {
   const [recs, setRecs] = useState<Recommend[]>([]);
   const [trending, setTrending] = useState<TrendingCoin[]>([]);
   const [loading, setLoading] = useState(true);

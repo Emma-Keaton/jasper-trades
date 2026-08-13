@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Send, MessageCircle, ShieldCheck, Loader2, CheckCircle2, ExternalLink } from 'lucide-react';
 import { Card, Button } from '@/components/ui';
 import { API_URL } from '@/lib/constants';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 interface TelegramSetupProps {
   triggerToast: (type: 'success' | 'error' | 'info', title: string, message: string) => void;
@@ -40,7 +41,7 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const deviceId = () => localStorage.getItem('device_id') || 'unknown';
+  const deviceId = () => getOrCreateDeviceId();
 
   useEffect(() => {
     (async () => {
@@ -214,9 +215,10 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Chat ID</label>
+            <label htmlFor="telegramChatId" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Chat ID</label>
             <div className="flex gap-2">
               <input
+                id="telegramChatId"
                 type="text"
                 value={telegram.chat_id}
                 onChange={(e) => setTelegram({ ...telegram, chat_id: e.target.value })}
@@ -232,9 +234,10 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
 
           {codeSent && (
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Step 2 · Enter the 6-digit code</label>
+              <label htmlFor="telegramVerificationCode" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Step 2 · Enter the 6-digit code</label>
               <div className="flex gap-2">
                 <input
+                  id="telegramVerificationCode"
                   type="text"
                   value={verificationCode}
                   onChange={(e) => setVerificationCode(e.target.value)}
@@ -271,8 +274,8 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Daily summary time (WAT)</label>
-            <input type="time" value={telegram.summary_time_wat} onChange={(e) => setTelegram({ ...telegram, summary_time_wat: e.target.value })} className={inputCls} />
+            <label htmlFor="telegramSummaryTime" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Daily summary time (WAT)</label>
+            <input id="telegramSummaryTime" type="time" value={telegram.summary_time_wat} onChange={(e) => setTelegram({ ...telegram, summary_time_wat: e.target.value })} className={inputCls} />
           </div>
 
           <div className="flex gap-2">

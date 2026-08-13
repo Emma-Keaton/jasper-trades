@@ -44,9 +44,11 @@ htmlcov/
 .env.local
 .env.*.local
 *.env
+*.env.production
 # Next.js
 .next/
 out/
+*.tsbuildinfo
 # Production
 dist/
 build/

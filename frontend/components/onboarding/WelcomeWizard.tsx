@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Bot, Rocket, Radio, ListChecks } from 'lucide-react';
 import { useOnboarding } from './OnboardingProvider';
 import { Button } from '@/components/ui';
+import { saveOnboardingPrefs } from '@/lib/preferences';
 
 const STEPS = [
   { icon: <Bot className="h-6 w-6" />, title: 'Welcome! I am Jasper', body: 'Your AI trader. I watch markets 24\/7 and trade for you, explaining everything in plain English.' },
@@ -17,7 +18,7 @@ export default function WelcomeWizard() {
   const [step, setStep] = useState(0);
 
   const close = () => {
-    try { localStorage.setItem('jasper_welcome_done', 'true'); } catch { /* ignore */ }
+    saveOnboardingPrefs({ welcome_done: true });
     setShowWelcome(false);
   };
 

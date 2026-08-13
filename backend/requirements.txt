@@ -39,6 +39,7 @@ httpx-sse==0.4.3
 pyjwt==2.10.1
 
 # Utilities
+aiohttp>=3.9.0  # data_connectors (Yahoo chart fetcher for Kronos replacement)
 python-dotenv>=1.0.0
 pydantic>=2.10.0
 pydantic-settings>=2.6.0

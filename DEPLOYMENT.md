@@ -48,6 +48,7 @@ copy .env.example .env.local
 # Gemini 2.5 Flash is the PRIMARY LLM. Set one or more keys (comma-separated,
 # ideally from separate Google accounts) to enable multi-key rotation.
 GEMINI_API_KEYS=key1,key2,key3
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
 
 # NVIDIA NIM is the AUTOMATIC FALLBACK when Gemini is down/unconfigured.
 # The proxy pings Gemini first and falls back to NVIDIA on failure.
@@ -60,6 +61,22 @@ NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
 MODEL_FAST=gemini-2.5-flash-lite
 MODEL_SMART=gemini-2.5-flash
 MODEL_DEEP=gemini-2.5-pro
+
+# Telegram Signal Sources (Telethon) - REQUIRED for signal import
+# Get API ID + hash from https://my.telegram.org (API development tools)
+TELEGRAM_API_ID=1234567
+TELEGRAM_API_HASH=your-api-hash
+TELEGRAM_SESSION_NAME=jasper
+
+# Public base URL of THIS backend - used by the Telegram bot for callbacks/webhooks.
+BACKEND_INTERNAL_URL=https://<your-backend>.onrender.com
+
+# Crypto market data (CCXT multi-CEX, geo-probe gated)
+CCXT_EXCHANGES=bybit,okx,kucoin,gate,htx,bingx,bitget,mexc,kraken,coinbase,bitfinex,bitstamp
+
+# Nigerian bank payouts (Optional - or configure via Settings page)
+PAYSTACK_SECRET_KEY=
+FLUTTERWAVE_SECRET_KEY=
 
 # WalletConnect project ID (EVM wallet connection). Create at https://cloud.walletconnect.com
 # Served to the frontend via GET /api/v1/settings/public; not baked into the frontend build.
@@ -215,14 +232,22 @@ frontend/.env.local
    ```
    PYTHON_VERSION=3.11.0
    PORT=10000
-   DATABASE_URL=sqlite+aiosqlite:///./data/sqlite/jasper_trades.db
-   DATA_DIR=./data
    SECRET_KEY=<generate random 32+ chars>
    API_AUTH_KEY=<generate random string>
    CORS_ORIGINS=https://jasper-trades.vercel.app
    WALLETCONNECT_PROJECT_ID=<your-walletconnect-project-id>  # optional; enables WalletConnect QR in Settings
    ```
-   
+
+   **Database — use Supabase for persistence (recommended).** Render free tier wipes its disk on every redeploy, so SQLite data is lost. Supabase Postgres survives redeploys and the app's schema is auto-created on startup (no manual DDL):
+   ```
+   DATABASE_URL=postgresql://postgres.<ref>:<db_password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+   ```
+   - Create a project at https://supabase.com → Project Settings → Database → Connection string → **Transaction** pooler (port 6543).
+   - Paste it as `DATABASE_URL` (URL-encode any special characters in the password).
+   - Optional (only if you use realtime/auth/storage): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+   - The backend detects Postgres from the `postgresql://` scheme and uses the asyncpg driver; migrations run at startup.
+   - If you skip Supabase, use `DATABASE_URL=sqlite+aiosqlite:///./data/sqlite/jasper_trades.db` and `DATA_DIR=./data` (data wiped on redeploy).
+
    **Note:** Leave API keys blank - configure via Settings page after deployment.
 
 4. **Deploy** - Click "Create Web Service"
@@ -325,6 +350,14 @@ Kronos is a time-series forecasting model that predicts price movements. It is
 deployed as a **separate Render service** (`kronos-service`) — **no Colab is used**.
 To enable it, deploy `backend/kronos-service` to Render and set `KRONOS_SERVICE_URL`
 to its URL in the main backend. See `backend/kronos-service/README.md`.
+
+**Replacement fallback:** when `KRONOS_SERVICE_URL` is blank (or the service is
+unreachable), the backend falls back to a built-in tiered forecaster
+(`app/services/forecasting/`, ported from aegis-quant): statsmodels Holt-Winters
+when available, otherwise a dependency-free deterministic trend forecaster
+(`numpy`). It fetches daily closes via Yahoo chart (keyless, `data_connectors`)
+and returns a real `UP`/`DOWN` prediction with confidence — so signal confidence
+scoring keeps a Kronos-style basis even without the separate service deployed.
 
 _(The former Google Colab integration has been removed.)_
 

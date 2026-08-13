@@ -9,7 +9,7 @@ Signal Sources API Endpoints
 Authentication: Device ID fingerprint via X-Device-ID header / localStorage.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Header, status
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,8 +19,14 @@ import structlog
 from app.database import get_db
 from app.models import SignalSource, SignalTip, SourceFollow, TelegramAccount
 from app.services.signal_sources.registry import get_registry
-from app.services.signal_sources.tip_extraction import TipExtractionService
-from app.services.signal_sources.confidence import compute_confidence
+from app.services.signal_sources.ingest import (
+    extract_and_ingest,
+    execute_signal,
+    get_signal_settings,
+    maybe_auto_execute,
+    save_signal_settings,
+)
+from app.services.signal_sources.telegram_listener import get_listener
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/signals", tags=["Signals"])
@@ -99,6 +105,21 @@ class TipOut(BaseModel):
     source_created_at: Optional[str] = None
     created_at: Optional[str] = None
     executed: bool = False
+    execution_status: Optional[str] = "pending"
+    execution_detail: Optional[str] = None
+    executed_at: Optional[str] = None
+
+
+class SignalSettingsIn(BaseModel):
+    auto_execute_enabled: Optional[bool] = None
+    min_confidence: Optional[float] = None
+    max_position_pct: Optional[float] = None
+
+
+class SignalSettingsOut(BaseModel):
+    auto_execute_enabled: bool
+    min_confidence: float
+    max_position_pct: float
 
 
 class FollowAction(BaseModel):
@@ -108,11 +129,11 @@ class FollowAction(BaseModel):
 @router.post("/sources", response_model=SourceOut)
 async def create_source(
     payload: SourceCreate,
-    x_device_id: Optional[str] = None,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     device_id = _device_id(x_device_id)
-    if payload.source_type not in ("telegram", "rss", "reddit", "stocktwits"):
+    if payload.source_type not in ("telegram", "telegram_public", "rss", "reddit", "stocktwits"):
         raise HTTPException(status_code=400, detail="Invalid source_type")
     src = SignalSource(
         device_id=device_id,
@@ -128,14 +149,14 @@ async def create_source(
 
 
 @router.get("/sources", response_model=List[SourceOut])
-async def list_sources(x_device_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def list_sources(x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
     device_id = _device_id(x_device_id)
     res = await db.execute(select(SignalSource).where(SignalSource.device_id == device_id))
     return [_source_out(r) for r in res.scalars().all()]
 
 
 @router.delete("/sources/{source_id}")
-async def delete_source(source_id: int, x_device_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def delete_source(source_id: int, x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
     device_id = _device_id(x_device_id)
     res = await db.execute(select(SignalSource).where(SignalSource.id == source_id, SignalSource.device_id == device_id))
     src = res.scalar_one_or_none()
@@ -144,17 +165,22 @@ async def delete_source(source_id: int, x_device_id: Optional[str] = None, db: A
     await db.execute(delete(SourceFollow).where(SourceFollow.source_id == src.id))
     await db.delete(src)
     await db.commit()
+    if src.source_type in ("telegram", "telegram_public"):
+        await get_listener().sync(device_id)
     return {"ok": True}
 
 
 # ---- Telegram connect ----
 
 @router.post("/telegram/connect/start")
-async def telegram_connect_start(payload: TelegramConnectStart, x_device_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def telegram_connect_start(payload: TelegramConnectStart, x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
     _device_id(x_device_id)
     reg = get_registry()
     try:
         return await reg.telegram.send_code(payload.phone)
+    except RuntimeError as e:
+        logger.warning("Telegram send_code misconfigured", error=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # noqa: BLE001
         logger.warning("Telegram send_code failed", error=str(e))
         raise HTTPException(status_code=500, detail="Could not send Telegram code")
@@ -163,7 +189,7 @@ async def telegram_connect_start(payload: TelegramConnectStart, x_device_id: Opt
 @router.post("/telegram/connect/complete", response_model=TelegramConnectOut)
 async def telegram_connect_complete(
     payload: TelegramConnectComplete,
-    x_device_id: Optional[str] = None,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     device_id = _device_id(x_device_id)
@@ -190,11 +216,27 @@ async def telegram_connect_complete(
     acc.tg_first_name = user.get("first_name")
     await db.commit()
 
+    # Start the live listener for this device (may not watch anything yet -
+    # the chats filter fills in as channels are picked).
+    await get_listener().sync(device_id)
+
     return TelegramConnectOut(ok=True, telegram_connected=True, user=user)
 
 
+@router.post("/telegram/disconnect")
+async def telegram_disconnect(x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
+    device_id = _device_id(x_device_id)
+    await get_listener().stop(device_id)
+    res = await db.execute(select(TelegramAccount).where(TelegramAccount.device_id == device_id))
+    acc = res.scalar_one_or_none()
+    if acc:
+        await db.delete(acc)
+        await db.commit()
+    return {"ok": True}
+
+
 @router.get("/telegram/account")
-async def telegram_account(x_device_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def telegram_account(x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
     device_id = _device_id(x_device_id)
     res = await db.execute(select(TelegramAccount).where(TelegramAccount.device_id == device_id))
     acc = res.scalar_one_or_none()
@@ -207,7 +249,7 @@ async def telegram_account(x_device_id: Optional[str] = None, db: AsyncSession =
 @router.post("/telegram/channels", response_model=TelegramChannelsOut)
 async def telegram_channels(
     body: Optional[TelegramChannelsBody] = None,
-    x_device_id: Optional[str] = None,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     device_id = _device_id(x_device_id)
@@ -230,7 +272,7 @@ async def telegram_channels(
 @router.post("/telegram/sources", response_model=List[SourceOut])
 async def create_telegram_sources(
     payload: TelegramSourceCreate,
-    x_device_id: Optional[str] = None,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     device_id = _device_id(x_device_id)
@@ -254,13 +296,14 @@ async def create_telegram_sources(
     await db.commit()
     for s in created:
         await db.refresh(s)
+    await get_listener().sync(device_id)
     return [_source_out(s) for s in created]
 
 
 # ---- Follow / Unfollow ----
 
 @router.post("/follow")
-async def follow_source(payload: FollowAction, x_device_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def follow_source(payload: FollowAction, x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
     device_id = _device_id(x_device_id)
     res = await db.execute(select(SignalSource).where(SignalSource.id == payload.source_id, SignalSource.device_id == device_id))
     if not res.scalar_one_or_none():
@@ -276,7 +319,7 @@ async def follow_source(payload: FollowAction, x_device_id: Optional[str] = None
 
 
 @router.delete("/follow/{source_id}")
-async def unfollow_source(source_id: int, x_device_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def unfollow_source(source_id: int, x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
     device_id = _device_id(x_device_id)
     res = await db.execute(select(SourceFollow).where(SourceFollow.source_id == source_id, SourceFollow.device_id == device_id))
     row = res.scalar_one_or_none()
@@ -289,7 +332,7 @@ async def unfollow_source(source_id: int, x_device_id: Optional[str] = None, db:
 # ---- Tips ----
 
 @router.get("/tips", response_model=List[TipOut])
-async def get_tips(x_device_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def get_tips(x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
     device_id = _device_id(x_device_id)
     res = await db.execute(
         select(SignalTip)
@@ -302,7 +345,7 @@ async def get_tips(x_device_id: Optional[str] = None, db: AsyncSession = Depends
 
 
 @router.post("/tips/{tip_id}/resolve")
-async def resolve_tip(tip_id: int, payload: Dict[str, Any], x_device_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def resolve_tip(tip_id: int, payload: Dict[str, Any], x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
     device_id = _device_id(x_device_id)
     res = await db.execute(select(SignalTip).where(SignalTip.id == tip_id, SignalTip.device_id == device_id))
     sig = res.scalar_one_or_none()
@@ -318,23 +361,77 @@ async def resolve_tip(tip_id: int, payload: Dict[str, Any], x_device_id: Optiona
 
 
 @router.post("/tips/{tip_id}/execute")
-async def execute_tip(tip_id: int, payload: Dict[str, Any] = None, x_device_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def execute_tip(tip_id: int, payload: Dict[str, Any] = None, x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
+    """Manually execute an existing tip through the real paper/live pipeline."""
     device_id = _device_id(x_device_id)
     res = await db.execute(select(SignalTip).where(SignalTip.id == tip_id, SignalTip.device_id == device_id))
     sig = res.scalar_one_or_none()
     if not sig:
         raise HTTPException(404, "Tip not found")
-    sig.executed = True
-    if payload and payload.get("entry_price"):
-        sig.entry_price = payload["entry_price"]
-    await db.commit()
-    return {"ok": True, "tip_id": sig.id}
+    result = await execute_signal(db, device_id, sig)
+    if result.get("error"):
+        raise HTTPException(status_code=400, detail=result["error"])
+    return {"ok": True, "tip_id": sig.id, **result}
+
+
+@router.get("/settings", response_model=SignalSettingsOut)
+async def get_settings(x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
+    device_id = _device_id(x_device_id)
+    s = await get_signal_settings(db, device_id)
+    return SignalSettingsOut(
+        auto_execute_enabled=s.auto_execute_enabled,
+        min_confidence=s.min_confidence,
+        max_position_pct=s.max_position_pct,
+    )
+
+
+@router.post("/settings", response_model=SignalSettingsOut)
+async def post_settings(payload: SignalSettingsIn, x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
+    device_id = _device_id(x_device_id)
+    s = await save_signal_settings(
+        db,
+        device_id,
+        auto_execute_enabled=payload.auto_execute_enabled,
+        min_confidence=payload.min_confidence,
+        max_position_pct=payload.max_position_pct,
+    )
+    return SignalSettingsOut(
+        auto_execute_enabled=s.auto_execute_enabled,
+        min_confidence=s.min_confidence,
+        max_position_pct=s.max_position_pct,
+    )
+
+
+@router.get("/status")
+async def signals_status(x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
+    """Runtime status for the Signals screen (listener, sources, settings)."""
+    device_id = _device_id(x_device_id)
+    res = await db.execute(select(TelegramAccount).where(TelegramAccount.device_id == device_id))
+    acc = res.scalar_one_or_none()
+    telegram_connected = bool(acc and acc.tg_session)
+    src_res = await db.execute(
+        select(SignalSource).where(
+            SignalSource.device_id == device_id,
+            SignalSource.source_type.in_(("telegram", "telegram_public")),
+        )
+    )
+    watched = [_source_out(s) for s in src_res.scalars().all()]
+    listener = get_listener()
+    s = await get_signal_settings(db, device_id)
+    return {
+        "telegram_connected": telegram_connected,
+        "listener_active": listener.is_running(device_id) if telegram_connected else False,
+        "watched_count": len(watched),
+        "auto_execute_enabled": s.auto_execute_enabled,
+        "min_confidence": s.min_confidence,
+        "max_position_pct": s.max_position_pct,
+    }
 
 
 # ---- Internal fetch/ingest (scheduler) ----
 
 @router.post("/fetch")
-async def fetch_and_ingest(x_device_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def fetch_and_ingest(x_device_id: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
     device_id = _device_id(x_device_id)
     res = await db.execute(select(SignalSource).where(SignalSource.device_id == device_id, SignalSource.is_active == True))
     sources = res.scalars().all()
@@ -357,46 +454,9 @@ async def fetch_and_ingest(x_device_id: Optional[str] = None, db: AsyncSession =
 
     reg = get_registry()
     drafts = await reg.fetch_all(cfg_list, limit=50)
-    extractor = TipExtractionService()
-    tips = await extractor.extract_tips([d.to_dict() if hasattr(d, "to_dict") else d for d in drafts])
-
-    saved = []
-    for t in tips:
-        try:
-            src_id = int(t.get("source_id") or "0")
-        except (TypeError, ValueError):
-            src_id = 0
-        if src_id == 0:
-            continue
-        # simple dedupe: skip exact slug+symbol already present
-        dup = await db.execute(
-            select(SignalTip.id).where(SignalTip.device_id == device_id, SignalTip.source_id == src_id,
-                                       SignalTip.slug == (t.get("slug") or ""))
-        )
-        if dup.scalar_one_or_none():
-            continue
-        final_conf, _basis = await compute_confidence(
-            t.get("symbol") or "",
-            t.get("side") or "long",
-            float(t.get("confidence") or 0.0),
-            src_id,
-            db,
-        )
-        sig = SignalTip(
-            device_id=device_id,
-            source_id=src_id,
-            slug=t.get("slug") or "",
-            symbol=t.get("symbol") or "",
-            side=t.get("side") or "long",
-            timeframe=t.get("timeframe"),
-            confidence=final_conf,
-            rationale=t.get("rationale"),
-            text=t.get("text"),
-            url=t.get("url"),
-            source_created_at=t.get("created_at"),
-        )
-        db.add(sig)
-        saved.append(sig)
+    saved = await extract_and_ingest(db, device_id, drafts)
+    for sig in saved:
+        await maybe_auto_execute(db, device_id, sig)
     await db.commit()
     return {"ok": True, "tips": [await _tip_out(s, db) for s in saved]}
 
@@ -438,5 +498,8 @@ async def _tip_out(sig: SignalTip, db: AsyncSession) -> Dict[str, Any]:
         "source_created_at": sig.source_created_at.isoformat() if sig.source_created_at else None,
         "created_at": sig.created_at.isoformat() if sig.created_at else None,
         "executed": sig.executed,
+        "execution_status": sig.execution_status or "pending",
+        "execution_detail": sig.execution_detail,
+        "executed_at": sig.executed_at.isoformat() if sig.executed_at else None,
     }
 

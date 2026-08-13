@@ -16,8 +16,6 @@ export default function TourOverlay({ children }: TourOverlayProps) {
 
   const rect = targetElement.rect;
   const padding = 8;
-  const spotlightX = rect.left + rect.width / 2;
-  const spotlightY = rect.top + rect.height / 2;
   const spotlightWidth = rect.width + padding * 2;
   const spotlightHeight = rect.height + padding * 2;
 

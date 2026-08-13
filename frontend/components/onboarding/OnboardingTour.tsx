@@ -33,6 +33,7 @@ const TOUR_MAP: Record<string, TourStep[]> = {
   ],
   signals: [
     T('signals-sources', 'Signal sources', 'Plug in feeds, Reddit, StockTwits or Telegram so Jasper has places to look for ideas.', 'bottom', 'Results are ranked for you.'),
+    T('position-size', 'Position size', 'Every signal buys a slice of your equity - here is how big that slice is. Slide it to 5% and let Jasper size its own trades.', 'top', 'Capped by Trading Caps in Settings.'),
   ],
   settings: [
     T('settings-checklist', 'Set up Jasper', 'A simple checklist to make everything work the way you want. Tap any row to open it.', 'right', 'Start with practice mode.'),

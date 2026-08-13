@@ -192,6 +192,13 @@ class DeviceSettings(Base):
     # Structure: {enabled, initial_capital, current_balance, total_pnl, currency}
     universal_paper_trading_config = Column(String, nullable=True)  # JSON: {enabled, initial_capital, current_balance, total_pnl, currency}
 
+    # Frontend trading mode (paper vs live) - persisted per device
+    trading_mode = Column(String(10), default="practice")  # "practice" or "live"
+
+    # Frontend UI preferences (persisted per device, JSON string)
+    # Structure: {ai_running, agent_configs: {...}, collapsible_sections: {...}, onboarding: {...}}
+    preferences = Column(String, nullable=True)  # JSON: {ai_running, agent_configs, collapsible_sections, onboarding}
+
     # Market Data APIs (encrypted)
     alphavantage_key = Column(String, nullable=True)  # Encrypted
     finnhub_key = Column(String, nullable=True)  # Encrypted
@@ -729,6 +736,25 @@ class SignalTip(Base):
     pnl_percent = Column(Float, nullable=True)
     hit = Column(Boolean, nullable=True)
     executed = Column(Boolean, default=False)
+
+    # Hands-free execution ledger
+    execution_status = Column(String(32), default="pending")  # pending | executed | skipped | failed
+    execution_detail = Column(String, nullable=True)
+    executed_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SignalSettings(Base):
+    """Per-device preferences for hands-free signal auto-execution."""
+    __tablename__ = "signal_settings"
+
+    device_id = Column(String(255), primary_key=True)
+
+    auto_execute_enabled = Column(Boolean, default=True)
+    min_confidence = Column(Float, default=0.60)
+    max_position_pct = Column(Float, default=0.05)  # % of portfolio equity per trade
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

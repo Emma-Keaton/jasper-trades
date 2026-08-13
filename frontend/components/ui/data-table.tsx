@@ -9,9 +9,11 @@ interface Column<T> {
 export default function DataTable<T extends object>({
   columns,
   data,
+  renderActions,
 }: {
   columns: Column<T>[];
   data: T[];
+  renderActions?: (row: T) => React.ReactNode;
 }) {
   const [sortKey, setSortKey] = React.useState<keyof T | null>(null);
   const [sortAsc, setSortAsc] = React.useState(true);
@@ -74,7 +76,7 @@ export default function DataTable<T extends object>({
                 </td>
               ))}
               <td className="px-3 py-2">
-                {/* Placeholder – actions handled in parent component */}
+                {renderActions ? renderActions(row) : null}
               </td>
             </tr>
           ))}

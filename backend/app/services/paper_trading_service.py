@@ -174,14 +174,12 @@ class UniversalPaperTradingService:
             async with async_session() as db:
                 t = Trade(
                     symbol=symbol,
-                    action="buy" if side == "buy" else "sell",
+                    side=side,  # buy/sell
                     quantity=qty,
                     price=price,
                     broker="paper",
-                    is_paper=True,
-                    agent_name=agent_name,
                     status="filled",
-                    reasoning=reasoning,
+                    agent_name=agent_name,
                     created_at=_now().replace(tzinfo=None),
                 )
                 db.add(t)

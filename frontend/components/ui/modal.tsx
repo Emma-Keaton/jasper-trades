@@ -42,7 +42,14 @@ export function Modal({
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center md:items-center md:p-6">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm dark:bg-slate-950/70" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm dark:bg-slate-950/70"
+        onClick={onClose}
+        role="button"
+        tabIndex={0}
+        aria-label="Close"
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(); } }}
+      />
       <div
         role="dialog"
         aria-modal="true"

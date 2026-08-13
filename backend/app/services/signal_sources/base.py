@@ -42,7 +42,7 @@ class SignalDraft:
         }
 
 
-SOURCE_TYPES = ("telegram", "rss", "reddit", "stocktwits")
+SOURCE_TYPES = ("telegram", "telegram_public", "rss", "reddit", "stocktwits")
 
 
 class SignalSourceAdapter(ABC):

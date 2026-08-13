@@ -6,9 +6,10 @@ import { Holding, TradeHistoryItem } from '@/app/types';
 import { EquityDataPoint } from '@/hooks/usePortfolioHistory';
 import { Card, Stat, Button, Badge, EmptyState, RowLink } from '@/components/ui';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
+import { StepId } from '@/components/screens/SettingsScreen';
+import { fetchPreferences, fetchTradingMode, savePreferences } from '@/lib/preferences';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const RUNNING_KEY = 'jasper_ai_running';
 
 const DEFAULT_WATCHING = ['BTC', 'ETH', 'EURUSD', 'AAPL', 'SOL'];
 
@@ -20,25 +21,31 @@ interface HomeScreenProps {
   portfolioInitialized?: boolean;
   loading?: boolean;
   backendConnected?: boolean;
-  onNavigate: (tab: string) => void;
+  triggerToast: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void;
+  onNavigate: (tab: string, opts?: { defaultOpen?: StepId }) => void;
 }
 
 const actionText: Record<string, string> = { BUY: 'Bought', SELL: 'Sold' };
 
-// Shared helper: run-state getter/setter used by Home + onboarding
-function readRunState(): boolean {
-  try { return localStorage.getItem(RUNNING_KEY) === 'true'; } catch { return false; }
+// Shared helper: run-state read persisted in the DB (per device).
+export async function isAiRunning(): Promise<boolean> {
+  const prefs = await fetchPreferences();
+  return prefs.ai_running === true;
 }
 
-export function isAiRunning() { return readRunState(); }
-
 export default function HomeScreen({
-  cash, holdings, tradeHistory, equityData = [], portfolioInitialized = false,
-  loading = false, backendConnected = false, onNavigate,
+  cash, holdings, tradeHistory, equityData = [],
+  loading = false, backendConnected = false, triggerToast, onNavigate,
 }: HomeScreenProps) {
   const { formatMoney } = useCurrencyFormatter();
-  const [running, setRunning] = useState<boolean>(readRunState);
+  const [running, setRunning] = useState<boolean>(false);
   const [starting, setStarting] = useState(false);
+  const [tradingMode, setTradingMode] = useState<'practice' | 'live' | null>(null);
+
+  React.useEffect(() => {
+    isAiRunning().then(setRunning);
+    fetchTradingMode().then((m) => setTradingMode(m));
+  }, []);
 
   const watching = useMemo(() => {
     const owned = holdings.map(h => h.symbol);
@@ -62,17 +69,46 @@ export default function HomeScreen({
 
   const setRunState = (next: boolean) => {
     setRunning(next);
-    try { localStorage.setItem(RUNNING_KEY, String(next)); } catch { /* ignore */ }
+    savePreferences({ ai_running: next });
   };
 
   const handleStartStop = async () => {
-    setStarting(true);
-    const names = ['director', 'quant', 'risk', 'execution'];
-    try {
-      for (const name of names) {
-        await fetch(`${API_URL}/api/v1/agents/${name}/${running ? 'stop' : 'start'}`, { method: 'POST' }).catch(() => null);
+    // Stopping is always allowed.
+    if (running) {
+      setStarting(true);
+      try {
+        for (const name of ['director', 'quant', 'risk', 'execution']) {
+          await fetch(`${API_URL}/api/v1/agents/${name}/stop`, { method: 'POST' }).catch(() => null);
+        }
+        setRunState(false);
+      } finally {
+        setStarting(false);
       }
-      setRunState(!running);
+      return;
+    }
+
+    // First-run guard: a trading mode must be chosen before starting.
+    const mode = tradingMode;
+    if (!mode) {
+      triggerToast('info', 'Pick a mode first', 'Choose Paper or Live trading before starting.');
+      onNavigate('settings', { defaultOpen: 'mode' });
+      return;
+    }
+
+    // Live-mode guard: confirm before trading with real money.
+    if (mode === 'live') {
+      const ok = window.confirm(
+        'Live trading uses REAL money with your connected wallets and brokers.\n\nAre you sure you want to start?'
+      );
+      if (!ok) return;
+    }
+
+    setStarting(true);
+    try {
+      for (const name of ['director', 'quant', 'risk', 'execution']) {
+        await fetch(`${API_URL}/api/v1/agents/${name}/start`, { method: 'POST' }).catch(() => null);
+      }
+      setRunState(true);
     } finally {
       setStarting(false);
     }

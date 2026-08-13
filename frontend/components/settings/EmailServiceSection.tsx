@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Mail, Check, Send } from 'lucide-react';
 import { Toast } from '@/app/types';
 import InfoModal, { SetupStep, ApiLink, BenefitItem } from './InfoModal';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 interface SendGridSettings {
   api_key: string;
@@ -26,7 +27,7 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
 
   const saveSendGridSettings = async () => {
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/settings/email/sendgrid`, {
         method: 'POST',
         headers: {
@@ -41,7 +42,7 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
       } else {
         triggerToast('error', 'Save Failed', 'Could not save email settings');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Save Failed', 'Could not save email settings');
     }
   };
@@ -54,7 +55,7 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
 
     setTesting(true);
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/notify/test-email`, {
         method: 'POST',
         headers: {
@@ -69,7 +70,7 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
       } else {
         triggerToast('error', 'Test Failed', 'Could not send test email');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Test Failed', 'Could not send test email');
     } finally {
       setTesting(false);
@@ -101,8 +102,9 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
       <div className="space-y-3">
         {/* API Key */}
         <div>
-          <label className="block text-sm text-gray-300 mb-2">SendGrid API Key</label>
+          <label htmlFor="sendgridApiKey" className="block text-sm text-gray-300 mb-2">SendGrid API Key</label>
           <input
+            id="sendgridApiKey"
             type="password"
             value={email.api_key}
             onChange={(e) => setEmail({...email, api_key: e.target.value})}
@@ -113,8 +115,9 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
 
         {/* From Email */}
         <div>
-          <label className="block text-sm text-gray-300 mb-2">From Email</label>
+          <label htmlFor="fromEmail" className="block text-sm text-gray-300 mb-2">From Email</label>
           <input
+            id="fromEmail"
             type="email"
             value={email.from_email}
             onChange={(e) => setEmail({...email, from_email: e.target.value})}
@@ -142,9 +145,10 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
         {/* Test Email */}
         {email.enabled && email.api_key && email.from_email && (
           <div className="border-t border-[#475569] pt-4 mt-4">
-            <label className="block text-sm text-gray-300 mb-2">Test Email Address</label>
+            <label htmlFor="testEmailAddress" className="block text-sm text-gray-300 mb-2">Test Email Address</label>
             <div className="flex gap-2">
               <input
+                id="testEmailAddress"
                 type="email"
                 value={testEmailAddress}
                 onChange={(e) => setTestEmailAddress(e.target.value)}
@@ -223,19 +227,19 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
                 Go to Settings → API Keys → Create API Key
               </SetupStep>
               <SetupStep number={5}>
-                Name it "Jasper Trades", give "Full Access" permission
+                Name it &quot;Jasper Trades&quot;, give &quot;Full Access&quot; permission
               </SetupStep>
               <SetupStep number={6}>
-                Copy the API key (starts with "SG.") - you can only see it once!
+                Copy the API key (starts with &quot;SG.&quot;) - you can only see it once!
               </SetupStep>
               <SetupStep number={7}>
-                Paste the key above and enter your "From Email"
+                Paste the key above and enter your &quot;From Email&quot;
               </SetupStep>
             </div>
           </div>
 
           <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
-            <h4 className="font-semibold text-blue-400 mb-2">What Emails You'll Get:</h4>
+            <h4 className="font-semibold text-blue-400 mb-2">What Emails You&apos;ll Get:</h4>
             <ul className="text-gray-300 space-y-1 text-xs">
               <li>• 📈 Trade Execution Confirmations</li>
               <li>• 🔔 Price Alert Notifications</li>
@@ -249,7 +253,7 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
             <h4 className="font-semibold text-amber-400 mb-2">Important:</h4>
             <p className="text-gray-300 text-xs">
               SendGrid requires email verification. After creating your account, verify your 
-              "From Email" address in SendGrid's Sender Authentication settings, or emails 
+              &quot;From Email&quot; address in SendGrid&apos;s Sender Authentication settings, or emails 
               may not be delivered.
             </p>
           </div>

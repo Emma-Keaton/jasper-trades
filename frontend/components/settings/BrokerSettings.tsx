@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, Activity, Info, Check, AlertTriangle } from 'lucide-react';
+import { DollarSign, Activity, Info } from 'lucide-react';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -29,18 +30,17 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
     currency: 'USD'
   });
 
-  const deviceId = localStorage.getItem('device_id') || 
-    (localStorage.setItem('device_id', 'dev_' + Math.random().toString(36).substring(2, 15)), 
-     localStorage.getItem('device_id'));
+  const deviceId = getOrCreateDeviceId();
 
   useEffect(() => {
     loadConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadConfig = async () => {
     try {
       const response = await fetch(`${API_URL}/api/v1/settings/universal-paper-trading`, {
-        headers: { 'X-Device-ID': deviceId! }
+        headers: { 'X-Device-ID': deviceId }
       });
       
       if (response.ok) {
@@ -61,7 +61,7 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'X-Device-ID': deviceId!
+          'X-Device-ID': deviceId
         },
         body: JSON.stringify({
           enabled: config.enabled,
@@ -76,7 +76,7 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
       } else {
         throw new Error('Failed to save');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Save Failed', 'Failed to save universal paper trading settings');
     } finally {
       setSaving(false);
@@ -130,11 +130,12 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
       {/* Capital Input (only when enabled) */}
       {config.enabled && (
         <div className="space-y-2">
-          <label className="text-sm text-gray-300 flex items-center gap-1">
+          <label htmlFor="virtual-capital" className="text-sm text-gray-300 flex items-center gap-1">
             <DollarSign className="w-4 h-4" />
             Virtual Initial Capital
           </label>
           <input
+            id="virtual-capital"
             type="number"
             value={config.initial_capital}
             onChange={(e) => setConfig({ ...config, initial_capital: parseFloat(e.target.value) || 0 })}
@@ -145,8 +146,9 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
 
       {/* Currency Selector */}
       <div className="space-y-2">
-        <label className="text-sm text-gray-300">Currency</label>
+        <label htmlFor="broker-currency" className="text-sm text-gray-300">Currency</label>
         <select
+          id="broker-currency"
           value={config.currency}
           onChange={(e) => setConfig({ ...config, currency: e.target.value })}
           className="w-full px-3 py-2 bg-[#0F172A] border border-[#475569] rounded-lg text-white focus:outline-none focus:border-[#10B981]"

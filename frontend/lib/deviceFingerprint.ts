@@ -24,8 +24,8 @@ const DEVICE_INFO_KEY = 'jasper_device_info';
 function generateDeviceId(): string {
   const timestamp = Date.now().toString(36);
   const randomPart = Math.random().toString(36).substring(2, 15);
-  const platform = navigator.platform || 'unknown';
-  
+  const platform = (typeof navigator !== 'undefined' && navigator.platform) || 'unknown';
+
   // Create hash-like identifier
   const fingerprint = `${platform}-${timestamp}-${randomPart}`;
   return btoa(fingerprint).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
@@ -33,9 +33,12 @@ function generateDeviceId(): string {
 
 /**
  * Get existing device ID or create new one
- * Persists across app updates via localStorage
+ * Persists across app updates via localStorage.
+ * SSR-safe: returns a throwaway id when not in the browser.
  */
 export function getOrCreateDeviceId(): string {
+  if (typeof window === 'undefined') return 'ssr';
+
   // Try to get existing device ID
   let deviceId = localStorage.getItem(DEVICE_KEY);
   

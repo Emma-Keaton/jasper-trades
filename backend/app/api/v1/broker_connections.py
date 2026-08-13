@@ -76,7 +76,7 @@ async def connect_ctrader(
 
     # Issue a CSRF state bound to this device, then build the LIVE auth URL.
     state = str(uuid.uuid4().hex)
-    _oauth_states[device_id] = state
+    _oauth_states[state] = device_id
     auth_url = oauth_service.get_authorization_url(state=state)
 
     return {
@@ -106,13 +106,15 @@ async def ctrader_callback(
     client on failure.
     """
     # Validate CSRF state (defence against login CSRF).
-    expected_state = _oauth_states.get(device_id)
-    if expected_state and (not state or state != expected_state):
+    # The state is bound to the device that started the flow, so we recover the
+    # real device id from it here (the callback cannot carry the X-Device-ID header).
+    resolved_device_id = _oauth_states.pop(state, None) if state else None
+    if not resolved_device_id:
         return RedirectResponse(
-            url="/settings?ctrader_error=Invalid+state+(CSRF+protection)",
+            url="/?ctrader_error=Invalid+state+(CSRF+protection)",
             status_code=302,
         )
-    _oauth_states.pop(device_id, None)
+    device_id = resolved_device_id
 
     # Handle OAuth errors
     if error:
@@ -122,13 +124,13 @@ async def ctrader_callback(
             "invalid_client": "Invalid Client ID/Secret configuration"
         }.get(error, "OAuth authorization failed")
         return RedirectResponse(
-            url=f"/settings?ctrader_error={error_msg}",
+            url=f"/?ctrader_error={error_msg}",
             status_code=302
         )
 
     if not code:
         return RedirectResponse(
-            url="/settings?ctrader_error=No+authorization+code+received",
+            url="/?ctrader_error=No+authorization+code+received",
             status_code=302
         )
 
@@ -195,7 +197,7 @@ async def ctrader_callback(
 
         # Redirect to frontend with success
         return RedirectResponse(
-            url=f"/settings?ctrader_connected=true&id={connection_id}",
+            url=f"/?ctrader_connected=true&id={connection_id}",
             status_code=302
         )
 
@@ -203,7 +205,7 @@ async def ctrader_callback(
         # Log details server-side only; never leak exception/token info to client.
         logger.error("cTrader OAuth callback failed", error=str(e))
         return RedirectResponse(
-            url="/settings?ctrader_error=Connection+failed",
+            url="/?ctrader_error=Connection+failed",
             status_code=302
         )
 

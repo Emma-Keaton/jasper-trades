@@ -1,8 +1,8 @@
 ﻿'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Compass, Search, Plus, Check, Star, Info } from 'lucide-react';
-import { Card, Button, Badge, Modal, EmptyState } from '@/components/ui';
+import { Compass, Search, Plus, Check } from 'lucide-react';
+import { Card, Button, Modal, EmptyState } from '@/components/ui';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 

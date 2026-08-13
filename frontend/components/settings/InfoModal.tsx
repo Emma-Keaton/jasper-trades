@@ -14,10 +14,11 @@ export default function InfoModal({ title, children, open, onClose }: InfoModalP
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+    <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div 
         className="bg-[#1E293B] border border-[#475569] rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto m-4"
         onClick={e => e.stopPropagation()}
+        role="presentation"
       >
         <div className="flex items-center justify-between p-4 border-b border-[#475569]">
           <h3 className="text-lg font-semibold text-white">{title}</h3>

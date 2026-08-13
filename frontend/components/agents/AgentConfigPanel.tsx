@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Save, RotateCcw, Settings, Zap, Shield, Play, AlertTriangle, Info } from 'lucide-react';
+import { saveAgentConfig, loadAgentConfig, type AgentConfigMap } from '@/lib/preferences';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -98,17 +99,17 @@ export default function AgentConfigPanel({ agentId, agentName, toast }: AgentCon
   // Load config on mount
   useEffect(() => {
     loadConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadConfig = async () => {
     try {
-      const stored = localStorage.getItem(`agent_config_${agentId}`);
+      const stored = await loadAgentConfig(agentId);
       if (stored) {
-        const config = JSON.parse(stored);
-        if (config.director) setDirectorConfig(config.director);
-        if (config.quant) setQuantConfig(config.quant);
-        if (config.risk) setRiskConfig(config.risk);
-        if (config.execution) setExecutionConfig(config.execution);
+        if (stored.director) setDirectorConfig(stored.director as unknown as DirectorConfig);
+        if (stored.quant) setQuantConfig(stored.quant as unknown as QuantConfig);
+        if (stored.risk) setRiskConfig(stored.risk as unknown as RiskConfig);
+        if (stored.execution) setExecutionConfig(stored.execution as unknown as ExecutionConfig);
       }
     } catch (err) {
       console.error('Failed to load config:', err);
@@ -118,17 +119,17 @@ export default function AgentConfigPanel({ agentId, agentName, toast }: AgentCon
   const saveConfig = async () => {
     setLoading(true);
     try {
-      const config = {
+      const config: AgentConfigMap = {
         agent_id: agentId,
         agent_name: agentName,
-        director: directorConfig,
-        quant: quantConfig,
-        risk: riskConfig,
-        execution: executionConfig,
+        director: directorConfig as unknown as Record<string, unknown>,
+        quant: quantConfig as unknown as Record<string, unknown>,
+        risk: riskConfig as unknown as Record<string, unknown>,
+        execution: executionConfig as unknown as Record<string, unknown>,
       };
 
-      // Save to localStorage
-      localStorage.setItem(`agent_config_${agentId}`, JSON.stringify(config));
+      // Save to DB preferences (per device)
+      await saveAgentConfig(agentId, config);
 
       // Also try to save to backend (non-blocking)
       try {
@@ -138,7 +139,7 @@ export default function AgentConfigPanel({ agentId, agentName, toast }: AgentCon
           body: JSON.stringify(config),
         });
       } catch (err) {
-        console.warn('Failed to save to backend (localStorage only):', err);
+        console.warn('Failed to save to backend (preferences only):', err);
       }
 
       setSaveSuccess(true);
@@ -592,7 +593,7 @@ export default function AgentConfigPanel({ agentId, agentName, toast }: AgentCon
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs text-gray-400">Stop-Loss Enabled</label>
+              <span className="text-xs text-gray-400">Stop-Loss Enabled</span>
               <button
                 onClick={() => setRiskConfig({ ...riskConfig, useStopLoss: !riskConfig.useStopLoss })}
                 className={`w-full py-2 rounded-lg font-bold text-xs transition ${
@@ -606,7 +607,7 @@ export default function AgentConfigPanel({ agentId, agentName, toast }: AgentCon
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs text-gray-400">Take-Profit Enabled</label>
+              <span className="text-xs text-gray-400">Take-Profit Enabled</span>
               <button
                 onClick={() => setRiskConfig({ ...riskConfig, useTakeProfit: !riskConfig.useTakeProfit })}
                 className={`w-full py-2 rounded-lg font-bold text-xs transition ${
@@ -690,7 +691,7 @@ export default function AgentConfigPanel({ agentId, agentName, toast }: AgentCon
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs text-gray-400">Use Limit Orders</label>
+              <span className="text-xs text-gray-400">Use Limit Orders</span>
               <button
                 onClick={() => setExecutionConfig({ ...executionConfig, useLimitOrders: !executionConfig.useLimitOrders })}
                 className={`w-full py-2 rounded-lg font-bold text-xs transition ${

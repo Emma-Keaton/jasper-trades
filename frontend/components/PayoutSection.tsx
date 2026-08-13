@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Save, DollarSign, Wallet, Percent, Clock, Split, RefreshCw, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { Toast } from '@/app/types';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 interface Bank {
   name: string;
@@ -63,7 +64,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
   const fetchBanks = async () => {
     setLoadingBanks(true);
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/banks/nigeria`, {
         headers: { 'X-Device-ID': deviceId },
       });
@@ -96,7 +97,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
 
     setValidatingAccount(true);
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(
         `${API_URL}/api/v1/banks/nigeria/validate?account_number=${payoutConfig.bank_account_number}&bank_code=${payoutConfig.bank_code}`,
         { headers: { 'X-Device-ID': deviceId } }
@@ -146,7 +147,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
 
     setSaving(true);
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       
       // Encrypt config before sending
       const response = await fetch(`${API_URL}/api/v1/settings/payout`, {
@@ -172,7 +173,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
       } else {
         triggerToast('error', 'Save Failed', data.detail || 'Could not save payout settings');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Save Failed', 'Could not save payout settings');
     } finally {
       setSaving(false);
@@ -187,7 +188,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
 
     setTesting(true);
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       
       // Get portfolio ID
       const portfolioRes = await fetch(`${API_URL}/api/v1/portfolio`);
@@ -228,7 +229,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
           data.reason || 'No profit available for test'
         );
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Test Failed', 'Could not execute test payout');
     } finally {
       setTesting(false);
@@ -272,7 +273,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
             <Check className={`w-5 h-5 ${payoutConfig.payout_enabled ? 'text-green-500' : 'text-gray-500'}`} />
             <span className="text-sm text-white font-medium">Enable Auto-Payout</span>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
+          <label className="relative inline-flex items-center cursor-pointer" aria-label="Enable Auto-Payout">
             <input
               type="checkbox"
               checked={payoutConfig.payout_enabled}
@@ -285,11 +286,12 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
 
         {/* Payout Percentage */}
         <div>
-          <label className="block text-sm text-gray-300 mb-2">
+          <label htmlFor="payoutPercentage" className="block text-sm text-gray-300 mb-2">
             Payout Percentage (%)
           </label>
           <div className="relative">
             <input
+              id="payoutPercentage"
               type="number"
               min="1"
               max="100"
@@ -307,11 +309,12 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
 
         {/* Schedule Hour */}
         <div>
-          <label className="block text-sm text-gray-300 mb-2">
+          <label htmlFor="payoutScheduleHour" className="block text-sm text-gray-300 mb-2">
             Payout Schedule (ET)
           </label>
           <div className="relative">
             <select
+              id="payoutScheduleHour"
               value={payoutConfig.payout_schedule_hour}
               onChange={(e) => setPayoutConfig({ ...payoutConfig, payout_schedule_hour: parseInt(e.target.value) })}
               disabled={!payoutConfig.payout_enabled}
@@ -332,9 +335,9 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
 
         {/* Payout Destination */}
         <div>
-          <label className="block text-sm text-gray-300 mb-2">
+          <span className="block text-sm text-gray-300 mb-2">
             Payout Destination
-          </label>
+          </span>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             {PAYOUT_DESTINATIONS.map((dest) => {
               const Icon = dest.icon;
@@ -364,10 +367,11 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
         {payoutConfig.payout_destination === 'crypto_wallet' && (
           <>
             <div>
-              <label className="block text-sm text-gray-300 mb-2">
+              <label htmlFor="payoutCryptoWallet" className="block text-sm text-gray-300 mb-2">
                 USDT Wallet Address
               </label>
               <input
+                id="payoutCryptoWallet"
                 type="text"
                 value={payoutConfig.crypto_wallet}
                 onChange={(e) => setPayoutConfig({ ...payoutConfig, crypto_wallet: e.target.value })}
@@ -380,10 +384,11 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
             </div>
 
             <div>
-              <label className="block text-sm text-gray-300 mb-2">
+              <label htmlFor="payoutCryptoChain" className="block text-sm text-gray-300 mb-2">
                 Blockchain Network
               </label>
               <select
+                id="payoutCryptoChain"
                 value={payoutConfig.crypto_chain}
                 onChange={(e) => setPayoutConfig({ ...payoutConfig, crypto_chain: e.target.value as any })}
                 className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#10B981]"
@@ -411,10 +416,11 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
             {/* Account Number & Bank Selection */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm text-gray-300 mb-2">
+                <label htmlFor="payoutAccountNumber" className="block text-sm text-gray-300 mb-2">
                   Account Number <span className="text-[#10B981]">*</span>
                 </label>
                 <input
+                  id="payoutAccountNumber"
                   type="text"
                   maxLength={10}
                   value={payoutConfig.bank_account_number || ''}
@@ -432,10 +438,11 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
               </div>
 
               <div>
-                <label className="block text-sm text-gray-300 mb-2">
+                <label htmlFor="payoutBankCode" className="block text-sm text-gray-300 mb-2">
                   Bank <span className="text-[#10B981]">*</span>
                 </label>
                 <select
+                  id="payoutBankCode"
                   value={payoutConfig.bank_code || ''}
                   onChange={(e) => {
                     const selectedBank = banks.find(b => b.code === e.target.value);
@@ -503,10 +510,11 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
 
             {/* Account Name (Auto-filled from validation) */}
             <div className="mt-3">
-              <label className="block text-sm text-gray-300 mb-2">
+              <label htmlFor="payoutAccountName" className="block text-sm text-gray-300 mb-2">
                 Account Name <span className="text-[#10B981]">*</span>
               </label>
               <input
+                id="payoutAccountName"
                 type="text"
                 value={payoutConfig.account_name || ''}
                 onChange={(e) => setPayoutConfig({ ...payoutConfig, account_name: e.target.value })}
@@ -523,10 +531,11 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
         {/* Split Ratio (conditional) */}
         {payoutConfig.payout_destination === 'split' && (
           <div>
-            <label className="block text-sm text-gray-300 mb-2">
+            <label htmlFor="payoutSplitRatio" className="block text-sm text-gray-300 mb-2">
               Split Ratio: Crypto (%)
             </label>
             <input
+              id="payoutSplitRatio"
               type="number"
               min="0"
               max="100"
@@ -548,10 +557,11 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
 
         {/* Minimum Threshold */}
         <div>
-          <label className="block text-sm text-gray-300 mb-2">
+          <label htmlFor="payoutMinThreshold" className="block text-sm text-gray-300 mb-2">
             Minimum Payout Threshold ($)
           </label>
           <input
+            id="payoutMinThreshold"
             type="number"
             min="0"
             value={payoutConfig.min_payout_threshold}

@@ -148,7 +148,7 @@ export default function InteractiveTooltip({ position = 'right', targetRect, tou
         </button>
       ) : skipAction ? (
         <div className="bg-[#334155] rounded-lg px-4 py-3 text-center text-[#94A3B8] text-sm">
-          👉 Try this yourself, then click "Next" when ready
+          👉 Try this yourself, then click &quot;Next&quot; when ready
         </div>
       ) : null}
 

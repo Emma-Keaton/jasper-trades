@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
-import { X, Plus, Save, Trash2, Wallet } from "lucide-react";
+import { X, Plus, Trash2, Wallet } from "lucide-react";
+import { useConnect, useSignMessage } from "wagmi";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { API_URL } from "@/lib/constants";
+import { getOrCreateDeviceId } from "@/lib/deviceFingerprint";
 import DataTable from "@/components/ui/data-table";
 
 type Credential = {
@@ -28,20 +31,25 @@ export default function CryptoConnector() {
   const [exchanges, setExchanges] = useState<string[]>([]);
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [walletType, setWalletType] = useState<string>("solana");
-  const [walletAddress, setWalletAddress] = useState<string>("");
+  const deviceId = getOrCreateDeviceId();
+  const deviceHeaders = { "X-Device-ID": deviceId };
+  const { connectAsync, connectors } = useConnect();
+  const { signMessageAsync } = useSignMessage();
+  const solanaWallet = useWallet();
 
   // Load stored credentials
   useEffect(() => {
-    fetch(`${API_URL}/api/v1/crypto-connector`, { credentials: "include" })
+    const headers = { "X-Device-ID": deviceId };
+    fetch(`${API_URL}/api/v1/crypto-connector`, { headers })
       .then((r) => r.json())
       .then(setCreds)
       .catch(() => console.error("failed to load crypto creds"));
     // Load exchange list dynamically from backend
-    fetch(`${API_URL}/api/v1/exchanges/`, { credentials: "include" })
+    fetch(`${API_URL}/api/v1/exchanges/`)
       .then((r) => r.json())
       .then(setExchanges)
       .catch(() => console.error("failed to load exchanges"));
-  }, []);
+  }, [deviceId]);
 
   const resetForm = () => {
     setEditing({});
@@ -51,12 +59,11 @@ export default function CryptoConnector() {
   const handleSave = async () => {
     await fetch(`${API_URL}/api/v1/crypto-connector`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...deviceHeaders },
       body: JSON.stringify(editing),
-      credentials: "include",
     });
     const refreshed = await fetch(`${API_URL}/api/v1/crypto-connector`, {
-      credentials: "include",
+      headers: deviceHeaders,
     }).then((r) => r.json());
     setCreds(refreshed);
     resetForm();
@@ -66,7 +73,7 @@ export default function CryptoConnector() {
     if (!confirm("Delete this credential?")) return;
     await fetch(`${API_URL}/api/v1/crypto-connector/${id}`, {
       method: "DELETE",
-      credentials: "include",
+      headers: deviceHeaders,
     });
     setCreds(creds.filter((c) => c.id !== id));
   };
@@ -83,39 +90,57 @@ export default function CryptoConnector() {
     const nonce = `jasper-trades-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     try {
       if (chain === "solana") {
-        // Phantom/Solflare inject into window.solana (or window.phantom.solana).
-        const provider =
-          (window as any).phantom?.solana || (window as any).solana || null;
-        if (!provider?.isPhantom && !provider?.isSolflare) {
+        // Phantom/Solflare via the solana wallet-adapter providers.
+        const preferred = ["Phantom", "Solflare"];
+        const wallet = solanaWallet.wallets.find((w) =>
+          preferred.includes(w.adapter.name)
+        );
+        if (!wallet) {
           alert("Connect wallet: install Phantom or Solflare, then reload.");
           return null;
         }
-        const resp = await provider.connect();
-        const address = resp.publicKey?.toString?.() || (resp.publicKey || "").toString();
-        // Request signature of the nonce (proves ownership).
+        if (wallet.readyState !== "Installed") {
+          alert(`Please install ${wallet.adapter.name} and reload, then try again.`);
+          return null;
+        }
+        if (solanaWallet.connected && solanaWallet.wallet?.adapter.name === wallet.adapter.name) {
+          // already connected to the preferred wallet
+        } else {
+          solanaWallet.select(wallet.adapter.name);
+          await solanaWallet.connect();
+        }
+        const address = wallet.adapter.publicKey?.toBase58();
+        if (!address) throw new Error("No connected account");
         let signature = "";
-        if (provider.signMessage) {
-          const sig = await provider.signMessage(new TextEncoder().encode(nonce));
-          const raw = sig.signature || sig;
+        const signMessageFn = (
+          wallet.adapter as unknown as {
+            signMessage?: (m: Uint8Array) => Promise<Uint8Array | { signature: Uint8Array }>;
+          }
+        ).signMessage;
+        if (signMessageFn) {
+          const sig = await signMessageFn(new TextEncoder().encode(nonce));
+          const boxed = sig as unknown as { signature?: Uint8Array };
+          const raw = boxed.signature ?? (sig as unknown as Uint8Array);
           signature = bytesToHex(new Uint8Array(raw));
+        }
+        if (!signature) {
+          alert("Connect wallet: this wallet cannot sign messages.");
+          return null;
         }
         return { address, signature, nonce };
       } else {
-        // EVM (MetaMask) via window.ethereum.
-        const eth = (window as any).ethereum;
-        if (!eth?.request) {
-          alert("Connect wallet: install MetaMask, then reload.");
+        // EVM (MetaMask, Coinbase Wallet, etc.) via wagmi's injected connector.
+        const evmConnector = connectors.find((c) => c.id === "injected");
+        if (!evmConnector) {
+          alert("Connect wallet: install a wallet extension like MetaMask, then reload.");
           return null;
         }
-        const accounts = await eth.request({ method: "eth_requestAccounts" });
-        const address = accounts?.[0] || "";
-        let signature = "";
-        if (eth.request) {
-          signature = await eth.request({
-            method: "personal_sign",
-            params: [nonce, address],
-          });
-        }
+        const connected = await connectAsync({ connector: evmConnector });
+        const address = connected.accounts?.[0] || "";
+        if (!address) throw new Error("No account available");
+        // viem signs with personal_sign over the UTF-8 nonce, matching the
+        // backend's eth_account.encode_defunct(message) verification.
+        const signature = await signMessageAsync({ message: nonce });
         return { address, signature, nonce };
       }
     } catch (e) {
@@ -140,20 +165,18 @@ export default function CryptoConnector() {
     };
     const res = await fetch(`${API_URL}/api/v1/crypto-connector`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...deviceHeaders },
       body: JSON.stringify(payload),
-      credentials: "include",
     });
     if (!res.ok) {
       alert("Failed to save connection. Check the backend signature verification.");
       return;
     }
     const refreshed = await fetch(`${API_URL}/api/v1/crypto-connector`, {
-      credentials: "include",
+      headers: deviceHeaders,
     }).then((r) => r.json());
     setCreds(refreshed);
     setShowWalletModal(false);
-    setWalletAddress("");
   };
 
   return (
@@ -171,6 +194,15 @@ export default function CryptoConnector() {
           { header: "API Secret", accessor: "api_secret", sortable: false },
         ]}
         data={creds}
+        renderActions={(row) => (
+          <button
+            onClick={() => handleDelete(row.id)}
+            aria-label={`Delete ${row.exchange} credential`}
+            className="text-red-400 hover:text-red-200"
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
       />
 
       {/* Add manual connector button */}
@@ -205,8 +237,9 @@ export default function CryptoConnector() {
               </button>
             </div>
 
-            <label className="block text-sm text-gray-400 mb-1">Exchange / Chain</label>
+            <label htmlFor="cc-exchange" className="block text-sm text-gray-400 mb-1">Exchange / Chain</label>
             <select
+              id="cc-exchange"
               value={editing.exchange || ""}
               onChange={(e) => setEditing({ ...editing, exchange: e.target.value })}
               className="w-full mb-3 p-2 bg-gray-700 text-gray-100 rounded"
@@ -219,32 +252,36 @@ export default function CryptoConnector() {
               ))}
             </select>
 
-            <label className="block text-sm text-gray-400 mb-1">API Key (optional)</label>
+            <label htmlFor="cc-api-key" className="block text-sm text-gray-400 mb-1">API Key (optional)</label>
             <input
+              id="cc-api-key"
               type="text"
               value={editing.api_key || ""}
               onChange={(e) => setEditing({ ...editing, api_key: e.target.value })}
               className="w-full mb-3 p-2 bg-gray-700 text-gray-100 rounded"
             />
 
-            <label className="block text-sm text-gray-400 mb-1">API Secret (optional)</label>
+            <label htmlFor="cc-api-secret" className="block text-sm text-gray-400 mb-1">API Secret (optional)</label>
             <input
+              id="cc-api-secret"
               type="password"
               value={editing.api_secret || ""}
               onChange={(e) => setEditing({ ...editing, api_secret: e.target.value })}
               className="w-full mb-3 p-2 bg-gray-700 text-gray-100 rounded"
             />
 
-            <label className="block text-sm text-gray-400 mb-1">Wallet address (optional)</label>
+            <label htmlFor="cc-wallet-address" className="block text-sm text-gray-400 mb-1">Wallet address (optional)</label>
             <input
+              id="cc-wallet-address"
               type="text"
               value={editing.wallet_address || ""}
               onChange={(e) => setEditing({ ...editing, wallet_address: e.target.value })}
               className="w-full mb-3 p-2 bg-gray-700 text-gray-100 rounded"
             />
 
-            <label className="block text-sm text-gray-400 mb-1">Chain (optional)</label>
+            <label htmlFor="cc-chain" className="block text-sm text-gray-400 mb-1">Chain (optional)</label>
             <select
+              id="cc-chain"
               value={editing.chain || ""}
               onChange={(e) => setEditing({ ...editing, chain: e.target.value })}
               className="w-full mb-4 p-2 bg-gray-700 text-gray-100 rounded"
@@ -275,8 +312,9 @@ export default function CryptoConnector() {
                 <X size={20} />
               </button>
             </div>
-            <label className="block text-sm text-gray-400 mb-1">Wallet type</label>
+            <label htmlFor="cc-wallet-type" className="block text-sm text-gray-400 mb-1">Wallet type</label>
             <select
+              id="cc-wallet-type"
               value={walletType}
               onChange={(e) => setWalletType(e.target.value)}
               className="w-full mb-3 p-2 bg-gray-700 text-gray-100 rounded"

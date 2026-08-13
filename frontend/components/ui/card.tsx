@@ -10,7 +10,14 @@ export function Card({
   ...rest
 }: React.HTMLAttributes<HTMLDivElement> & { hover?: boolean; onClick?: () => void }) {
   return (
-    <div onClick={onClick} className={`card ${hover ? 'card-hover cursor-pointer' : ''} ${className}`} {...rest}>
+    <div
+      onClick={onClick}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      role="button"
+      tabIndex={0}
+      className={`card ${hover ? 'card-hover cursor-pointer' : ''} ${className}`}
+      {...rest}
+    >
       {children}
     </div>
   );

@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Radio, DollarSign, Wallet, BrainCircuit, Palette, ChevronRight, Settings2, Sun, Moon, MessageCircle } from 'lucide-react';
+import { Radio, DollarSign, Wallet, BrainCircuit, Palette, ChevronRight, Settings2, Sun, Moon, MessageCircle, AlertTriangle } from 'lucide-react';
 import { Card, Button, Badge, Modal, Segmented } from '@/components/ui';
 import { useTheme } from '@/lib/theme';
 import { useCurrency } from '@/lib/currencyContext';
 import { API_URL } from '@/lib/constants';
+import { fetchTradingMode, saveTradingMode } from '@/lib/preferences';
 import SettingsTab from '@/components/SettingsTab';
 import ConnectionsPanel from '@/components/settings/ConnectionsPanel';
 import PaperTradingPanel from '@/components/settings/PaperTradingPanel';
@@ -13,28 +14,38 @@ import TelegramSettings from '@/components/settings/TelegramSettings';
 
 interface SettingsScreenProps {
   triggerToast: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void;
-  onNavigate: (tab: string) => void;
+  onNavigate: (tab: string, opts?: { defaultOpen?: StepId }) => void;
+  defaultOpen?: StepId | null;
+  onDefaultOpenConsumed?: () => void;
 }
 
-const TRADING_KEY = 'jasper_trading_mode';
-
-type StepId = 'signals' | 'mode' | 'wallet' | 'telegram' | 'ai' | 'appearance';
+export type StepId = 'signals' | 'mode' | 'wallet' | 'telegram' | 'ai' | 'appearance';
 
 interface StepDef {
   id: StepId; icon: React.ReactNode; title: string; desc: string; optional?: boolean;
 }
 
-export default function SettingsScreen({ triggerToast, onNavigate }: SettingsScreenProps) {
+export default function SettingsScreen({ triggerToast, onNavigate, defaultOpen, onDefaultOpenConsumed }: SettingsScreenProps) {
   const { theme, toggleTheme } = useTheme();
   const { currency, toggleCurrency } = useCurrency();
-  const [mode, setMode] = useState<'practice' | 'live'>(() => {
-    try { return (localStorage.getItem(TRADING_KEY) as 'practice' | 'live') || 'practice'; } catch { return 'practice'; }
-  });
+  const [mode, setMode] = useState<'practice' | 'live'>('practice');
   const [open, setOpen] = useState<StepId | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [envStatus, setEnvStatus] = useState<{
     environment_variables?: Record<string, { configured: boolean; env_var?: string; description?: string }>;
   } | null>(null);
+
+  useEffect(() => {
+    fetchTradingMode().then(setMode);
+  }, []);
+
+  useEffect(() => {
+    if (defaultOpen) {
+      setOpen(defaultOpen);
+      onDefaultOpenConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultOpen]);
 
   useEffect(() => {
     let mounted = true;
@@ -49,7 +60,7 @@ export default function SettingsScreen({ triggerToast, onNavigate }: SettingsScr
 
   const setTradingMode = (m: 'practice' | 'live') => {
     setMode(m);
-    try { localStorage.setItem(TRADING_KEY, m); } catch { /* ignore */ }
+    saveTradingMode(m);
     triggerToast(
       m === 'live' ? 'warning' : 'success',
       m === 'live' ? 'Live mode on' : 'Practice mode on',
@@ -133,17 +144,30 @@ export default function SettingsScreen({ triggerToast, onNavigate }: SettingsScr
           <Segmented<'practice' | 'live'>
             value={mode}
             onChange={setTradingMode}
-            options={[{ value: 'practice', label: 'Practice (play money)' }, { value: 'live', label: 'Live (real money)' }]}
+            options={[{ value: 'practice', label: 'Paper (play money)' }, { value: 'live', label: 'Live (real money)' }]}
           />
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            {mode === 'practice'
-              ? 'Practice uses play money. It is the safest way to get comfortable. Nothing real is traded.'
-              : 'Live mode trades with real money and needs a connected broker (cTrader, Trove or AKShare).'}
-          </p>
-          <div className="rounded-control bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-            <strong>Heads up:</strong> start with practice until you are comfortable. You can switch any time.
-          </div>
-          <PaperTradingPanel mode={mode} triggerToast={triggerToast} />
+
+          {mode === 'practice' ? (
+            <>
+              <div className="rounded-control bg-emerald-50 p-3 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                <strong>Paper trading is on.</strong> Set your virtual starting balance, then press Start on Home to begin
+                trading with play money. Nothing real is traded.
+              </div>
+              <PaperTradingPanel mode={mode} triggerToast={triggerToast} onSaved={() => triggerToast('success', 'Ready to trade', 'Set your balance, then press Start on Home.')} />
+            </>
+          ) : (
+            <>
+              <div className="flex items-start gap-3 rounded-control bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  <strong>Live trading trades with real money.</strong> Connect a wallet or stock broker below before
+                  pressing Start on Home. Nothing is traded until you start.
+                </span>
+              </div>
+              <ConnectionsPanel initialTab="broker" triggerToast={triggerToast} />
+            </>
+          )}
+
           <div className="flex justify-end pt-2"><Button variant="secondary" onClick={() => setOpen(null)}>Done</Button></div>
         </div>
       </Modal>

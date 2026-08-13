@@ -386,6 +386,130 @@ async def get_environment_mode(
     return {"environment_mode": row if row else "sandbox"}
 
 
+# ============ Trading Mode Endpoints (paper / live) ============
+
+class TradingModeRequest(BaseModel):
+    trading_mode: Literal["practice", "live"]
+
+
+@router.post("/trading-mode")
+async def save_trading_mode(
+    request: TradingModeRequest,
+    device_id: str = Header(None, alias="X-Device-ID"),
+):
+    """Save the frontend trading mode (paper or live) for a device."""
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-ID header required")
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(DeviceSettings).where(DeviceSettings.device_id == device_id)
+        )
+        row = result.scalar_one_or_none()
+
+        if row:
+            row.trading_mode = request.trading_mode
+        else:
+            row = DeviceSettings(
+                device_id=device_id,
+                trading_mode=request.trading_mode,
+            )
+            session.add(row)
+
+        await session.commit()
+
+    logger.info(f"Trading mode set to {request.trading_mode} for {device_id}")
+    return {"success": True, "trading_mode": request.trading_mode}
+
+
+@router.get("/trading-mode")
+async def get_trading_mode(
+    device_id: str = Header(None, alias="X-Device-ID"),
+):
+    """Get the current trading mode (paper/live) for a device."""
+    if not device_id:
+        return {"trading_mode": "practice"}
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(DeviceSettings.trading_mode).where(DeviceSettings.device_id == device_id)
+        )
+        row = result.scalar_one_or_none()
+
+    return {"trading_mode": row if row else "practice"}
+
+
+# ============ UI Preferences Endpoints ============
+
+class PreferencesRequest(BaseModel):
+    preferences: Dict[str, Any]
+
+
+@router.get("/preferences")
+async def get_preferences(
+    device_id: str = Header(None, alias="X-Device-ID"),
+):
+    """Get frontend UI preferences (ai_running, agent_configs, sections, onboarding) for a device."""
+    import json
+    if not device_id:
+        return {"preferences": {}}
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(DeviceSettings.preferences).where(DeviceSettings.device_id == device_id)
+        )
+        row = result.scalar_one_or_none()
+
+    if not row:
+        return {"preferences": {}}
+    try:
+        return {"preferences": json.loads(row)}
+    except (TypeError, ValueError):
+        return {"preferences": {}}
+
+
+@router.post("/preferences")
+async def save_preferences(
+    request: PreferencesRequest,
+    device_id: str = Header(None, alias="X-Device-ID"),
+):
+    """Save frontend UI preferences for a device (shallow merge on top-level keys)."""
+    import json
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-ID header required")
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(DeviceSettings).where(DeviceSettings.device_id == device_id)
+        )
+        row = result.scalar_one_or_none()
+
+        current: Dict[str, Any] = {}
+        if row and row.preferences:
+            try:
+                current = json.loads(row.preferences)
+            except (TypeError, ValueError):
+                current = {}
+
+        # Shallow merge top-level keys so callers can update one slice at a time.
+        for key, value in request.preferences.items():
+            if key in current and isinstance(current[key], dict) and isinstance(value, dict):
+                current[key] = {**current[key], **value}
+            else:
+                current[key] = value
+
+        if row:
+            row.preferences = json.dumps(current)
+        else:
+            row = DeviceSettings(device_id=device_id, preferences=json.dumps(current))
+            session.add(row)
+
+        await session.commit()
+
+    logger.info(f"Saved UI preferences for {device_id}")
+    return {"success": True, "preferences": current}
+
+
 # ============ Trove API Endpoints ============
 
 class TroveSettingsRequest(BaseModel):

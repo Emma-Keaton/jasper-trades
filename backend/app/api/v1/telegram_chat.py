@@ -226,9 +226,8 @@ async def handle_market_intel_intent(message: str, device_id: str) -> str:
                 response += f"Data as of {datetime.utcnow().strftime('%H:%M UTC')}"
             else:
                 response = f"🔍 No recent news found for {ticker}.\n\n"
-                response += "Try checking with Agent Reach enabled:\n"
-                response += "• Set AGENT_REACH_ENABLED=true\n"
-                response += "• Configure channels (twitter, reddit, etc.)"
+                response += "Try connecting signal sources:\n"
+                response += "• Add Telegram channels, RSS feeds or subreddits in the app"
         else:
             # General market intelligence
             trending = await service.get_trending_stocks(limit=5)
@@ -254,12 +253,10 @@ async def handle_market_intel_intent(message: str, device_id: str) -> str:
         logger.error(f"Market intelligence error: {e}")
         return (
             "🔍 *Market Intelligence*\n\n"
-            "⚠️ Agent Reach is not fully configured yet.\n\n"
+            "⚠️ No signal sources are connected yet.\n\n"
             "To enable:\n"
-            "• Install: pip install agent-reach\n"
-            "• Configure: AGENT_REACH_ENABLED=true\n"
-            "• Set up channels: twitter, reddit, v2ex\n\n"
-            "Check AGENT_REACH_INTEGRATION_PLAN.md for setup guide."
+            "• Connect Telegram / RSS / Reddit signal sources in the app\n"
+            "• Ask \"News on AAPL?\" for ticker updates"
         )
 
 

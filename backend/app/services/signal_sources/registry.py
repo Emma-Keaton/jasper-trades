@@ -18,6 +18,7 @@ from .rss_source import RSSFeedSource
 from .reddit_source import RedditSource
 from .stocktwits_source import StockTwitsSource
 from .telegram_source import TelegramSource
+from .telegram_public_source import TelegramPublicSource
 
 logger = structlog.get_logger(__name__)
 
@@ -30,11 +31,13 @@ class SignalSourceRegistry:
 
     def __init__(self) -> None:
         self._telegram = TelegramSource()
+        self._telegram_public = TelegramPublicSource()
         self._adapters: Dict[str, SignalSourceAdapter] = {
             "rss": RSSFeedSource(),
             "reddit": RedditSource(),
             "stocktwits": StockTwitsSource(),
             "telegram": self._telegram,
+            "telegram_public": self._telegram_public,
         }
 
     @property

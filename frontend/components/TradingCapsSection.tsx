@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Shield, Check, DollarSign, Percent, AlertTriangle } from 'lucide-react';
 import { Toast } from '@/app/types';
 
@@ -39,11 +39,7 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetchCaps();
-  }, [portfolioId]);
-
-  const fetchCaps = async () => {
+  const fetchCaps = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/v1/trading-caps?portfolio_id=${portfolioId || 1}`);
@@ -67,7 +63,11 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
     } finally {
       setLoading(false);
     }
-  };
+  }, [portfolioId]);
+
+  useEffect(() => {
+    fetchCaps();
+  }, [fetchCaps]);
 
   const saveCaps = async () => {
     if (!caps.max_position_amount && !caps.max_position_percentage && 
@@ -100,7 +100,7 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
       } else {
         triggerToast('error', 'Save Failed', data.detail || 'Could not save trading caps');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Save Failed', 'Could not save trading caps');
     } finally {
       setSaving(false);
@@ -175,11 +175,12 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
         {/* Position Limits */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-300 mb-2 flex items-center gap-2">
+            <label htmlFor="max-position-amount" className="block text-sm text-gray-300 mb-2 flex items-center gap-2">
               <DollarSign className="w-4 h-4" />
               Max Position Amount ($)
             </label>
             <input
+              id="max-position-amount"
               type="number"
               value={caps.max_position_amount ?? ''}
               onChange={(e) => setCaps({ ...caps, max_position_amount: parseFloat(e.target.value) || undefined })}
@@ -192,11 +193,12 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
           </div>
 
           <div>
-            <label className="block text-sm text-gray-300 mb-2 flex items-center gap-2">
+            <label htmlFor="max-position-percent" className="block text-sm text-gray-300 mb-2 flex items-center gap-2">
               <Percent className="w-4 h-4" />
               Max Position (%)
             </label>
             <input
+              id="max-position-percent"
               type="number"
               value={caps.max_position_percentage ?? ''}
               onChange={(e) => setCaps({ ...caps, max_position_percentage: parseFloat(e.target.value) || undefined })}
@@ -214,8 +216,9 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
         {/* Daily Loss Limits */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-300 mb-2">Daily Loss Limit ($)</label>
+            <label htmlFor="daily-loss-limit" className="block text-sm text-gray-300 mb-2">Daily Loss Limit ($)</label>
             <input
+              id="daily-loss-limit"
               type="number"
               value={caps.daily_loss_limit ?? ''}
               onChange={(e) => setCaps({ ...caps, daily_loss_limit: parseFloat(e.target.value) || undefined })}
@@ -228,8 +231,9 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
           </div>
 
           <div>
-            <label className="block text-sm text-gray-300 mb-2">Daily Loss Limit (%)</label>
+            <label htmlFor="daily-loss-percent" className="block text-sm text-gray-300 mb-2">Daily Loss Limit (%)</label>
             <input
+              id="daily-loss-percent"
               type="number"
               value={caps.daily_loss_percentage ?? ''}
               onChange={(e) => setCaps({ ...caps, daily_loss_percentage: parseFloat(e.target.value) || undefined })}
@@ -246,33 +250,31 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
 
         {/* Enforcement */}
         <div className="border-t border-[#475569] pt-4">
-          <label className="block text-sm text-gray-300 mb-3">Enforcement Mode</label>
+          <span className="block text-sm text-gray-300 mb-3">Enforcement Mode</span>
           <div className="space-y-2">
-            <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-[#475569] hover:bg-[#334155]">
+            <label htmlFor="cap-hard" className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-[#475569] hover:bg-[#334155]">
               <input
+                id="cap-hard"
                 type="radio"
                 name="enforcement"
                 checked={caps.hard_limit}
                 onChange={() => setCaps({ ...caps, hard_limit: true })}
                 className="w-4 h-4"
               />
-              <div>
-                <span className="text-sm font-medium text-white">Hard Limit</span>
-                <p className="text-xs text-gray-500">Block any trade that exceeds caps</p>
-              </div>
+              <span className="text-sm font-medium text-white">Hard Limit</span>
+              <p className="text-xs text-gray-500">Block any trade that exceeds caps</p>
             </label>
-            <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-[#475569] hover:bg-[#334155]">
+            <label htmlFor="cap-soft" className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-[#475569] hover:bg-[#334155]">
               <input
+                id="cap-soft"
                 type="radio"
                 name="enforcement"
                 checked={!caps.hard_limit}
                 onChange={() => setCaps({ ...caps, hard_limit: false })}
                 className="w-4 h-4"
               />
-              <div>
-                <span className="text-sm font-medium text-white">Soft Limit</span>
-                <p className="text-xs text-gray-500">Warn but allow trades (for testing)</p>
-              </div>
+              <span className="text-sm font-medium text-white">Soft Limit</span>
+              <p className="text-xs text-gray-500">Warn but allow trades (for testing)</p>
             </label>
           </div>
         </div>

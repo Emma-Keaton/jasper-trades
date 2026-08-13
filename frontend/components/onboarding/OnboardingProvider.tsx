@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useOnboardingEngine, TourStep } from './useOnboardingEngine';
+import { loadOnboardingPrefs } from '@/lib/preferences';
 
 interface OnboardingContextType {
   currentStepIndex: number;
@@ -37,15 +38,20 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const engine = useOnboardingEngine();
 
   // Initial hidden if the welcome was already dismissed or onboarding completed once
-  const [showWelcome, setShowWelcome] = React.useState(() => {
-    try {
-      const completed = localStorage.getItem('jasper_onboarding_completed') === 'true';
-      const dismissed = localStorage.getItem('jasper_welcome_done') === 'true';
-      return !completed && !dismissed;
-    } catch {
-      return true;
-    }
-  });
+  const [showWelcome, setShowWelcome] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    loadOnboardingPrefs().then((prefs) => {
+      if (cancelled) return;
+      const completed = prefs.onboarding_completed === true;
+      const dismissed = prefs.welcome_done === true;
+      setShowWelcome(!completed && !dismissed);
+    }).catch(() => {
+      setShowWelcome(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const value = {
     ...engine,

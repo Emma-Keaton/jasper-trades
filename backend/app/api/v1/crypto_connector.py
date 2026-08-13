@@ -29,9 +29,18 @@ class CredentialIn(BaseModel):
     @validator("exchange")
     def validate_exchange(cls, v: str):
         allowed = {"binance", "coinbase", "kraken", "solana", "ethereum", "bsc"}
-        if v.lower() not in allowed:
-            raise ValueError(f"Unsupported exchange/wallet: {v}")
-        return v.lower()
+        name = v.lower()
+        if name in allowed:
+            return name
+        # Accept any real CCXT exchange id so the dynamic /exchanges/ dropdown works.
+        try:
+            import ccxt
+            all_exchanges = {e.lower() for e in ccxt.exchanges}
+            if name in all_exchanges:
+                return name
+        except Exception:
+            pass
+        raise ValueError(f"Unsupported exchange/wallet: {v}")
 
 
 def _verify_wallet_signature(chain: str, address: str, message: str, signature: str) -> bool:

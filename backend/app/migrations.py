@@ -7,6 +7,7 @@ import structlog
 from sqlalchemy import text, inspect
 from app.models import Base
 from app.database import engine
+from app.config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -33,20 +34,27 @@ async def migrate():
     """
     Run database migrations.
     Creates tables and adds missing columns automatically.
+
+    - SQLite: create_all + incremental ALTER TABLE migrations.
+    - Postgres/Supabase: create_all is authoritative (the model defines the
+      full schema), so no SQLite-specific ALTER steps run.
     """
     logger.info("Starting database migration...")
 
     try:
         # Step 1: Create all tables that don't exist
+        # Works on both SQLite and Postgres; on a fresh Postgres/Supabase DB
+        # this creates the FULL schema from the models.
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("[OK] Created/verified all tables")
 
-        # Step 2: Add missing columns to device_settings (if needed)
-        await _migrate_device_settings()
-        
-        # Step 3: Add missing columns to portfolios (if needed)
-        await _migrate_portfolios()
+        # Step 2+ are legacy path upgrades only needed for existing SQLite DBs.
+        # Their ALTER TABLE SQL is SQLite-specific and invalid on Postgres.
+        if not settings.using_postgres:
+            await _migrate_device_settings()
+            await _migrate_portfolios()
+            await _migrate_signal_tips()
 
         logger.info("[OK] Database migration completed successfully")
 
@@ -113,6 +121,10 @@ async def _migrate_device_settings():
         # Broker paper trading config
         'broker_paper_trading_config': 'TEXT',
         'universal_paper_trading_config': 'TEXT',
+
+        # Frontend trading mode + UI preferences
+        'trading_mode': "TEXT DEFAULT 'practice'",
+        'preferences': 'TEXT',
     }
 
     existing_columns = await get_existing_columns('device_settings')
@@ -158,6 +170,32 @@ async def _migrate_portfolios():
                 logger.info(f"âœ“ Added column: {column_name} ({column_type}) to portfolios")
             except Exception as e:
                 logger.warning(f"Could not add column {column_name} to portfolios: {e}")
+
+
+async def _migrate_signal_tips():
+    """Add hands-free execution columns to the signal_tips table."""
+
+    expected_columns = {
+        'execution_status': "VARCHAR(32) DEFAULT 'pending'",
+        'execution_detail': 'TEXT',
+        'executed_at': 'TIMESTAMP',
+    }
+
+    try:
+        existing_columns = await get_existing_columns('signal_tips')
+    except Exception:
+        return  # table not created yet; create_all handles a fresh DB
+
+    for column_name, column_type in expected_columns.items():
+        if column_name not in existing_columns:
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text(f"ALTER TABLE signal_tips ADD COLUMN {column_name} {column_type}")
+                    )
+                logger.info(f"[OK] Added column: {column_name} ({column_type}) to signal_tips")
+            except Exception as e:
+                logger.warning(f"Could not add column {column_name} to signal_tips: {e}")
 
 
 async def _migrate_whatsapp_users():

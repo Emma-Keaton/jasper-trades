@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { loadOnboardingPrefs, saveOnboardingPrefs } from '@/lib/preferences';
 
 export interface TourStep {
   id: string;
@@ -43,8 +44,6 @@ interface UseOnboardingEngineReturn {
   totalSteps: number;
 }
 
-const STORAGE_KEY_PREFIX = 'jasper_onboarding_';
-
 export function useOnboardingEngine(): UseOnboardingEngineReturn {
   const [tourSteps, setTourSteps] = useState<TourStep[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
@@ -53,18 +52,21 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-  // Load completed tours from localStorage
+  // Load completed tours from the DB (per device)
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}completed_tours`);
-      if (stored) {
-        setCompletedTours(JSON.parse(stored));
+    let cancelled = false;
+    loadOnboardingPrefs().then((prefs) => {
+      if (cancelled) return;
+      if (Array.isArray(prefs.completed_tours)) {
+        setCompletedTours(prefs.completed_tours as string[]);
       }
-      const completed = localStorage.getItem(`${STORAGE_KEY_PREFIX}completed`) === 'true';
-      setOnboardingCompleted(completed);
-    } catch (error) {
+      if (prefs.onboarding_completed) {
+        setOnboardingCompleted(true);
+      }
+    }).catch((error) => {
       console.error('Failed to load onboarding state:', error);
-    }
+    });
+    return () => { cancelled = true; };
   }, []);
 
   // Scan DOM for target elements
@@ -117,7 +119,7 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
         resizeObserverRef.current.disconnect();
       }
     };
-  }, [targetElements.map(t => t.selector).join(','), scanElements]);
+  }, [scanElements, targetElements]);
 
   // Get current step
   const currentStep = currentStepIndex >= 0 && currentStepIndex < tourSteps.length
@@ -173,11 +175,9 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     setCompletedTours(prev => {
       if (!prev.includes(tourId)) {
         const updated = [...prev, tourId];
-        try {
-          localStorage.setItem(`${STORAGE_KEY_PREFIX}completed_tours`, JSON.stringify(updated));
-        } catch (error) {
+        saveOnboardingPrefs({ completed_tours: updated }).catch((error) => {
           console.error('Failed to save onboarding state:', error);
-        }
+        });
         return updated;
       }
       return prev;
@@ -192,16 +192,11 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   // Flag the whole onboarding as completed once (persists across visits)
   const completeOnboarding = useCallback(() => {
     setOnboardingCompleted(true);
-    setCompletedTours(['home', 'trades', 'markets', 'signals', 'settings']);
-    try {
-      localStorage.setItem(`${STORAGE_KEY_PREFIX}completed`, 'true');
-      localStorage.setItem(
-        `${STORAGE_KEY_PREFIX}completed_tours`,
-        JSON.stringify(['home', 'trades', 'markets', 'signals', 'settings'])
-      );
-    } catch (error) {
+    const allTours = ['home', 'trades', 'markets', 'signals', 'settings'];
+    setCompletedTours(allTours);
+    saveOnboardingPrefs({ onboarding_completed: true, completed_tours: allTours }).catch((error) => {
       console.error('Failed to save onboarding state:', error);
-    }
+    });
   }, []);
 
   const isOnboardingComplete = useCallback(() => {
@@ -212,12 +207,9 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   const resetTours = useCallback(() => {
     setCompletedTours([]);
     setOnboardingCompleted(false);
-    try {
-      localStorage.removeItem(`${STORAGE_KEY_PREFIX}completed_tours`);
-      localStorage.removeItem(`${STORAGE_KEY_PREFIX}completed`);
-    } catch (error) {
+    saveOnboardingPrefs({ onboarding_completed: false, completed_tours: [] }).catch((error) => {
       console.error('Failed to reset onboarding state:', error);
-    }
+    });
   }, []);
 
   return {

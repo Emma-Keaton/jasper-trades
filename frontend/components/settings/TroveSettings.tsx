@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Key, CheckCircle, AlertCircle, Loader2, ExternalLink, Shield, CheckCircle2, XCircle } from 'lucide-react';
+import { Key, CheckCircle, Loader2, ExternalLink, Shield } from 'lucide-react';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -15,12 +16,9 @@ interface TroveSettingsState {
 
 interface TroveSettingsProps {
   triggerToast: (type: 'success' | 'error' | 'info', title: string, message: string) => void;
-  paperTradingConfig?: { enabled: boolean; capital: number; currency: string };
-  onUpdatePaperTrading?: (updates: Partial<{enabled: boolean; capital: number; currency: string}>) => void;
-  onSave?: () => void;
 }
 
-export default function TroveSettings({ triggerToast, paperTradingConfig, onUpdatePaperTrading, onSave }: TroveSettingsProps) {
+export default function TroveSettings({ triggerToast }: TroveSettingsProps) {
   const [formData, setFormData] = useState({
     trove_api_key: '',
     trove_base_url: 'https://sandbox.api.trovefinance.com/v1',
@@ -31,19 +29,13 @@ export default function TroveSettings({ triggerToast, paperTradingConfig, onUpda
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'checking' | 'connected'>('disconnected');
+  const [, setConnectionStatus] = useState<'disconnected' | 'checking' | 'connected'>('disconnected');
 
-  const getDeviceId = () => {
-    let deviceId = localStorage.getItem('device_id');
-    if (!deviceId) {
-      deviceId = 'dev_' + Math.random().toString(36).substring(2, 15);
-      localStorage.setItem('device_id', deviceId);
-    }
-    return deviceId;
-  };
+  const getDeviceId = () => getOrCreateDeviceId();
 
   useEffect(() => {
     loadSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadSettings = async () => {
@@ -116,7 +108,7 @@ export default function TroveSettings({ triggerToast, paperTradingConfig, onUpda
         const error = await res.json();
         triggerToast('error', 'Save Failed', error.detail || 'Failed to save settings');
       }
-    } catch (e) {
+    } catch {
       triggerToast('error', 'Save Failed', 'Failed to save settings');
     } finally {
       setSaving(false);
@@ -160,7 +152,7 @@ export default function TroveSettings({ triggerToast, paperTradingConfig, onUpda
       } else {
         triggerToast('error', 'Connection Failed', data.message || 'Failed to connect');
       }
-    } catch (e) {
+    } catch {
       triggerToast('error', 'Connection Failed', 'Failed to test connection');
     } finally {
       setTesting(false);
@@ -230,8 +222,9 @@ export default function TroveSettings({ triggerToast, paperTradingConfig, onUpda
 
       {/* API Key Input */}
       <div className="mb-4">
-        <label className="block text-sm text-gray-300 mb-2">Trove API Key</label>
+        <label htmlFor="trove-api-key" className="block text-sm text-gray-300 mb-2">Trove API Key</label>
         <input
+          id="trove-api-key"
           type="password"
           value={formData.trove_api_key}
           onChange={(e) => setFormData({ ...formData, trove_api_key: e.target.value })}
@@ -242,7 +235,7 @@ export default function TroveSettings({ triggerToast, paperTradingConfig, onUpda
 
       {/* Environment Toggle */}
       <div className="mb-4">
-        <label className="block text-sm text-gray-300 mb-2">Environment</label>
+        <span className="block text-sm text-gray-300 mb-2">Environment</span>
         <div className="flex items-center gap-3">
           <button
             onClick={toggleSandbox}

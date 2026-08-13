@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { API_URL } from '../../lib/api-client';
+import { getOrCreateDeviceId } from '../../lib/deviceFingerprint';
 
 interface AKShareSettingsProps {
   triggerToast: (type: 'success' | 'error' | 'info', title: string, message: string) => void;
@@ -17,7 +18,7 @@ interface AKShareConfig {
   connected: boolean;
 }
 
-const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTradingConfig, onUpdatePaperTrading, onSave }) => {
+const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast }) => {
   const [config, setConfig] = useState<AKShareConfig>({
     enabled: false,
     paper_trading: true,
@@ -39,9 +40,9 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTr
 
   const loadConfig = async () => {
     try {
-      const deviceId = localStorage.getItem('device_id');
+      const deviceId = getOrCreateDeviceId();
       const response = await fetch(`${API_URL}/api/v1/settings/akshare`, {
-        headers: { 'X-Device-ID': deviceId! },
+        headers: { 'X-Device-ID': deviceId },
       });
 
       if (response.ok) {
@@ -75,12 +76,12 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTr
   const saveConfig = async () => {
     setLoading(true);
     try {
-      const deviceId = localStorage.getItem('device_id');
+      const deviceId = getOrCreateDeviceId();
       const response = await fetch(`${API_URL}/api/v1/settings/akshare`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Device-ID': deviceId!,
+          'X-Device-ID': deviceId,
         },
         body: JSON.stringify(config),
       });
@@ -92,7 +93,7 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTr
       } else {
         triggerToast('error', 'Failed', 'Could not save AKShare settings');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Failed', 'Error saving AKShare settings');
     } finally {
       setLoading(false);
@@ -113,7 +114,7 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTr
       } else {
         triggerToast('error', 'Failed', 'Could not fetch market data');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Failed', 'Error testing AKShare connection');
     } finally {
       setLoading(false);
@@ -172,8 +173,9 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTr
       <div className="space-y-3">
         {/* Enable AKShare */}
         <div className="flex items-center justify-between">
-          <label className="text-sm text-gray-300">Enable Chinese Stock Trading</label>
+          <label htmlFor="akshareEnabled" className="text-sm text-gray-300">Enable Chinese Stock Trading</label>
           <button
+            id="akshareEnabled"
             onClick={() => setConfig({ ...config, enabled: !config.enabled })}
             className={`relative w-12 h-6 rounded-full transition-colors ${config.enabled ? 'bg-[#DC143C]' : 'bg-gray-600'}`}
           >
@@ -183,8 +185,9 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTr
 
         {/* Paper Trading Toggle */}
         <div className="flex items-center justify-between">
-          <label className="text-sm text-gray-300">Paper Trading Mode</label>
+          <label htmlFor="aksharePaperTrading" className="text-sm text-gray-300">Paper Trading Mode</label>
           <button
+            id="aksharePaperTrading"
             onClick={() => setConfig({ ...config, paper_trading: !config.paper_trading })}
             className={`relative w-12 h-6 rounded-full transition-colors ${config.paper_trading ? 'bg-[#DC143C]' : 'bg-gray-600'}`}
           >
@@ -194,8 +197,9 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTr
 
         {/* Initial Capital */}
         <div>
-          <label className="text-sm text-gray-300 block mb-1">Paper Trading Capital (CNY)</label>
+          <label htmlFor="akshareCapital" className="text-sm text-gray-300 block mb-1">Paper Trading Capital (CNY)</label>
           <input
+            id="akshareCapital"
             type="number"
             value={config.initial_capital}
             onChange={(e) => setConfig({ ...config, initial_capital: e.target.value })}
@@ -213,8 +217,9 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTr
 
         {/* Currency */}
         <div>
-          <label className="text-sm text-gray-300 block mb-1">Trading Currency</label>
+          <label htmlFor="akshareCurrency" className="text-sm text-gray-300 block mb-1">Trading Currency</label>
           <select
+            id="akshareCurrency"
             value={config.currency}
             onChange={(e) => setConfig({ ...config, currency: e.target.value })}
             className="w-full bg-[#0F172A] border border-[#475569] rounded-md px-3 py-2 text-white text-sm focus:border-[#DC143C] focus:ring-1 focus:ring-[#DC143C]"
@@ -233,9 +238,10 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast, paperTr
 
       {/* Test Connection */}
       <div className="pt-3 border-t border-[#475569]">
-        <label className="text-sm text-gray-300 block mb-2">Test Market Data Connection</label>
+        <label htmlFor="akshareTestSymbol" className="text-sm text-gray-300 block mb-2">Test Market Data Connection</label>
         <div className="flex gap-2 mb-2">
           <input
+            id="akshareTestSymbol"
             type="text"
             value={testSymbol}
             onChange={(e) => setTestSymbol(e.target.value)}

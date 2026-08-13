@@ -136,6 +136,11 @@ class Settings(BaseSettings):
     # Kronos Remote Service (Render Deployment)
     KRONOS_SERVICE_URL: Optional[str] = None  # Remote Kronos service URL (Render)
 
+    # Replacement forecasting (used when Kronos is unavailable/not configured)
+    REDIS_URL: Optional[str] = None  # Optional forecast cache; falls back to in-memory
+    FORECAST_CACHE_TTL: int = 900  # seconds (15 min)
+    FORECAST_MIN_CANDLES: int = 50  # below this, confidence is marked reduced
+
     # cTrader OpenAPI (OAuth 2.0 Copy Trading)
     CTRADER_CLIENT_ID: Optional[str] = None
     CTRADER_CLIENT_SECRET: Optional[str] = None
@@ -152,9 +157,9 @@ class Settings(BaseSettings):
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: Optional[str] = None  # Bot token from BotFather
 
-    # Agent Reach - Market Intelligence (optional)
+    # Agent Reach - Market Intelligence (optional, legacy shim)
     AGENT_REACH_ENABLED: bool = True  # Enable market intelligence
-    AGENT_REACH_CHANNELS: str = "v2ex,reddit,twitter"  # Multi-source for fast signal detection
+    AGENT_REACH_CHANNELS: str = "telegram,reddit"  # Polled via signal_sources scrapers (telegram/reddit/rss/stocktwits)
     NEWS_POLL_INTERVAL: int = 30  # 30 seconds - ultra-fast for trending stock detection
     SENTIMENT_CACHE_TTL: int = 60  # 1 minute cache for freshness
     SENTIMENT_ANALYSIS_ENABLED: bool = True  # Enable sentiment analysis

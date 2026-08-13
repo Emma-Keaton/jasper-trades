@@ -10,10 +10,9 @@ from app.services.portfolio_service import PortfolioService
 from app.services.valuation_service import ValuationService
 from app.services.signal_service import SignalService
 from sqlalchemy import select
-from app.models import SignalSource, SignalTip, TelegramAccount
+from app.models import SignalSource, TelegramAccount
 from app.services.signal_sources.registry import get_registry
-from app.services.signal_sources.tip_extraction import TipExtractionService
-from app.services.signal_sources.confidence import compute_confidence
+from app.services.signal_sources.ingest import extract_and_ingest, maybe_auto_execute
 
 from app.agents import agent_registry
 
@@ -253,48 +252,13 @@ class SchedulerService:
 
         reg = get_registry()
         drafts = await reg.fetch_all(cfg_list, limit=50)
-        extractor = TipExtractionService()
-        tips = await extractor.extract_tips([d.to_dict() if hasattr(d, "to_dict") else d for d in drafts])
-
-        count = 0
-        for t in tips:
-            try:
-                src_id = int(t.get("source_id") or "0")
-            except (TypeError, ValueError):
-                src_id = 0
-            if src_id == 0:
-                continue
-            dup = await db.execute(
-                select(SignalTip.id).where(SignalTip.device_id == device_id, SignalTip.source_id == src_id,
-                                           SignalTip.slug == (t.get("slug") or ""))
-            )
-            if dup.scalar_one_or_none():
-                continue
-            final_conf, _basis = await compute_confidence(
-                t.get("symbol") or "",
-                t.get("side") or "long",
-                float(t.get("confidence") or 0.0),
-                src_id,
-                db,
-            )
-            db.add(SignalTip(
-                device_id=device_id,
-                source_id=src_id,
-                slug=t.get("slug") or "",
-                symbol=t.get("symbol") or "",
-                side=t.get("side") or "long",
-                timeframe=t.get("timeframe"),
-                confidence=final_conf,
-                rationale=t.get("rationale"),
-                text=t.get("text"),
-                url=t.get("url"),
-                source_created_at=t.get("created_at"),
-            ))
-            count += 1
-        if count:
+        saved = await extract_and_ingest(db, device_id, drafts)
+        for sig in saved:
+            await maybe_auto_execute(db, device_id, sig)
+        if saved:
             await db.commit()
-            logger.info("Signal sources polled", device=device_id, new_tips=count)
-        return count
+            logger.info("Signal sources polled", device=device_id, new_tips=len(saved))
+        return len(saved)
 
     async def _expire_signals(self):
         """Check and mark expired signals."""

@@ -1,11 +1,11 @@
 {
   "name": "Jasper Trades - AI-Powered Trading Dashboard",
   "short_name": "Jasper Trades",
-  "description": "High-fidelity, responsive frontend dashboard and interface for Jasper Trades AI-powered trading.",
+  "description": "An AI trader that watches markets and trades with practice money. Simple, guided, and beginner-friendly.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0F172A",
-  "theme_color": "#3B82F6",
+  "background_color": "#19243A",
+  "theme_color": "#14b8a6",
   "orientation": "portrait-primary",
   "icons": [
     {
@@ -22,7 +22,7 @@
     },
     {
       "src": "/logo.png",
-      "sizes": "512x512",
+      "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any"
     }
@@ -30,24 +30,24 @@
   "categories": ["finance", "productivity"],
   "shortcuts": [
     {
-      "name": "Dashboard",
-      "short_name": "Dashboard",
+      "name": "Home",
+      "short_name": "Home",
       "description": "View trading dashboard",
-      "url": "/?tab=dashboard",
+      "url": "/",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },
     {
-      "name": "Agents",
-      "short_name": "Agents",
-      "description": "Manage AI agents",
-      "url": "/?tab=agents",
+      "name": "Trades",
+      "short_name": "Trades",
+      "description": "View trade history",
+      "url": "/?tab=trades",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },
     {
-      "name": "Portfolio",
-      "short_name": "Portfolio",
-      "description": "View portfolio",
-      "url": "/?tab=portfolio",
+      "name": "Settings",
+      "short_name": "Settings",
+      "description": "Configure trading settings",
+      "url": "/?tab=settings",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ]

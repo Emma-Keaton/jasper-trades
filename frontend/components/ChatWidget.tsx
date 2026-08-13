@@ -1,7 +1,8 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageCircle, X, Send, Minimize2, Maximize2 } from 'lucide-react';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 interface ChatMessage {
   id: number;
@@ -22,14 +23,15 @@ export default function ChatWidget() {
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
-  useEffect(() => {
+useEffect(() => {
     if (isOpen && messages.length === 0) fetchHistory();
     if (isOpen) scrollToBottom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, messages]);
 
   const fetchHistory = async () => {
     try {
-      const deviceId = localStorage.getItem('device_id') || 'web-user';
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/chat/history?device_id=${deviceId}&limit=20`);
       if (res.ok) { const data = await res.json(); setMessages(data.messages || []); }
     } catch { /* ignore */ }
@@ -42,7 +44,7 @@ export default function ChatWidget() {
     setInputText('');
     setIsTyping(true);
     try {
-      const deviceId = localStorage.getItem('device_id') || 'web-user';
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },

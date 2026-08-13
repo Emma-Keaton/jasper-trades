@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { TrendingUp, Check, RefreshCw, Info, ExternalLink, Copy } from 'lucide-react';
+import { TrendingUp, Check, Info, ExternalLink } from 'lucide-react';
 import { Toast } from '@/app/types';
 import InfoModal from './InfoModal';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 interface MarketDataSettings {
   alphavantage_key: string;
@@ -25,15 +26,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export default function MarketDataSection({ marketData, setMarketData, triggerToast }: MarketDataSectionProps) {
   const [showAlphavantageModal, setShowAlphavantageModal] = useState(false);
   const [showFinnhubModal, setShowFinnhubModal] = useState(false);
-  const [showTwelveDataModal, setShowTwelveDataModal] = useState(false);
-  const [showPolygonModal, setShowPolygonModal] = useState(false);
-  const [showFredModal, setShowFredModal] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { valid: boolean; message: string }>>({});
 
   const saveMarketDataKeys = async () => {
     try {
-      const deviceId = localStorage.getItem('device_id') || 'unknown';
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/settings/market-data`, {
         method: 'POST',
         headers: {
@@ -49,7 +47,7 @@ export default function MarketDataSection({ marketData, setMarketData, triggerTo
         const data = await res.json();
         triggerToast('error', 'Save Failed', data.detail || 'Could not save settings');
       }
-    } catch (error) {
+    } catch {
       triggerToast('error', 'Save Failed', 'Could not save market data settings');
     }
   };
@@ -80,8 +78,8 @@ export default function MarketDataSection({ marketData, setMarketData, triggerTo
       } else {
         triggerToast('error', 'Connection Failed', result.message);
       }
-    } catch (error) {
-      setTestResults(prev => ({
+    } catch {
+      setTestResults(() => ({
         [service]: { valid: false, message: 'Connection failed' }
       }));
       triggerToast('error', 'Test Failed', 'Could not test connection');
@@ -158,7 +156,7 @@ export default function MarketDataSection({ marketData, setMarketData, triggerTo
               <h4 className="font-semibold text-white mb-2">What is Alpha Vantage?</h4>
               <p className="text-gray-300">
                 Free financial data API providing real-time stock quotes, forex rates, crypto prices, 
-                and news sentiment. Perfect for expanding Jasper's market data beyond CoinGecko.
+                and news sentiment. Perfect for expanding Jasper&apos;s market data beyond CoinGecko.
               </p>
             </div>
 
@@ -191,7 +189,7 @@ export default function MarketDataSection({ marketData, setMarketData, triggerTo
                 </div>
                 <div className="flex gap-3">
                   <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold">3</div>
-                  <div>Click "Get API Key" - you'll receive it instantly on screen</div>
+                  <div>Click &quot;Get API Key&quot; - you&apos;ll receive it instantly on screen</div>
                 </div>
                 <div className="flex gap-3">
                   <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold">4</div>

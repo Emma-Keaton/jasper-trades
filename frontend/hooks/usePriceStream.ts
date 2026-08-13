@@ -24,7 +24,6 @@ interface UsePriceStreamOptions {
 export function usePriceStream(options: UsePriceStreamOptions = {}) {
   const { onPriceUpdate, onStatusChange, symbols = [] } = options;
   const statusRef = useRef<ConnectionStatus>('disconnected');
-  const connectedRef = useRef(false);
   const attemptedRef = useRef(false);
 
   const handleMessage = useCallback((message: WebSocketMessage) => {
@@ -69,6 +68,7 @@ export function usePriceStream(options: UsePriceStreamOptions = {}) {
     return () => {
       clearInterval(statusInterval);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

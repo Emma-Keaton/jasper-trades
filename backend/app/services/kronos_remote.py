@@ -41,7 +41,10 @@ class KronosRemoteClient:
             Prediction result with direction, confidence, etc.
         """
         if not self.base_url:
-            logger.warning("KRONOS_SERVICE_URL not set - returning neutral prediction")
+            logger.warning("KRONOS_SERVICE_URL not set - using replacement forecast")
+            fallback = await self._replacement(symbol, lookback_days)
+            if fallback is not None:
+                return fallback
             return {
                 "symbol": symbol,
                 "direction": "NEUTRAL",
@@ -66,7 +69,10 @@ class KronosRemoteClient:
                 return result
                 
         except httpx.TimeoutException:
-            logger.error(f"Kronos service timeout for {symbol}")
+            logger.error(f"Kronos service timeout for {symbol} - using replacement forecast")
+            fallback = await self._replacement(symbol, lookback_days)
+            if fallback is not None:
+                return fallback
             return {
                 "symbol": symbol,
                 "direction": "ERROR",
@@ -75,7 +81,10 @@ class KronosRemoteClient:
                 "strategy": strategy
             }
         except Exception as e:
-            logger.error(f"Kronos prediction failed for {symbol}: {e}")
+            logger.error(f"Kronos prediction failed for {symbol}: {e} - using replacement forecast")
+            fallback = await self._replacement(symbol, lookback_days)
+            if fallback is not None:
+                return fallback
             return {
                 "symbol": symbol,
                 "direction": "ERROR",
@@ -83,6 +92,23 @@ class KronosRemoteClient:
                 "error": str(e),
                 "strategy": strategy
             }
+
+    async def _replacement(
+        self,
+        symbol: str,
+        lookback_days: int = 30,
+    ) -> Optional[Dict[str, Any]]:
+        """Replacement forecast from the tiered aegis-quant forecaster.
+
+        Returns None when not enough price data is available so the caller can
+        fall back to its neutral/error placeholder.
+        """
+        try:
+            from app.services.kronos_fallback import replacement_prediction
+            return await replacement_prediction(symbol, lookback_days=lookback_days)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Replacement forecast unavailable for {symbol}: {e}")
+            return None
     
     async def predict_batch(
         self,
@@ -102,8 +128,17 @@ class KronosRemoteClient:
             Dictionary mapping symbols to predictions
         """
         if not self.base_url:
-            logger.warning("KRONOS_SERVICE_URL not set - returning empty results")
-            return {symbol: {"symbol": symbol, "direction": "NEUTRAL", "confidence": 0.0, "error": "Service not configured"} for symbol in symbols}
+            logger.warning("KRONOS_SERVICE_URL not set - using replacement forecasts")
+            results = {}
+            for symbol in symbols:
+                fallback = await self._replacement(symbol, lookback_days)
+                results[symbol] = fallback or {
+                    "symbol": symbol,
+                    "direction": "NEUTRAL",
+                    "confidence": 0.0,
+                    "error": "Service not configured",
+                }
+            return results
         
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -122,11 +157,17 @@ class KronosRemoteClient:
                 return result
                 
         except Exception as e:
-            logger.error(f"Kronos batch prediction failed: {e}")
-            return {
-                symbol: {"symbol": symbol, "direction": "ERROR", "confidence": 0.0, "error": str(e)}
-                for symbol in symbols
-            }
+            logger.error(f"Kronos batch prediction failed: {e} - using replacement forecasts")
+            results = {}
+            for symbol in symbols:
+                fallback = await self._replacement(symbol, lookback_days)
+                results[symbol] = fallback or {
+                    "symbol": symbol,
+                    "direction": "ERROR",
+                    "confidence": 0.0,
+                    "error": str(e),
+                }
+            return results
     
     async def health_check(self) -> Dict[str, Any]:
         """Check if Kronos service is healthy."""

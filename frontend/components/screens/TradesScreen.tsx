@@ -23,7 +23,7 @@ function trendLine(pnl: number): string {
 }
 
 export default function TradesScreen({
-  cash, holdings, tradeHistory, loading = false, onNavigate, triggerToast,
+  cash, holdings, tradeHistory, loading = false, onNavigate,
 }: TradesScreenProps) {
   const { formatMoney } = useCurrencyFormatter();
 

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, LucideIcon } from 'lucide-react';
+import { loadCollapsibleState, saveCollapsibleState } from '@/lib/preferences';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -22,18 +23,22 @@ export function CollapsibleSection({
   completionStatus,
   children,
 }: CollapsibleSectionProps) {
-  const [isOpen, setIsOpen] = useState(() => {
-    if (storageKey) {
-      const stored = localStorage.getItem(storageKey);
-      return stored ? stored === 'true' : defaultOpen;
-    }
-    return defaultOpen;
-  });
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
+  // Load persisted open state from the DB (per device).
   useEffect(() => {
-    if (storageKey) {
-      localStorage.setItem(storageKey, String(isOpen));
-    }
+    if (!storageKey) return;
+    let cancelled = false;
+    loadCollapsibleState(storageKey).then((stored) => {
+      if (!cancelled && stored !== null) setIsOpen(stored);
+    });
+    return () => { cancelled = true; };
+  }, [storageKey]);
+
+  // Persist open state changes.
+  useEffect(() => {
+    if (!storageKey) return;
+    saveCollapsibleState(storageKey, isOpen);
   }, [isOpen, storageKey]);
 
   const IconComponent = typeof icon === 'string' 

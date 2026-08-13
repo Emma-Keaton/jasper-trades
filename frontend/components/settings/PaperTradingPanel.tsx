@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { DollarSign, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { API_URL } from '@/lib/constants';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 interface PaperTradingConfig {
   enabled: boolean;
@@ -16,12 +17,13 @@ interface PaperTradingConfig {
 interface PaperTradingPanelProps {
   mode: 'practice' | 'live';
   triggerToast: (type: 'success' | 'error' | 'info', title: string, message: string) => void;
+  onSaved?: () => void;
 }
 
 const inputCls =
   'w-full rounded-control border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100';
 
-export default function PaperTradingPanel({ mode, triggerToast }: PaperTradingPanelProps) {
+export default function PaperTradingPanel({ mode, triggerToast, onSaved }: PaperTradingPanelProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<PaperTradingConfig>({
@@ -32,7 +34,7 @@ export default function PaperTradingPanel({ mode, triggerToast }: PaperTradingPa
     currency: 'USD',
   });
 
-  const deviceId = () => localStorage.getItem('device_id') || (localStorage.setItem('device_id', 'dev_' + Math.random().toString(36).substring(2, 15)) as any);
+  const deviceId = () => getOrCreateDeviceId();
 
   useEffect(() => {
     (async () => {
@@ -65,6 +67,7 @@ export default function PaperTradingPanel({ mode, triggerToast }: PaperTradingPa
       });
       if (res.ok) {
         triggerToast('success', 'Settings Saved', 'Practice mode configuration updated.');
+        onSaved?.();
       } else {
         throw new Error('Failed to save');
       }
@@ -105,12 +108,13 @@ export default function PaperTradingPanel({ mode, triggerToast }: PaperTradingPa
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+            <label htmlFor="virtualStartingBalance" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
               Virtual starting balance
             </label>
             <div className="relative">
               <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
+                id="virtualStartingBalance"
                 type="number"
                 value={config.initial_capital}
                 onChange={(e) => setConfig({ ...config, initial_capital: parseFloat(e.target.value) || 0 })}
@@ -131,8 +135,9 @@ export default function PaperTradingPanel({ mode, triggerToast }: PaperTradingPa
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Currency</label>
+            <label htmlFor="paperCurrency" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Currency</label>
             <select
+              id="paperCurrency"
               value={config.currency}
               onChange={(e) => setConfig({ ...config, currency: e.target.value })}
               className={inputCls}
