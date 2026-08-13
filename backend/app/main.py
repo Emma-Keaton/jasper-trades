@@ -373,6 +373,7 @@ app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(market_intelligence.router, prefix="/api/v1", tags=["market-intelligence"])
 app.include_router(trading.router, prefix="/api/v1/trading", tags=["trading"])
 app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
+app.include_router(signal_sources.router, prefix="/api/v1", tags=["signals"])
 app.include_router(signals.router, prefix="/api/v1/signals", tags=["signals"])
 app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["portfolio"])
 app.include_router(system.router, prefix="/api/v1/system", tags=["system"])
@@ -402,7 +403,6 @@ app.include_router(settings_extensions.router, prefix="/api/v1", tags=["settings
 app.include_router(exchanges.router, prefix="/api/v1", tags=["exchanges"])
 app.include_router(crypto_connector.router, prefix="/api/v1", tags=["crypto-connector"])
 app.include_router(broker_connections.router, prefix="/api/v1", tags=["brokers"])
-app.include_router(signal_sources.router, prefix="/api/v1", tags=["signals"])
 app.include_router(forex.router, tags=["forex"])  # Trove forex conversion
 app.include_router(banks.router, prefix="/api/v1", tags=["banks"])  # Nigerian bank list
 app.include_router(symbols.router, prefix="/api/v1", tags=["symbols"])  # Symbol listing (US + NGX)
