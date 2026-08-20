@@ -4,8 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { apiFetch } from '@/lib/api-client';
 
 interface EquityDataPoint {
   x: number; // timestamp
@@ -43,8 +42,8 @@ export function usePortfolioHistory(options: UsePortfolioHistoryOptions = {}) {
   const fetchHistory = useCallback(async () => {
     try {
       // Fetch portfolio performance
-      const performanceRes = await fetch(
-        `${API_URL}/api/v1/portfolio/performance?portfolio_id=${portfolioId}&period=${period}`
+      const performanceRes = await apiFetch(
+        `/api/v1/portfolio/performance?portfolio_id=${portfolioId}&period=${period}`
       );
 
       if (!performanceRes.ok) {
@@ -54,8 +53,8 @@ export function usePortfolioHistory(options: UsePortfolioHistoryOptions = {}) {
       const performance = await performanceRes.json();
 
       // Fetch portfolio summary for current value
-      const portfolioRes = await fetch(
-        `${API_URL}/api/v1/portfolio?portfolio_id=${portfolioId}`
+      const portfolioRes = await apiFetch(
+        `/api/v1/portfolio?portfolio_id=${portfolioId}`
       );
 
       if (!portfolioRes.ok) {

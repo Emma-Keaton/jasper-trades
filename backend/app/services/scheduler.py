@@ -14,8 +14,6 @@ from app.models import SignalSource, TelegramAccount
 from app.services.signal_sources.registry import get_registry
 from app.services.signal_sources.ingest import extract_and_ingest, maybe_auto_execute
 
-from app.agents import agent_registry
-
 logger = structlog.get_logger(__name__)
 
 
@@ -194,24 +192,21 @@ class SchedulerService:
             logger.error(f"Error updating prices: {e}")
 
     async def _generate_signals(self):
-        """Generate new signals from active agents."""
+        """Generate signals from the Alpha Zoo factor consensus on watchlists."""
         try:
+            from app.services.factor_trading import run_factor_sweep
+
             db = self.db_session_factory()
-            signal_service = SignalService(db)
-
-            # Get active agents
-            active_agents = agent_registry.get_active()
-
-            generated_count = 0
-            for agent_name in active_agents:
-                # Each agent generates signals based on its strategy
-                logger.debug(f"Agent {agent_name} generating signals")
-                # Agents generate signals via their analyze() method
-                # Would call agent.analyze() and agent.generate_signal()
-
-            await db.close()
-
-            logger.info(f"Generated {generated_count} new signals")
+            try:
+                stats = await run_factor_sweep(db)
+                logger.info(
+                    "Signal generation complete",
+                    enabled=stats.get("enabled"),
+                    traded=stats.get("traded", 0),
+                    skipped=stats.get("skipped", 0),
+                )
+            finally:
+                await db.close()
 
         except Exception as e:
             logger.error(f"Error generating signals: {e}", exc_info=True)

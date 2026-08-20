@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Save, DollarSign, Wallet, Percent, Clock, Split, RefreshCw, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { Toast } from '@/app/types';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 
 interface Bank {
   name: string;
@@ -65,7 +66,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
     setLoadingBanks(true);
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/banks/nigeria`, {
+      const res = await apiFetch(`${API_URL}/api/v1/banks/nigeria`, {
         headers: { 'X-Device-ID': deviceId },
       });
 
@@ -150,7 +151,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
       const deviceId = getOrCreateDeviceId();
       
       // Encrypt config before sending
-      const response = await fetch(`${API_URL}/api/v1/settings/payout`, {
+      const response = await apiFetch(`${API_URL}/api/v1/settings/payout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -191,7 +192,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
       const deviceId = getOrCreateDeviceId();
       
       // Get portfolio ID
-      const portfolioRes = await fetch(`${API_URL}/api/v1/portfolio`);
+      const portfolioRes = await apiFetch(`${API_URL}/api/v1/portfolio`);
       const portfolios = await portfolioRes.json();
       
       if (!portfolios.data || portfolios.data.length === 0) {
@@ -203,7 +204,7 @@ export default function PayoutSection({ payoutConfig, setPayoutConfig, triggerTo
       const portfolioId = portfolios.data[0].id;
 
       // Trigger immediate payout (small test amount)
-      const res = await fetch(`${API_URL}/api/v1/payout/test`, {
+      const res = await apiFetch(`${API_URL}/api/v1/payout/test`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

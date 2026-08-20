@@ -17,21 +17,32 @@ TIP_EXTRACTION_PROMPT = """You are a trading-signal extraction engine. ..."""
 
 
 class TipExtractionService:
-    def __init__(self, model=None, api_key=None):
+    def __init__(self, model=None, api_key=None, keys=None):
         self.model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        keys = os.getenv("GEMINI_API_KEYS", "") or ""
-        first_key = next((k.strip() for k in keys.replace("\n", ",").split(",") if k.strip()), None)
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or first_key
+        if keys is None:
+            from app.config import settings as app_settings
+            keys = app_settings.gemini_keys
+        self.keys = list(keys) if keys else []
+        self.api_key = api_key or self.keys[0] if self.keys else None
         self._client = None
+        self._cursor = 0
+
+    def _next_key(self):
+        """Round-robin across the configured project keys."""
+        if not self.keys:
+            return None
+        key = self.keys[self._cursor % len(self.keys)]
+        self._cursor += 1
+        return key
 
     def _get_client(self):
         if self._client is not None:
             return self._client
-        if not self.api_key:
+        if not self.keys:
             return None
         try:
             from google import genai
-            self._client = genai.Client(api_key=self.api_key)
+            self._client = genai.Client(api_key=self._next_key())
             return self._client
         except Exception as e:
             logger.warning("Gemini init failed: %s", e)
@@ -61,6 +72,7 @@ class TipExtractionService:
                     tips.append(tip)
             except Exception as e:
                 logger.warning("Gemini tip extraction failed: %s", e)
+                self._client = None  # rotate to the next project key on failure
         return tips
 async def _gemini_call(client, prompt):
     try:

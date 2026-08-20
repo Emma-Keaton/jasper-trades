@@ -3,7 +3,8 @@ import { X, Plus, Trash2, Wallet } from "lucide-react";
 import { useConnect, useSignMessage } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { API_URL } from "@/lib/constants";
-import { getOrCreateDeviceId } from "@/lib/deviceFingerprint";
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 import DataTable from "@/components/ui/data-table";
 
 type Credential = {
@@ -40,12 +41,12 @@ export default function CryptoConnector() {
   // Load stored credentials
   useEffect(() => {
     const headers = { "X-Device-ID": deviceId };
-    fetch(`${API_URL}/api/v1/crypto-connector`, { headers })
+    apiFetch(`${API_URL}/api/v1/crypto-connector`, { headers })
       .then((r) => r.json())
       .then(setCreds)
       .catch(() => console.error("failed to load crypto creds"));
     // Load exchange list dynamically from backend
-    fetch(`${API_URL}/api/v1/exchanges/`)
+    apiFetch(`${API_URL}/api/v1/exchanges/`)
       .then((r) => r.json())
       .then(setExchanges)
       .catch(() => console.error("failed to load exchanges"));
@@ -57,12 +58,12 @@ export default function CryptoConnector() {
   };
 
   const handleSave = async () => {
-    await fetch(`${API_URL}/api/v1/crypto-connector`, {
+    await apiFetch(`${API_URL}/api/v1/crypto-connector`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...deviceHeaders },
       body: JSON.stringify(editing),
     });
-    const refreshed = await fetch(`${API_URL}/api/v1/crypto-connector`, {
+    const refreshed = await apiFetch(`${API_URL}/api/v1/crypto-connector`, {
       headers: deviceHeaders,
     }).then((r) => r.json());
     setCreds(refreshed);
@@ -71,7 +72,7 @@ export default function CryptoConnector() {
 
   const handleDelete = async (id: number) => {
     if (!confirm("Delete this credential?")) return;
-    await fetch(`${API_URL}/api/v1/crypto-connector/${id}`, {
+    await apiFetch(`${API_URL}/api/v1/crypto-connector/${id}`, {
       method: "DELETE",
       headers: deviceHeaders,
     });
@@ -163,7 +164,7 @@ export default function CryptoConnector() {
       signature: connected.signature,
       nonce: connected.nonce,
     };
-    const res = await fetch(`${API_URL}/api/v1/crypto-connector`, {
+    const res = await apiFetch(`${API_URL}/api/v1/crypto-connector`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...deviceHeaders },
       body: JSON.stringify(payload),
@@ -172,7 +173,7 @@ export default function CryptoConnector() {
       alert("Failed to save connection. Check the backend signature verification.");
       return;
     }
-    const refreshed = await fetch(`${API_URL}/api/v1/crypto-connector`, {
+    const refreshed = await apiFetch(`${API_URL}/api/v1/crypto-connector`, {
       headers: deviceHeaders,
     }).then((r) => r.json());
     setCreds(refreshed);

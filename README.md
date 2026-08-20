@@ -15,12 +15,19 @@ practice money before risking anything real.
 ## 🚀 Quick Start
 
 ```bash
-install.bat      # Install backend + frontend dependencies
-start.bat        # Run both servers
+# Backend
+cd backend
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Frontend (in a second terminal)
+cd frontend
+npm install
+npm run dev
 ```
 
 - Frontend → http://localhost:3000
-- Backend API → http://localhost:8000 (docs at `/docs`)
+- Backend API → http://localhost:8000 (docs at `/docs` in dev only; disabled in production)
 
 ---
 
@@ -54,7 +61,7 @@ Polymarket unless they respond).
 
 ### 🔔 Notifications
 - **Telegram** — two-way chat + a message for **every executed trade**.
-- Email (SendGrid), Discord, WhatsApp for summaries and risk alerts.
+- Email (SendGrid), Discord for summaries and risk alerts.
 
 ### 🛡️ Safety
 - Trading caps, circuit breakers, and **paper-first** execution.
@@ -94,7 +101,7 @@ jasper-trades/
 Set these in your `.env` / Render dashboard:
 
 ```
-GEMINI_API_KEYS=key1,key2,key3,key4   # 3-4 keys from separate Google accounts (PRIMARY LLM)
+GEMINI_API_KEY=key1,key2,key3        # ~3 keys from separate Google accounts (PRIMARY LLM)
 NVIDIA_API_KEY=                        # NVIDIA NIM fallback (used automatically if Gemini is down)
 CTRADER_CLIENT_ID=                     # cTrader Connect app
 CTRADER_CLIENT_SECRET=

@@ -1,10 +1,9 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import { Compass, Search, Plus, Check } from 'lucide-react';
 import { Card, Button, Modal, EmptyState } from '@/components/ui';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { apiFetch } from '@/lib/api-client';
 
 interface Factor { id: string; name: string; category: string; difficulty: string; win: string; sharpe: string; drawdown: string; avgReturn: string; description: string; }
 
@@ -24,9 +23,9 @@ export default function AlphaZooScreen({ addAlphaFactor, triggerToast }: AlphaZo
   useEffect(() => {
     (async () => {
       try {
-        const [fRes, cRes] = await Promise.all([
-          fetch(`${API_URL}/api/v1/alpha-factors?limit=50`),
-          fetch(`${API_URL}/api/v1/alpha-factors/categories`),
+const [fRes, cRes] = await Promise.all([
+          apiFetch(`/api/v1/alpha-factors?limit=50`),
+          apiFetch(`/api/v1/alpha-factors/categories`),
         ]);
         if (fRes.ok) {
           const data = await fRes.json();

@@ -81,7 +81,7 @@ class GeminiKeyRotator:
     def __init__(self, keys: List[str], base_url: str = GEMINI_OPENAI_BASE_URL):
         if not keys:
             raise ValueError(
-                "No Gemini API keys configured. Set GEMINI_API_KEYS "
+                "No Gemini API keys configured. Set GEMINI_API_KEY "
                 "(comma-separated, ideally from separate Google accounts/projects)."
             )
         self.base_url = base_url
@@ -165,12 +165,12 @@ class GeminiLLMClient:
     """
 
     def __init__(self, keys: Optional[List[str]] = None):
-        resolved = keys or _parse_keys(settings.GEMINI_API_KEYS)
+        resolved = keys or settings.gemini_keys
         if not resolved:
             self.rotator: Optional[GeminiKeyRotator] = None
             self._configured = False
             logger.warning(
-                "Gemini LLM not configured (GEMINI_API_KEYS empty). "
+                "Gemini LLM not configured (GEMINI_API_KEY empty). "
                 "LLM features disabled until keys are provided."
             )
             return
@@ -260,6 +260,21 @@ class GeminiLLMClient:
                 )
                 if is_rate_limit:
                     retry_after = getattr(e, "retry_after", None)
+                    self.rotator.mark_rate_limited(state, retry_after)
+                    logger.warning(
+                        "Gemini rate limited; rotating to next key",
+                        attempt=attempt + 1,
+                        error=str(e)[:200],
+                    )
+                else:
+                    logger.warning(
+                        "Gemini call failed; retrying with next key",
+                        attempt=attempt + 1,
+                        error=str(e)[:200],
+                    )
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Gemini call failed after exhausting all retries")
 
     async def chat_completion(
         self,

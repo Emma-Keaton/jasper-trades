@@ -47,16 +47,21 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: Optional[str] = None
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
 
-    # NVIDIA NIM API (DEPRECATED - use Gemini 2.5 Flash instead via GEMINI_API_KEYS)
-    # Kept as a fallback; the LLM service prefers Gemini when GEMINI_API_KEYS is set.
+    # NVIDIA NIM API (DEPRECATED - use Gemini 2.5 Flash instead via GEMINI_API_KEY)
+    # Kept as a fallback; the LLM service prefers Gemini when GEMINI_API_KEY is set.
     NVIDIA_API_KEY: Optional[str] = None  # Set via Settings page
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
 
     # Google Gemini 2.5 Flash - PRIMARY LLM provider (free tier, multi-key rotation)
     # IMPORTANT: Gemini rate limits are PER PROJECT, so each key below should come
     # from a SEPARATE Google account / AI Studio project to keep quotas independent.
-    # Comma- or newline-separated. Get keys at https://aistudio.google.com/apikey
-    GEMINI_API_KEYS: Optional[str] = None  # e.g. "key1,key2,key3,key4"
+    # Comma- or newline-separated. Use ~3 keys so a single project being rate-limited
+    # never stalls a trade mid-execution. Get keys at https://aistudio.google.com/apikey
+    GEMINI_API_KEY: Optional[str] = None  # e.g. "key1,key2,key3"
+    # DEPRECATED alias - kept so existing deployments keep working. Prefer GEMINI_API_KEY.
+    GEMINI_API_KEYS: Optional[str] = None  # e.g. "key1,key2,key3"
+    # Google Gen AI convention alias; used only when GEMINI_API_KEY/KEYS are unset.
+    GOOGLE_API_KEY: Optional[str] = None
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
     # Model Routing - Gemini 2.5 Flash family (FREE tier).
@@ -89,6 +94,9 @@ class Settings(BaseSettings):
     # Solana memecoin market data (DexScreener discovery + Jupiter execution)
     DEXSCREENER_API: str = "https://api.dexscreener.com"
     JUPITER_LITE_API: str = "https://lite-api.jup.ag"
+
+    # CoinMarketCap market data (top movers, quotes, listings). Optional.
+    CMC_API_KEY: Optional[str] = None  # pro-api.coinmarketcap.com key
 
     # Copy Trading
     GITHUB_TOKEN: Optional[str] = None
@@ -154,8 +162,22 @@ class Settings(BaseSettings):
     UNIVERSAL_PAPER_CAPITAL: float = 10000.0
     UNIVERSAL_PAPER_CURRENCY: str = "USD"
 
+    # Auto-payouts are DISABLED by default (safe-by-default).
+    # Requires BOTH environment=production AND this flag to run the scheduler.
+    AUTO_PAYOUTS_ENABLED: bool = False
+
+    # Alpha Zoo factor trading (scheduled hands-free signals from the watchlist)
+    FACTOR_TRADING_ENABLED: bool = True
+    FACTOR_SWEEP_INTERVAL: int = 300  # seconds between factor sweeps
+    FACTOR_TIMEFRAME: str = "1h"
+    FACTOR_LIMIT_BARS: int = 300  # OHLCV bars per symbol per sweep
+    FACTOR_REFRACTORY_MINUTES: int = 360  # don't re-trade the same device/symbol/side within this window
+
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: Optional[str] = None  # Bot token from BotFather
+    # Secret token that Telegram sends in X-Telegram-Bot-Api-Secret-Token on
+    # webhook calls. Verify sender authenticity in production.
+    TELEGRAM_WEBHOOK_SECRET: Optional[str] = None
 
     # Agent Reach - Market Intelligence (optional, legacy shim)
     AGENT_REACH_ENABLED: bool = True  # Enable market intelligence
@@ -185,7 +207,26 @@ class Settings(BaseSettings):
     @property
     def gemini_configured(self) -> bool:
         """True if at least one Gemini API key is configured."""
-        return bool(self.GEMINI_API_KEYS)
+        return bool(self.gemini_keys)
+
+    @property
+    def gemini_keys(self) -> List[str]:
+        """All Gemini API keys, parsed into a list.
+
+        Priority: GEMINI_API_KEY (correct spelling) -> GEMINI_API_KEYS (deprecated
+        alias) -> GOOGLE_API_KEY. Each entry is a separate Google project key so
+        per-project quotas are independent and the rotator can fail over.
+        """
+        raw = self.GEMINI_API_KEY or self.GEMINI_API_KEYS
+        keys: List[str] = []
+        if raw:
+            for part in str(raw).replace("\n", ",").split(","):
+                k = part.strip()
+                if k:
+                    keys.append(k)
+        if not keys and self.GOOGLE_API_KEY:
+            keys = [self.GOOGLE_API_KEY]
+        return keys
 
     @property
     def supabase_configured(self) -> bool:

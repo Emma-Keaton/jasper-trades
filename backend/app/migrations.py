@@ -30,31 +30,44 @@ async def get_existing_columns(table_name: str) -> set:
         return result
 
 
+async def add_column_if_missing(table: str, column: str, sqlite_def: str, pg_def: str) -> None:
+    """Add a column when it doesn't exist, using dialect-appropriate DDL."""
+    existing = await get_existing_columns(table)
+    if column in existing:
+        return
+    definition = pg_def if settings.using_postgres else sqlite_def
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            )
+        logger.info(f"[OK] Added column: {column} ({definition}) -> {table}")
+    except Exception as e:
+        logger.warning(f"Could not add column {column} to {table}: {e}")
+
+
 async def migrate():
     """
     Run database migrations.
     Creates tables and adds missing columns automatically.
 
-    - SQLite: create_all + incremental ALTER TABLE migrations.
-    - Postgres/Supabase: create_all is authoritative (the model defines the
-      full schema), so no SQLite-specific ALTER steps run.
+    - Both SQLite and Postgres: create_all is authoritative for the full
+      schema on a fresh database.
+    - Existing databases (either backend) get incremental ALTER TABLE column
+      adds with dialect-appropriate DDL for SQLite and Postgres.
     """
     logger.info("Starting database migration...")
 
     try:
-        # Step 1: Create all tables that don't exist
-        # Works on both SQLite and Postgres; on a fresh Postgres/Supabase DB
-        # this creates the FULL schema from the models.
+        # Step 1: Create all tables that don't exist.
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("[OK] Created/verified all tables")
 
-        # Step 2+ are legacy path upgrades only needed for existing SQLite DBs.
-        # Their ALTER TABLE SQL is SQLite-specific and invalid on Postgres.
-        if not settings.using_postgres:
-            await _migrate_device_settings()
-            await _migrate_portfolios()
-            await _migrate_signal_tips()
+        # Step 2: Incremental column additions are safe on both dialects now.
+        await _migrate_device_settings()
+        await _migrate_portfolios()
+        await _migrate_signal_tips()
 
         logger.info("[OK] Database migration completed successfully")
 
@@ -65,166 +78,124 @@ async def migrate():
 
 async def _migrate_device_settings():
     """Add missing columns to device_settings table."""
-
-    # Define expected columns and their types
-    expected_columns = {
+    # (name, SQLite DDL, Postgres DDL)
+    expected_columns = [
         # Market Data APIs
-        'alphavantage_key': 'TEXT',
-        'finnhub_key': 'TEXT',
-        'twelvedata_key': 'TEXT',
-        'polygon_key': 'TEXT',
-        'fred_key': 'TEXT',
-        'coingecko_enabled': 'BOOLEAN',
+        ("alphavantage_key", "TEXT", "TEXT"),
+        ("finnhub_key", "TEXT", "TEXT"),
+        ("twelvedata_key", "TEXT", "TEXT"),
+        ("polygon_key", "TEXT", "TEXT"),
+        ("fred_key", "TEXT", "TEXT"),
+        ("coingecko_enabled", "BOOLEAN", "BOOLEAN"),
 
         # News/Sentiment
-        'newsapi_key': 'TEXT',
-        'cryptopanic_key': 'TEXT',
-        'av_news_sentiment_enabled': 'BOOLEAN',
+        ("newsapi_key", "TEXT", "TEXT"),
+        ("cryptopanic_key", "TEXT", "TEXT"),
+        ("av_news_sentiment_enabled", "BOOLEAN", "BOOLEAN"),
 
         # Email Service
-        'sendgrid_config': 'TEXT',
+        ("sendgrid_config", "TEXT", "TEXT"),
 
         # Discord Bot
-        'discord_bot_config': 'TEXT',
+        ("discord_bot_config", "TEXT", "TEXT"),
 
         # Tatum for payouts
-        'tatum_api_key': 'TEXT',
+        ("tatum_api_key", "TEXT", "TEXT"),
 
         # Trove API (Nigerian/US stocks)
-        'trove_api_key': 'TEXT',
-        'trove_base_url': 'TEXT',
-        'trove_enabled': 'BOOLEAN',
-        'trove_account_id': 'TEXT',
-        'trove_sandbox': 'BOOLEAN DEFAULT 1',
+        ("trove_api_key", "TEXT", "TEXT"),
+        ("trove_base_url", "TEXT", "TEXT"),
+        ("trove_enabled", "BOOLEAN", "BOOLEAN"),
+        ("trove_account_id", "TEXT", "TEXT"),
+        ("trove_sandbox", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
+
+        # Tiger OpenAPI (live CN/US stocks - encrypted)
+        ("tiger_id", "TEXT", "TEXT"),
+        ("tiger_api_key", "TEXT", "TEXT"),
+        ("tiger_private_key", "TEXT", "TEXT"),
+        ("tiger_enabled", "BOOLEAN", "BOOLEAN"),
 
         # AKShare (Chinese stocks)
-        'akshare_config': 'TEXT',
-        'akshare_sandbox': 'BOOLEAN DEFAULT 1',
+        ("akshare_config", "TEXT", "TEXT"),
+        ("akshare_sandbox", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
 
         # cTrader sandbox mode
-        'ctrader_sandbox': 'BOOLEAN DEFAULT 1',
+        ("ctrader_sandbox", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
 
         # Currency preferences
-        'default_currency': "TEXT DEFAULT 'USD'",
-        'currency_conversion_enabled': 'BOOLEAN DEFAULT 1',
+        ("default_currency", "TEXT DEFAULT 'USD'", "TEXT DEFAULT 'USD'"),
+        ("currency_conversion_enabled", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
 
         # Nigerian payout support
-        'naira_bank_details': 'TEXT',
+        ("naira_bank_details", "TEXT", "TEXT"),
 
         # Solana/Jupiter (may be missing in older DBs)
-        'solana_rpc_url': 'TEXT',
-        'jupiter_enabled': 'BOOLEAN',
+        ("solana_rpc_url", "TEXT", "TEXT"),
+        ("jupiter_enabled", "BOOLEAN", "BOOLEAN"),
 
         # Environment mode
-        'environment_mode': 'TEXT DEFAULT "sandbox"',
-        
+        ("environment_mode", 'TEXT DEFAULT "sandbox"', "TEXT DEFAULT 'sandbox'"),
+
         # Broker paper trading config
-        'broker_paper_trading_config': 'TEXT',
-        'universal_paper_trading_config': 'TEXT',
+        ("broker_paper_trading_config", "TEXT", "TEXT"),
+        ("universal_paper_trading_config", "TEXT", "TEXT"),
+
+        # Payout config (crypto wallet / naira bank auto-payout)
+        ("payout_config", "TEXT", "TEXT"),
 
         # Frontend trading mode + UI preferences
-        'trading_mode': "TEXT DEFAULT 'practice'",
-        'preferences': 'TEXT',
-    }
+        ("trading_mode", "TEXT DEFAULT 'practice'", "TEXT DEFAULT 'practice'"),
+        ("preferences", "TEXT", "TEXT"),
+    ]
 
-    existing_columns = await get_existing_columns('device_settings')
-
-    for column_name, column_type in expected_columns.items():
-        if column_name not in existing_columns:
-            try:
-                async with engine.begin() as conn:
-                    await conn.execute(
-                        text(f"ALTER TABLE device_settings ADD COLUMN {column_name} {column_type}")
-                    )
-                logger.info(f"âœ“ Added column: {column_name} ({column_type})")
-            except Exception as e:
-                logger.warning(f"Could not add column {column_name}: {e}")
+    for col, sqlite_ddl, pg_ddl in expected_columns:
+        await add_column_if_missing("device_settings", col, sqlite_ddl, pg_ddl)
 
 
 async def _migrate_portfolios():
     """Add missing columns to portfolios table."""
-    
-    # Define expected columns and their types based on the Portfolio model
-    expected_columns = {
-        'device_id': "TEXT NOT NULL DEFAULT 'legacy_device'",  # String(255) becomes TEXT, NOT NULL with default
-        'name': "TEXT DEFAULT 'Default'",
-        'cash': 'REAL DEFAULT 100000.0',  # FLOAT in SQLite is REAL
-        'initial_value': 'REAL DEFAULT 100000.0',
-        'initial_capital': 'REAL DEFAULT 10000.0',
-        'is_paper': 'BOOLEAN DEFAULT 1',  # SQLite BOOLEAN is INTEGER (0/1)
-        'broker': 'TEXT',
-        'is_active': 'BOOLEAN DEFAULT 1',
-    }
-    
-    # Note: id and created_at are handled by table creation, not needing migration usually
-    
-    existing_columns = await get_existing_columns('portfolios')
+    expected_columns = [
+        ("device_id", "TEXT NOT NULL DEFAULT 'legacy_device'", "VARCHAR(255) NOT NULL DEFAULT 'legacy_device'"),
+        ("name", "TEXT DEFAULT 'Default'", "VARCHAR(255) DEFAULT 'Default'"),
+        ("cash", "REAL DEFAULT 100000.0", "FLOAT DEFAULT 100000.0"),
+        ("initial_value", "REAL DEFAULT 100000.0", "FLOAT DEFAULT 100000.0"),
+        ("initial_capital", "REAL DEFAULT 10000.0", "FLOAT DEFAULT 10000.0"),
+        ("is_paper", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
+        ("broker", "TEXT", "VARCHAR(64)"),
+        ("is_active", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
+    ]
 
-    for column_name, column_type in expected_columns.items():
-        if column_name not in existing_columns:
-            try:
-                async with engine.begin() as conn:
-                    await conn.execute(
-                        text(f"ALTER TABLE portfolios ADD COLUMN {column_name} {column_type}")
-                    )
-                logger.info(f"âœ“ Added column: {column_name} ({column_type}) to portfolios")
-            except Exception as e:
-                logger.warning(f"Could not add column {column_name} to portfolios: {e}")
+    for col, sqlite_ddl, pg_ddl in expected_columns:
+        await add_column_if_missing("portfolios", col, sqlite_ddl, pg_ddl)
 
 
 async def _migrate_signal_tips():
     """Add hands-free execution columns to the signal_tips table."""
+    expected_columns = [
+        ("execution_status", "VARCHAR(32) DEFAULT 'pending'", "VARCHAR(32) DEFAULT 'pending'"),
+        ("execution_detail", "TEXT", "TEXT"),
+        ("executed_at", "TIMESTAMP", "TIMESTAMP"),
+    ]
 
-    expected_columns = {
-        'execution_status': "VARCHAR(32) DEFAULT 'pending'",
-        'execution_detail': 'TEXT',
-        'executed_at': 'TIMESTAMP',
-    }
-
-    try:
-        existing_columns = await get_existing_columns('signal_tips')
-    except Exception:
-        return  # table not created yet; create_all handles a fresh DB
-
-    for column_name, column_type in expected_columns.items():
-        if column_name not in existing_columns:
-            try:
-                async with engine.begin() as conn:
-                    await conn.execute(
-                        text(f"ALTER TABLE signal_tips ADD COLUMN {column_name} {column_type}")
-                    )
-                logger.info(f"[OK] Added column: {column_name} ({column_type}) to signal_tips")
-            except Exception as e:
-                logger.warning(f"Could not add column {column_name} to signal_tips: {e}")
+    for col, sqlite_ddl, pg_ddl in expected_columns:
+        await add_column_if_missing("signal_tips", col, sqlite_ddl, pg_ddl)
 
 
 async def _migrate_whatsapp_users():
     """Add missing columns to whatsapp_users table if needed."""
-    
-    # Define expected columns and their types
-    expected_columns = {
-        'device_id': "TEXT NOT NULL",
-        'phone_number': 'TEXT NOT NULL',
-        'trade_notifications_enabled': 'BOOLEAN DEFAULT 1',
-        'daily_summary_enabled': 'BOOLEAN DEFAULT 1',
-        'summary_time_wat': "TEXT DEFAULT '20:00'",
-        'chat_enabled': 'BOOLEAN DEFAULT 1',
-        'ai_explanations_enabled': 'BOOLEAN DEFAULT 1',
-        'is_verified': 'BOOLEAN DEFAULT 0',
-        'verification_code': 'TEXT',
-        'verification_expires_at': 'TIMESTAMP',
-        'last_active_at': 'TIMESTAMP',
-    }
-    
-    existing_columns = await get_existing_columns('whatsapp_users')
-    
-    for column_name, column_type in expected_columns.items():
-        if column_name not in existing_columns:
-            try:
-                async with engine.begin() as conn:
-                    await conn.execute(
-                        text(f"ALTER TABLE whatsapp_users ADD COLUMN {column_name} {column_type}")
-                    )
-                logger.info(f"âœ“ Added column: {column_name} ({column_type}) to whatsapp_users")
-            except Exception as e:
-                logger.warning(f"Could not add column {column_name} to whatsapp_users: {e}")
+    expected_columns = [
+        ("device_id", "TEXT NOT NULL", "VARCHAR(255) NOT NULL"),
+        ("phone_number", "TEXT NOT NULL", "VARCHAR(64) NOT NULL"),
+        ("trade_notifications_enabled", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
+        ("daily_summary_enabled", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
+        ("summary_time_wat", "TEXT DEFAULT '20:00'", "VARCHAR(8) DEFAULT '20:00'"),
+        ("chat_enabled", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
+        ("ai_explanations_enabled", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
+        ("is_verified", "BOOLEAN DEFAULT 0", "BOOLEAN DEFAULT false"),
+        ("verification_code", "TEXT", "TEXT"),
+        ("verification_expires_at", "TIMESTAMP", "TIMESTAMP"),
+        ("last_active_at", "TIMESTAMP", "TIMESTAMP"),
+    ]
+
+    for col, sqlite_ddl, pg_ddl in expected_columns:
+        await add_column_if_missing("whatsapp_users", col, sqlite_ddl, pg_ddl)

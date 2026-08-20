@@ -31,9 +31,6 @@ cd backend
 pip install -r requirements.txt
 copy .env.example .env
 
-# Install OpenWA for WhatsApp (optional)
-npm install @open-wa/wa-automate
-
 # Frontend
 cd ..\frontend
 npm install
@@ -45,9 +42,9 @@ copy .env.example .env.local
 **Backend (`backend/.env`):**
 ```env
 # LLM configuration
-# Gemini 2.5 Flash is the PRIMARY LLM. Set one or more keys (comma-separated,
-# ideally from separate Google accounts) to enable multi-key rotation.
-GEMINI_API_KEYS=key1,key2,key3
+# Gemini 2.5 Flash is the PRIMARY LLM. Set ~3 keys (comma-separated, ideally from
+# separate Google accounts) so a rate-limited project never stalls a trade.
+GEMINI_API_KEY=key1,key2,key3
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
 
 # NVIDIA NIM is the AUTOMATIC FALLBACK when Gemini is down/unconfigured.
@@ -109,28 +106,6 @@ cd frontend
 npm run dev
 ```
 
-### WhatsApp Setup (Optional)
-
-1. **Install OpenWA:**
-   ```bash
-   cd backend
-   npm install @open-wa/wa-automate
-   ```
-
-2. **Start Backend** - OpenWA auto-starts on port 3001
-
-3. **Configure in Settings:**
-   - Go to http://localhost:3000/settings
-   - Enter phone number
-   - Click "Save Config" → "Test"
-
-4. **Chat Commands:**
-   - `"portfolio status"` - Get portfolio summary
-   - `"what trades today"` - Recent trades
-   - `"should I buy AAPL"` - AI analysis
-   - `"is market open"` - Market hours
-   - `"help"` - List all commands
-
 ---
 
 ## Part 1.5: Automatic Database Setup
@@ -180,7 +155,7 @@ See `DATABASE_SETUP.md` for complete migration details.
 ├─────────────────────────────────────────────────────────┤
 │ Frontend (Vercel)    - https://jasper-trades.vercel.app│
 │ Backend (Render)     - https://jasper-backend.onrender │
-│ WhatsApp (Embedded)  - Runs inside backend              │
+│ Telegram Bot (Bot API) - Runs inside backend            │
 │ Google Gemini 2.5 Flash - Free tier (multi-key rotation) │
 │ Kronos (Render service)  - Price forecaster (separate)   │
 └─────────────────────────────────────────────────────────┘
@@ -292,23 +267,20 @@ frontend/.env.local
 1. **Open Settings:** `https://jasper-trades.vercel.app/settings`
 
 2. **Configure AI:**
-   - **Gemini (primary):** set `GEMINI_API_KEYS` in your Render dashboard variables (comma-separated). The Settings page reports "Gemini ready" when configured.
+   - **Gemini (primary):** set `GEMINI_API_KEY` in your Render dashboard variables (~3 keys comma-separated, one per Google account). The Settings page reports "Gemini ready" when configured. `GEMINI_API_KEYS` is still read as a deprecated fallback.
    - **NVIDIA NIM (fallback):** Get API key https://build.nvidia.com/, add as `NVIDIA_API_KEY` in the dashboard. On the advanced settings page, paste into "NVIDIA NIM API" → "Test" → "Save All Settings". NVIDIA is used automatically only if Gemini is down/unset.
    - The LLM proxy tries Gemini first and falls back to NVIDIA per task (fast tasks → `nemotron-mini-4b`, analysis → `llama-3.1-8b`, portfolio → `nemotron-super-49b-v1`).
 
-3. **Configure :**
-   - Sign up: https://.markets/ (free)
-   - Get API keys from dashboard
-   - Paste into " Trading"
-   - Check "Paper Trading Mode"
-   - Click "Save"
+3. **Configure Paper Trading (default, recommended for testing):**
+   - Settings → Paper Trading → enable Practice mode
+   - The Universal Paper Trading engine handles all assets risk-free
+   - Switch to live only when you are comfortable (cTrader/CCXT/Trove/Tiger)
 
 4. **Configure Notifications (Optional):**
-   - **WhatsApp** - Enter phone number, save, test
+   - **Telegram** - Bot token + chat ID (primary; two-way chat + trade alerts)
    - **Discord** - Paste webhook URL
+   - **Email** - SendGrid configuration
    - **Slack** - Paste webhook URL
-   - **Email** - SMTP configuration
-   - **Telegram** - Bot token + chat ID
 
 ---
 
@@ -359,90 +331,41 @@ when available, otherwise a dependency-free deterministic trend forecaster
 and returns a real `UP`/`DOWN` prediction with confidence — so signal confidence
 scoring keeps a Kronos-style basis even without the separate service deployed.
 
-_(The former Google Colab integration has been removed.)_
-
-| Feature | Local (4GB RAM) | Colab GPU (Free Tier) |
-|---------|-----------------|----------------------|
-| **Models** | Kronos-mini only | 3 models (mini/small/base) |
+| Feature | Local (4GB RAM) | Separate Render service |
+|---------|-----------------|-------------------------|
+| **Models** | Kronos-mini only | Kronos (full) |
 | **Strategies** | Single model | Cascade, Ensemble, Context |
 | **Speed** | ~500-1000ms | ~100-300ms (GPU) |
-| **Memory** | ~500MB RAM | ~1GB VRAM (Colab's) |
+| **Memory** | ~500MB RAM | ~1GB VRAM (GPU) |
 | **Context** | 512 tokens | Up to 2048 tokens |
 | **Accuracy** | Good | Better (ensemble) |
 
-### Step 1: Run Kronos Colab Notebook
-
-1. **Open Google Colab:**
-   - Go to https://colab.research.google.com/
-   - Click "Upload" → Upload `kronos_colab.ipynb` from your project
-
-2. **Run All Cells in Order:**
-   - Cell 1: Install dependencies (2-3 minutes)
-   - Cell 2: Load 3 Kronos models (1-2 minutes)
-   - Cell 3: Define prediction functions
-   - Cell 4: Start API server
-   - Cell 5: Get public URL (copy this!)
-
-3. **Keep Colab Running:**
-   - Click Runtime → Never idle when asleep
-   - Run Cell 6 (auto-connect) to extend session
-   - Colab free tier: up to 12 hours/session
-
-### Step 2: Get ngrok Public URL
-
-After running Cell 5, you'll see output like:
-
-```
-🌐 Public URL: https://abc123def456.ngrok-free.app
-
-📋 API Endpoints:
-  - Health:    https://abc123def456.ngrok-free.app/health
-  - Predict:   https://abc123def456.ngrok-free.app/predict/AAPL?strategy=cascade
-  - Strategies:{public_url}/strategies
-```
-
-**Copy the Public URL** (e.g., `https://abc123def456.ngrok-free.app`)
-
-### Step 3: Configure Backend
+### Configure Backend
 
 **Option A: Via `.env` file (quick)**
 
 Edit `backend/.env`:
 
 ```env
-# Kronos Colab Integration
-KRONOS_COLAB_URL="https://abc123def456.ngrok-free.app"
-KRONOS_COLAB_STRATEGY="cascade"
+# Kronos Service
+KRONOS_SERVICE_URL="https://your-kronos.onrender.com"
+KRONOS_STRATEGY="cascade"
 ```
 
 **Option B: Via Settings page (recommended)**
 
 1. Go to http://localhost:3000/settings
 2. Find "Kronos AI Settings"
-3. Enter Colab URL
+3. Enter the Kronos service URL
 4. Select strategy:
    - **Cascade** - Fast screening (default, best for 100s of pairs)
    - **Ensemble** - Maximum accuracy (best for final trades)
    - **Context** - Auto-select model by data length
 5. Click "Save" and "Test Connection"
 
-### Step 4: Test Integration
-
-```bash
-cd backend
-python -m app.tests.kronos_test
-```
-
-Expected output:
-```
-✅ LOCAL KRONOS TEST PASSED
-✅ COLAB INTEGRATION TEST PASSED
-Best strategy: ensemble
-```
-
 ### Prediction Strategies
 
-Configure `KRONOS_COLAB_STRATEGY` based on your use case:
+Configure `KRONOS_STRATEGY` based on your use case:
 
 | Strategy | Description | Best For | Speed |
 |----------|-------------|----------|-------|
@@ -464,55 +387,39 @@ Once configured, use these endpoints:
 
 ```bash
 # Health check
-curl {COLAB_URL}/health
+curl {KRONOS_URL}/health
 
 # Single prediction (default strategy)
-curl {COLAB_URL}/predict/AAPL
+curl {KRONOS_URL}/predict/AAPL
 
 # Specific strategy
-curl "{COLAB_URL}/predict/AAPL?strategy=ensemble"
+curl "{KRONOS_URL}/predict/AAPL?strategy=ensemble"
 
 # Batch predictions
-curl -X POST {COLAB_URL}/predict/batch \
+curl -X POST {KRONOS_URL}/predict/batch \
   -H "Content-Type: application/json" \
   -d '{"symbols": ["AAPL", "TSLA", "NVDA"], "strategy": "cascade"}'
 
 # List all strategies
-curl {COLAB_URL}/strategies
+curl {KRONOS_URL}/strategies
 ```
 
 ### Troubleshooting
 
-**Colab URL Expired:**
-- Colab URLs change each session
-- Update `KRONOS_COLAB_URL` in Settings after reconnecting
-
-**"Colab: 400" Error:**
-- Check Colab notebook is still running
-- Verify ngrok URL is current
-- Re-run Cell 4 (restart API server)
+**"Kronos: 400" Error:**
+- Check the Kronos service is running
+- Verify the service URL is current
+- Restart the Kronos service if needed
 
 **Timeout Errors:**
-- Colab GPU may be busy
+- Service may be busy
 - Increase timeout to 60 seconds (already configured)
 - Try smaller batch size
 
-**Memory Errors on Colab:**
+**Memory Errors:**
 - Reduce batch size to 1-2 symbols
 - Use `cascade` strategy (filters early)
-- Restart Colab runtime
-
-### Cost
-
-**Google Colab Free Tier:**
-- 12 hours per session
-- ~15 GB GPU VRAM
-- ~12 GB system RAM
-- No credit card required
-
-**Note:** Colab may occasionally disconnect during peak hours. For production use, consider:
-- Colab Pro ($10/month): Priority access, longer sessions
-- Cloud GPU (Lambda Labs, Vast.ai): $0.10-0.50/hour
+- Restart the Kronos service
 
 ---
 
@@ -622,7 +529,7 @@ Route to destination:
   ↓
 Database audit trail (Withdrawal table)
   ↓
-Notification (WhatsApp/Discord/Email configured)
+Notification (Telegram/Discord/Email configured)
 ```
 
 ### Real Implementation Details
@@ -701,7 +608,7 @@ GET /api/v1/withdrawals?portfolio_id={id}&type=auto_payout
 - `device_settings` - Encrypted payout configuration
 
 **Notifications:**
-- Configured channels (WhatsApp/Discord/Email) receive:
+- Configured channels (Telegram/Discord/Email) receive:
   - Payout executed notification
   - Transaction hash
   - Amount and destination details
@@ -988,11 +895,10 @@ Response shows:
 - Verify URL: `https://YOUR_BACKEND.onrender.com/api/v1/health`
 - Ensure 5-minute interval (not 10)
 
-### WhatsApp Not Working
-1. Check OpenWA installed: `backend/node_modules/@open-wa/wa-automate`
-2. Verify backend logs for OpenWA startup
-3. Re-scan QR code if session expired
-4. Test: `curl https://YOUR_BACKEND.onrender.com/whatsapp/status`
+### Telegram Not Working
+1. Verify the bot token is configured in Settings → Telegram
+2. Check backend logs for Telegram webhook startup
+3. Test: `curl https://YOUR_BACKEND.onrender.com/api/v1/settings/telegram/test`
 
 ### Frontend Shows "Disconnected"
 1. Check backend URL in Vercel environment variables
@@ -1069,7 +975,7 @@ Settings stored encrypted in database - export monthly via Settings page.
 Your deployment is successful when:
 - [✅] Frontend loads from Vercel
 - [✅] Backend API responds from Render
-- [✅] WhatsApp notifications work (if configured)
+- [✅] Telegram notifications work (if configured)
 - [✅] NVIDIA API key configured
 - [✅] Test trade executed (paper mode)
 - [✅] Mobile access works
@@ -1082,7 +988,7 @@ Your deployment is successful when:
 
 1. **Test thoroughly** with paper trading
 2. **Monitor NVIDIA usage** (stay within $25 free tier)
-3. **Configure notifications** (WhatsApp, Discord, etc.)
+3. **Configure notifications** (Telegram, Discord, etc.)
 4. **Set up alerts** (UptimeRobot + Sentry)
 5. **Configure trading caps** (protect your portfolio)
 6. **Switch to live trading** when ready (uncheck Paper Trading)

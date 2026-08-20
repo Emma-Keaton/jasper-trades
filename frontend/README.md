@@ -48,7 +48,7 @@ NEXT_PUBLIC_WS_URL=ws://localhost:8000
 ```
 
 > AI features (Gemini primary / NVIDIA NIM fallback) run on the **backend**.
-> Configure `GEMINI_API_KEYS` and `NVIDIA_API_KEY` in `backend/.env` (see root `DEPLOYMENT.md`),
+> Configure `GEMINI_API_KEY` and `NVIDIA_API_KEY` in `backend/.env` (see root `DEPLOYMENT.md`),
 > not the frontend — no `NEXT_PUBLIC_*` AI keys are read by this app.
 
 ### 3. Run Development Server
@@ -77,7 +77,7 @@ npm start
 ## AI Integration
 
 AI features run on the **backend** with a dual-provider proxy:
-**Gemini 2.5 Flash is the primary LLM** (multi-key rotation via `GEMINI_API_KEYS`);
+**Gemini 2.5 Flash is the primary LLM** (multi-key rotation via `GEMINI_API_KEY`);
 **NVIDIA NIM is the automatic fallback** (`NVIDIA_API_KEY`). Task-tier model routing:
 
 - **Executions / risk checks**: `nvidia/nemotron-mini-4b-instruct`
@@ -97,23 +97,18 @@ frontend/
 │   ├── layout.tsx        # Root layout with metadata
 │   └── page.tsx          # Main trading dashboard
 ├── components/
-│   ├── DashboardTab.tsx  # Main dashboard view
-│   ├── AgentsTab.tsx     # Agent configuration
-│   ├── SignalsTab.tsx    # Signal feed
-│   ├── CopyTradeTab.tsx  # Copy trading UI
-│   ├── BacktestTab.tsx   # Backtesting interface
-│   ├── AlphaZooTab.tsx   # Alpha factors browser
-│   ├── PortfolioTab.tsx  # Portfolio management
-│   └── SettingsTab.tsx   # Settings panel
+│   ├── screens/          # Tab views (Home, Trades, Markets, Signals, etc.)
+│   ├── settings/         # Settings panels + setup guides
+│   ├── portfolio/        # Wallet connect, portfolio widgets
+│   ├── onboarding/       # Welcome wizard + tours
+│   └── agents/           # Agent config
 ├── lib/
-│   ├── api-client.ts     # Backend API client
+│   ├── api-client.ts     # Backend API client (auto device ID header)
+│   ├── deviceFingerprint.ts # Persistent device ID
 │   ├── websocket.ts      # WebSocket connection
 │   └── utils.ts          # Utility functions
 ├── hooks/
 │   └── use-mobile.ts     # Mobile detection hook
-├── assets/
-│   └── image/
-│       └── logo.png      # Jasper Trades logo
 ├── public/
 │   ├── logo.png          # Logo
 │   ├── favicon.ico       # Favicon
@@ -123,8 +118,7 @@ frontend/
 │   └── manifest.json     # PWA manifest
 ├── package.json
 ├── tsconfig.json
-├── next.config.ts
-└── tailwind.config.ts
+└── next.config.js
 ```
 
 ## CSS Framework

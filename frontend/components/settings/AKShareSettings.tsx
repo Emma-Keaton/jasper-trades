@@ -1,6 +1,6 @@
+import { API_URL, apiFetch } from '@/lib/api-client';
 import React, { useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
-import { API_URL } from '../../lib/api-client';
 import { getOrCreateDeviceId } from '../../lib/deviceFingerprint';
 
 interface AKShareSettingsProps {
@@ -41,7 +41,7 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast }) => {
   const loadConfig = async () => {
     try {
       const deviceId = getOrCreateDeviceId();
-      const response = await fetch(`${API_URL}/api/v1/settings/akshare`, {
+      const response = await apiFetch(`${API_URL}/api/v1/settings/akshare`, {
         headers: { 'X-Device-ID': deviceId },
       });
 
@@ -53,7 +53,7 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast }) => {
         if (data.enabled) {
           setConnectionStatus('checking');
           try {
-            const statusResponse = await fetch(`${API_URL}/api/v1/akshare/status`);
+            const statusResponse = await apiFetch(`${API_URL}/api/v1/akshare/status`);
             if (statusResponse.ok) {
               const status = await statusResponse.json();
               setConnectionStatus(status.connected ? 'connected' : 'disconnected');
@@ -77,7 +77,7 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast }) => {
     setLoading(true);
     try {
       const deviceId = getOrCreateDeviceId();
-      const response = await fetch(`${API_URL}/api/v1/settings/akshare`, {
+      const response = await apiFetch(`${API_URL}/api/v1/settings/akshare`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

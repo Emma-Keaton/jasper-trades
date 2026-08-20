@@ -5,6 +5,7 @@ import { Mail, Check, Send } from 'lucide-react';
 import { Toast } from '@/app/types';
 import InfoModal, { SetupStep, ApiLink, BenefitItem } from './InfoModal';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 
 interface SendGridSettings {
   api_key: string;
@@ -28,7 +29,7 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
   const saveSendGridSettings = async () => {
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/settings/email/sendgrid`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/email/sendgrid`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -56,7 +57,7 @@ export default function EmailServiceSection({ email, setEmail, triggerToast }: E
     setTesting(true);
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/notify/test-email`, {
+      const res = await apiFetch(`${API_URL}/api/v1/notify/test-email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -106,6 +106,18 @@ export async function loadOnboardingPrefs(): Promise<OnboardingPrefs> {
   return prefs.onboarding || {};
 }
 
+/** Settings-triggered reset: zeroes the persisted onboarding block in the DB. */
+export async function resetOnboarding(): Promise<void> {
+  try {
+    await fetch(`${API_URL}/api/v1/settings/onboarding/reset`, {
+      method: 'POST',
+      headers: deviceHeaders(),
+    });
+  } catch {
+    /* offline - caller still clears local state */
+  }
+}
+
 export async function fetchPreferences(): Promise<Preferences> {
   try {
     const res = await fetch(`${API_URL}/api/v1/settings/preferences`, { headers: deviceHeaders() });

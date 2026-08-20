@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageCircle, X, Send, Minimize2, Maximize2 } from 'lucide-react';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 
 interface ChatMessage {
   id: number;
@@ -17,22 +18,19 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
 useEffect(() => {
     if (isOpen && messages.length === 0) fetchHistory();
     if (isOpen) scrollToBottom();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, messages]);
 
   const fetchHistory = async () => {
     try {
-      const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/chat/history?device_id=${deviceId}&limit=20`);
+const deviceId = getOrCreateDeviceId();
+      const res = await apiFetch(`/api/v1/chat/history?device_id=${deviceId}&limit=20`);
       if (res.ok) { const data = await res.json(); setMessages(data.messages || []); }
     } catch { /* ignore */ }
   };
@@ -44,10 +42,8 @@ useEffect(() => {
     setInputText('');
     setIsTyping(true);
     try {
-      const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/chat`, {
+const res = await apiFetch(`/api/v1/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
         body: JSON.stringify({ message: inputText }),
       });
       if (res.ok) {

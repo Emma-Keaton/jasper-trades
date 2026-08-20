@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Key, CheckCircle, Loader2, ExternalLink, Shield } from 'lucide-react';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -41,7 +42,7 @@ export default function TroveSettings({ triggerToast }: TroveSettingsProps) {
   const loadSettings = async () => {
     try {
       const deviceId = getDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/settings/trove`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/trove`, {
         headers: { 'X-Device-ID': deviceId },
       });
 
@@ -59,7 +60,7 @@ export default function TroveSettings({ triggerToast }: TroveSettingsProps) {
         if (data.trove_enabled && data.trove_api_key) {
           setConnectionStatus('checking');
           try {
-            const testRes = await fetch(`${API_URL}/api/v1/trove/status`, {
+            const testRes = await apiFetch(`${API_URL}/api/v1/trove/status`, {
               headers: { 'X-Device-ID': deviceId },
             });
             if (testRes.ok) {
@@ -92,7 +93,7 @@ export default function TroveSettings({ triggerToast }: TroveSettingsProps) {
     setSaving(true);
     try {
       const deviceId = getDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/settings/trove`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/trove`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -126,7 +127,7 @@ export default function TroveSettings({ triggerToast }: TroveSettingsProps) {
       const deviceId = getDeviceId();
 
       // First save the settings
-      await fetch(`${API_URL}/api/v1/settings/trove`, {
+      await apiFetch(`${API_URL}/api/v1/settings/trove`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,7 +137,7 @@ export default function TroveSettings({ triggerToast }: TroveSettingsProps) {
       });
 
       // Then test connection
-      const res = await fetch(`${API_URL}/api/v1/settings/trove/test`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/trove/test`, {
         headers: { 'X-Device-ID': deviceId },
       });
 

@@ -22,35 +22,10 @@ router = APIRouter(prefix="/withdrawal", tags=["withdrawal"])
 
 
 # ============ Encryption Helper ============
+# Use the centralized encryption service (SECRET_KEY-derived key) so secrets
+# are always encrypted at rest with a stable, non-committed key.
 
-class EncryptionHelper:
-    def __init__(self):
-        self.key = None
-        self.cipher = None
-        try:
-            from cryptography.fernet import Fernet
-            key_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "encryption.key")
-            if os.path.exists(key_path):
-                with open(key_path, "rb") as f:
-                    self.key = f.read()
-                    self.cipher = Fernet(self.key)
-        except ImportError:
-            pass
-    
-    def encrypt_json(self, data):
-        if not self.cipher or not data:
-            return json.dumps(data)
-        json_str = json.dumps(data)
-        return self.cipher.encrypt(json_str.encode()).decode()
-    
-    def decrypt_json(self, value):
-        if not self.cipher or not value:
-            return json.loads(value)
-        try:
-            decrypted = self.cipher.decrypt(value.encode()).decode()
-            return json.loads(decrypted)
-        except:
-            return json.loads(value)
+from app.services.encryption import EncryptionHelper
 
 encryption = EncryptionHelper()
 

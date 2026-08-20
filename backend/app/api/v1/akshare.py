@@ -4,7 +4,7 @@ AKShare Chinese Stock Market API
 Endpoints for fetching China A-shares and B-shares market data.
 Uses AKShare library for real-time and historical data.
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -197,7 +197,9 @@ async def submit_order(
     side: str,
     quantity: float,
     price: Optional[float] = None,
-    order_type: str = Query(default="market")
+    order_type: str = Query(default="market"),
+    x_device_id: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Submit order for Chinese stock (paper trading only).
@@ -209,6 +211,20 @@ async def submit_order(
         price: Limit price (None for market)
         order_type: market or limit
     """
+    from app.services import trade_gate
+
+    device_id = (x_device_id or "").strip() or "default-device"
+    mode = await trade_gate.resolve_mode(db, device_id)
+
+    # AKShare is a paper-only broker. If the device is configured for live,
+    # fail loudly (never silently paper-trade when the user expects Live).
+    if mode == "live":
+        raise HTTPException(
+            status_code=403,
+            detail="AKShare does not support live trading. Switch to practice mode or "
+                   "another broker for live orders.",
+        )
+
     try:
         service = AKShareBrokerService()
         
@@ -234,6 +250,8 @@ async def submit_order(
             "message": result.message
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to submit order: {e}")
         raise HTTPException(status_code=400, detail=str(e))

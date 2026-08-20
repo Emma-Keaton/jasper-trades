@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { Briefcase, Coins, Plug, Trash2, Loader2, Zap, Globe, Link as LinkIcon, Save, CheckCircle2, ExternalLink } from 'lucide-react';
+import { Briefcase, Coins, Plug, Trash2, Loader2, Zap, Globe, Link as LinkIcon, Save, CheckCircle2, ExternalLink, Activity } from 'lucide-react';
 import { Card, Button } from '@/components/ui';
 import WalletConnect from '@/components/portfolio/WalletConnect';
+import { SetupGuideButton } from './SetupGuide';
+import { brokerKeySetupSteps, tigerSetupSteps } from './setupGuides';
 import { API_URL } from '@/lib/constants';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 
 export type ConnectionsTab = 'wallet' | 'broker';
 
@@ -92,13 +95,13 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
   const deviceId = getOrCreateDeviceId();
 
   useEffect(() => {
-    fetch(`${API_URL}/api/v1/crypto-connector`, { headers: { 'X-Device-ID': deviceId } })
+    apiFetch(`${API_URL}/api/v1/crypto-connector`, { headers: { 'X-Device-ID': deviceId } })
       .then((r) => r.json())
       .then((d) => setCcxtCreds(Array.isArray(d) ? d : []))
       .catch(() => console.error('Failed to load crypto creds'))
       .finally(() => setLoadingCcxt(false));
 
-    fetch(`${API_URL}/api/v1/exchanges/`)
+    apiFetch(`${API_URL}/api/v1/exchanges/`)
       .then((r) => r.json())
       .then((d) => setExchanges(Array.isArray(d) ? d : []))
       .catch(() => console.error('Failed to load exchanges'));
@@ -111,7 +114,7 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
     }
     setSavingCcxt(true);
     try {
-      const res = await fetch(`${API_URL}/api/v1/crypto-connector`, {
+      const res = await apiFetch(`${API_URL}/api/v1/crypto-connector`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
         body: JSON.stringify({
@@ -121,7 +124,7 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
         }),
       });
       if (!res.ok) throw new Error('Failed to save');
-      const refreshed = await fetch(`${API_URL}/api/v1/crypto-connector`, { headers: { 'X-Device-ID': deviceId } }).then((r) => r.json());
+      const refreshed = await apiFetch(`${API_URL}/api/v1/crypto-connector`, { headers: { 'X-Device-ID': deviceId } }).then((r) => r.json());
       setCcxtCreds(Array.isArray(refreshed) ? refreshed : []);
       setCcxtApiKey('');
       setCcxtSecret('');
@@ -137,7 +140,7 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
   const handleDeleteCcxt = async (id: number) => {
     if (!confirm('Delete this exchange credential?')) return;
     try {
-      await fetch(`${API_URL}/api/v1/crypto-connector/${id}`, {
+      await apiFetch(`${API_URL}/api/v1/crypto-connector/${id}`, {
         method: 'DELETE',
         headers: { 'X-Device-ID': deviceId },
       });
@@ -200,6 +203,17 @@ export default function ConnectionsPanel({ initialTab = 'wallet', triggerToast }
             <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
               Link a cryptocurrency exchange through CCXT to let Jasper read balances and trade.
             </p>
+
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Need a hand getting API keys? Follow the guide.
+              </p>
+              <SetupGuideButton
+                title="Generate exchange API keys"
+                intro="API keys let Jasper read balances and place trades on your exchange. Follow these steps to create them safely."
+                steps={brokerKeySetupSteps}
+              />
+            </div>
 
             <div className="mb-4 space-y-3">
               <div>
@@ -388,6 +402,28 @@ function BrokerConnections({ triggerToast }: { triggerToast: (t: 'success' | 'er
         </div>
       ),
     },
+    {
+      id: 'tiger',
+      name: 'Tiger Brokers',
+      desc: 'US stocks funded account via OpenAPI. Live orders only.',
+      badge: 'US · HK · CN',
+      icon: <Activity className="h-4 w-4" />,
+      render: ({ triggerToast: tt, onSaved: os }) => (
+        <div className="rounded-control border border-slate-200 p-4 dark:border-slate-700">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Use your Tiger OpenAPI keys for live US stock trading.
+            </p>
+            <SetupGuideButton
+              title="Set up Tiger OpenAPI"
+              intro="Tiger Brokers lets Jáspes trade US stocks on your funded account. Follow these steps to connect it."
+              steps={tigerSetupSteps}
+            />
+          </div>
+          <TigerBroker triggerToast={tt} onSaved={os} />
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -449,13 +485,13 @@ function TroveBroker({
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/v1/settings/trove`, { headers: { 'X-Device-ID': deviceId } });
+        const res = await apiFetch(`${API_URL}/api/v1/settings/trove`, { headers: { 'X-Device-ID': deviceId } });
         if (res.ok) {
           const d = await res.json();
           setEnabled(!!d.trove_enabled);
           setBaseUrl(d.trove_base_url || baseUrl);
           if (d.trove_enabled && d.trove_api_key) {
-            const t = await fetch(`${API_URL}/api/v1/trove/status`, { headers: { 'X-Device-ID': deviceId } }).then((r) => r.json());
+            const t = await apiFetch(`${API_URL}/api/v1/trove/status`, { headers: { 'X-Device-ID': deviceId } }).then((r) => r.json());
             setStatus(t.connected ? 'connected' : 'error');
           }
         }
@@ -473,7 +509,7 @@ function TroveBroker({
     }
     setSaving(true);
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/trove`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/trove`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
         body: JSON.stringify({ trove_api_key: apiKey, trove_base_url: baseUrl, trove_enabled: enabled }),
@@ -484,7 +520,7 @@ function TroveBroker({
         return;
       }
       if (test) {
-        const tr = await fetch(`${API_URL}/api/v1/settings/trove/test`, { headers: { 'X-Device-ID': deviceId } }).then((r) => r.json());
+        const tr = await apiFetch(`${API_URL}/api/v1/settings/trove/test`, { headers: { 'X-Device-ID': deviceId } }).then((r) => r.json());
         if (tr.valid) {
           setStatus('connected');
           triggerToast('success', 'Trove Connected', `Connected to Trove API (${tr.account_id || 'N/A'}).`);
@@ -533,6 +569,111 @@ function TroveBroker({
   );
 }
 
+function TigerBroker({
+  triggerToast,
+  onSaved,
+}: {
+  triggerToast: (t: 'success' | 'error' | 'info', title: string, message: string) => void;
+  onSaved: () => void;
+}) {
+  const [tigerId, setTigerId] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [privateKey, setPrivateKey] = useState('');
+  const [enabled, setEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<'unknown' | 'connected' | 'error'>('unknown');
+  const deviceId = getOrCreateDeviceId();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch(`${API_URL}/api/v1/settings/tiger`, { headers: { 'X-Device-ID': deviceId } });
+        if (res.ok) {
+          const d = await res.json();
+          setEnabled(!!d.tiger_enabled);
+          setTigerId(d.tiger_id || '');
+          if (d.is_configured) {
+            const t = await apiFetch(`${API_URL}/api/v1/settings/tiger/test`, { headers: { 'X-Device-ID': deviceId } }).then((r) => r.json());
+            setStatus(t.valid ? 'connected' : 'error');
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load Tiger settings:', e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = async (test: boolean) => {
+    if (!tigerId || !apiKey || !privateKey) {
+      triggerToast('error', 'Missing Fields', 'Please enter your Tiger ID, API key and private key.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/tiger`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
+        body: JSON.stringify({ tiger_id: tigerId, tiger_api_key: apiKey, tiger_private_key: privateKey, tiger_enabled: enabled }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        triggerToast('error', 'Save Failed', err.detail || 'Failed to save Tiger settings.');
+        return;
+      }
+      if (test) {
+        const tr = await apiFetch(`${API_URL}/api/v1/settings/tiger/test`, { headers: { 'X-Device-ID': deviceId } }).then((r) => r.json());
+        if (tr.valid) {
+          setStatus('connected');
+          triggerToast('success', 'Tiger Connected', `Connected to Tiger API (${tr.account_id || 'N/A'}).`);
+        } else {
+          setStatus('error');
+          triggerToast('error', 'Connection Failed', tr.message || 'Failed to connect.');
+        }
+      } else {
+        setStatus('connected');
+        triggerToast('success', 'Tiger Saved', 'Tiger OpenAPI configuration saved.');
+      }
+      onSaved();
+    } catch (e) {
+      console.error(e);
+      triggerToast('error', 'Save Failed', 'Could not save Tiger settings.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <BadgeDot
+          tone={status === 'connected' ? 'up' : status === 'error' ? 'down' : 'neutral'}
+          label={status === 'connected' ? 'Connected' : status === 'error' ? 'Check key' : 'Not connected'}
+        />
+        <Button variant="secondary" size="sm" onClick={() => save(true)} disabled={saving || !tigerId || !apiKey || !privateKey}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Test connection
+        </Button>
+      </div>
+      <SectionField label="Tiger ID">
+        <input type="text" value={tigerId} onChange={(e) => setTigerId(e.target.value)} placeholder="Your Tiger account ID" className={inputCls} />
+      </SectionField>
+      <SectionField label="API Key">
+        <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="tiger-api key" className={inputCls} />
+      </SectionField>
+      <SectionField label="Private Key">
+        <textarea value={privateKey} onChange={(e) => setPrivateKey(e.target.value)} placeholder="-----BEGIN PRIVATE KEY-----…" className={`${inputCls} h-20 font-mono`} />
+      </SectionField>
+      <label className="mb-4 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="h-4 w-4" />
+        Enable Tiger for live stock trading
+      </label>
+      <Button variant="secondary" onClick={() => save(false)} disabled={saving}>
+        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Tiger
+      </Button>
+    </div>
+  );
+}
+
 function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error' | 'info', title: string, message: string) => void }) {
   const [connecting, setConnecting] = useState(false);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -543,7 +684,7 @@ function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error'
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/v1/brokers/accounts`, { headers: { 'X-Device-ID': deviceId } });
+        const res = await apiFetch(`${API_URL}/api/v1/brokers/accounts`, { headers: { 'X-Device-ID': deviceId } });
         if (res.ok) {
           const data = await res.json();
           setAccounts(data.accounts || []);
@@ -562,7 +703,7 @@ function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error'
     setConnecting(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/v1/brokers/connect?mode=live`, { headers: { 'X-Device-ID': deviceId } });
+      const res = await apiFetch(`${API_URL}/api/v1/brokers/connect?mode=live`, { headers: { 'X-Device-ID': deviceId } });
       const data = await res.json();
       if (data.authorization_url) {
         window.location.href = data.authorization_url;
@@ -580,7 +721,7 @@ function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error'
   const disconnect = async (id: number) => {
     if (!confirm('Disconnect this cTrader account? Auto-trading will stop.')) return;
     try {
-      const res = await fetch(`${API_URL}/api/v1/brokers/disconnect/${id}`, { method: 'POST', headers: { 'X-Device-ID': deviceId } });
+      const res = await apiFetch(`${API_URL}/api/v1/brokers/disconnect/${id}`, { method: 'POST', headers: { 'X-Device-ID': deviceId } });
       if (res.ok) {
         setAccounts((prev) => prev.filter((a) => a.id !== id));
         triggerToast('success', 'Account Disconnected', 'Auto-trading stopped.');
@@ -647,14 +788,14 @@ function AKShareBroker({
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/v1/settings/akshare`, { headers: { 'X-Device-ID': deviceId } });
+        const res = await apiFetch(`${API_URL}/api/v1/settings/akshare`, { headers: { 'X-Device-ID': deviceId } });
         if (res.ok) {
           const d = await res.json();
           setEnabled(!!d.enabled);
           setCurrency(d.currency || 'CNY');
           setInitialCapital(d.initial_capital?.toString?.() ?? '1000000');
           if (d.enabled) {
-            const s = await fetch(`${API_URL}/api/v1/akshare/status`).then((r) => r.json());
+            const s = await apiFetch(`${API_URL}/api/v1/akshare/status`).then((r) => r.json());
             setStatus(s.connected ? 'connected' : 'error');
           }
         }
@@ -668,7 +809,7 @@ function AKShareBroker({
   const save = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/akshare`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/akshare`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
         body: JSON.stringify({ enabled, currency, initial_capital: initialCapital, paper_trading: true }),

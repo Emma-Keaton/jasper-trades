@@ -1,5 +1,6 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
 import React, { useState, useEffect } from 'react';
 import { Save, RotateCcw, Settings, Zap, Shield, Play, AlertTriangle, Info } from 'lucide-react';
 import { saveAgentConfig, loadAgentConfig, type AgentConfigMap } from '@/lib/preferences';
@@ -133,7 +134,7 @@ export default function AgentConfigPanel({ agentId, agentName, toast }: AgentCon
 
       // Also try to save to backend (non-blocking)
       try {
-        await fetch(`${API_URL}/api/v1/agents/${agentId}/config`, {
+        await apiFetch(`${API_URL}/api/v1/agents/${agentId}/config`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(config),

@@ -203,12 +203,15 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     return onboardingCompleted;
   }, [onboardingCompleted]);
 
-  // Reset all tour progress
+  // Reset all tour progress (also clears the DB via the settings endpoint)
   const resetTours = useCallback(() => {
     setCompletedTours([]);
     setOnboardingCompleted(false);
     saveOnboardingPrefs({ onboarding_completed: false, completed_tours: [] }).catch((error) => {
       console.error('Failed to reset onboarding state:', error);
+    });
+    import('@/lib/preferences').then(({ resetOnboarding }) => {
+      resetOnboarding().catch(() => undefined);
     });
   }, []);
 

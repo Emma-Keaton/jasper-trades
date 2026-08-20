@@ -5,6 +5,7 @@ import { Send, MessageCircle, ShieldCheck, Loader2, CheckCircle2, ExternalLink }
 import { Card, Button } from '@/components/ui';
 import { API_URL } from '@/lib/constants';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 
 interface TelegramSetupProps {
   triggerToast: (type: 'success' | 'error' | 'info', title: string, message: string) => void;
@@ -46,7 +47,7 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/v1/settings/telegram/status`, { headers: { 'X-Device-ID': deviceId() } });
+        const res = await apiFetch(`${API_URL}/api/v1/settings/telegram/status`, { headers: { 'X-Device-ID': deviceId() } });
         const data = await res.json();
         if (data.is_configured) {
           setTelegram((prev) => ({
@@ -76,7 +77,7 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
     setRequesting(true);
     setMessage({});
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/telegram/verify/request`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/telegram/verify/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId() },
         body: JSON.stringify({ chat_id: telegram.chat_id }),
@@ -104,7 +105,7 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
     setVerifying(true);
     setMessage({});
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/telegram/verify/confirm`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/telegram/verify/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId() },
         body: JSON.stringify({ chat_id: telegram.chat_id, verification_code: verificationCode }),
@@ -131,7 +132,7 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
     setSaving(true);
     setMessage({});
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/telegram/test`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/telegram/test`, {
         method: 'POST',
         headers: { 'X-Device-ID': deviceId() },
       });
@@ -153,7 +154,7 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
     setSaving(true);
     setMessage({});
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/telegram/preferences`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/telegram/preferences`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId() },
         body: JSON.stringify({

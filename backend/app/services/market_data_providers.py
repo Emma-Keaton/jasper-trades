@@ -29,6 +29,7 @@ class MarketDataService:
             'finnhub_key': None,
             'twelvedata_key': None,
             'polygon_key': None,
+            'cmc_key': None,
         }
         
         # API endpoints
@@ -199,6 +200,34 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"CoinGecko gainers/losers error: {e}")
             return {'success': False, 'error': str(e), 'provider': 'coingecko'}
+
+    # ============ CoinMarketCap (optional - CMC_API_KEY) ============
+
+    async def get_crypto_prices_coinmarketcap(self, symbols: List[str]) -> Dict[str, Any]:
+        """Bulk crypto quotes from CoinMarketCap. Requires CMC_API_KEY."""
+        from app.services.coinmarketcap_service import get_coinmarketcap_service
+
+        service = get_coinmarketcap_service()
+        if not service.configured:
+            return {'success': False, 'error': 'CMC_API_KEY not configured', 'provider': 'coinmarketcap'}
+        result = await service.get_quotes(symbols)
+        if not result.get('success'):
+            # Single-symbol fallback
+            prices = {}
+            for sym in symbols:
+                quote = await service.get_price(sym)
+                if quote:
+                    prices[quote.get('symbol', sym).upper()] = {
+                        'name': sym,
+                        'price_usd': quote['price'],
+                        'market_cap': quote.get('market_cap'),
+                        'volume_24h': quote.get('volume_24h'),
+                        'price_change_24h': quote.get('price_change_24h'),
+                    }
+            if prices:
+                return {'success': True, 'data': prices, 'provider': 'coinmarketcap'}
+            return {'success': False, 'error': 'no data', 'provider': 'coinmarketcap'}
+        return result
 
     # ============ Alpha Vantage (FREE tier) ============
 
@@ -688,12 +717,15 @@ class MarketDataService:
 
     def get_available_providers(self) -> Dict[str, bool]:
         """Get list of configured providers."""
+        from app.services.coinmarketcap_service import get_coinmarketcap_service
+
         return {
             'coingecko': True,  # Always available (free, no key)
             'alphavantage': bool(self.config.get('alphavantage_key')),
             'finnhub': bool(self.config.get('finnhub_key')),
             'twelvedata': bool(self.config.get('twelvedata_key')),
             'polygon': bool(self.config.get('polygon_key')),
+            'coinmarketcap': get_coinmarketcap_service().configured,
         }
 
 

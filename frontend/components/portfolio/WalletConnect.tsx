@@ -6,6 +6,8 @@ import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { Modal, Button } from '@/components/ui';
 import { Wallet, ExternalLink, Copy, Loader2, CheckCircle2, XCircle, Smartphone } from 'lucide-react';
+import { SetupGuideButton } from '@/components/settings/SetupGuide';
+import { walletSetupSteps } from '@/components/settings/setupGuides';
 import QRCode from 'qrcode';
 
 type ChainType = 'evm' | 'solana';
@@ -261,6 +263,16 @@ export default function WalletConnect() {
         description="Choose a chain and connect your wallet. Mainnet only."
         size="sm"
       >
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            New here? Follow the walkthrough to get set up.
+          </p>
+          <SetupGuideButton
+            title="Connect a wallet"
+            intro="A wallet is your key to crypto. Follow these steps to install one, create it, and link it to Jasper."
+            steps={walletSetupSteps}
+          />
+        </div>
         <div className="flex gap-2 mb-5">
           <button
             onClick={() => setChainType('evm')}

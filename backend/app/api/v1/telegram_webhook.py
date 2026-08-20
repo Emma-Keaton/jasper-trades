@@ -6,6 +6,7 @@ For production deployment (Render, Vercel, etc.)
 from fastapi import APIRouter, Request, HTTPException, Header, Depends
 from telegram import Update
 import structlog
+import os
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -19,13 +20,22 @@ router = APIRouter(prefix="/telegram", tags=["Telegram Webhook"])
 
 
 @router.post("/webhook")
-async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+async def telegram_webhook(
+    request: Request,
+    dbtoken: Optional[str] = Header(None, alias="X-Telegram-Bot-Api-Secret-Token"),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Telegram webhook endpoint.
     Telegram sends updates here when configured for webhooks.
-    
-    All messages are processed and responses sent via the bot service.
+
+    The webhook secret token is verified when TELEGRAM_WEBHOOK_SECRET is set.
     """
+    secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+    if secret:
+        if not dbtoken or dbtoken != secret:
+            logger.warning("Telegram webhook rejected (bad secret token)")
+            raise HTTPException(status_code=403, detail="Forbidden")
     try:
         # Get raw JSON from request
         data = await request.json()

@@ -2,11 +2,12 @@
 Trading endpoints - Execute trades, get positions, view history.
 Sends Telegram notifications for trade executions
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any, Optional
 import structlog
 import asyncio
+from datetime import datetime
 
 from app.database import get_db
 from app.models import Trade, Position
@@ -15,10 +16,21 @@ from app.services.valuation_service import ValuationService
 from app.services.circuit_breaker import get_circuit_breaker
 from app.agents import agent_registry
 from app.brokers import broker_registry
+from app.brokers.router import broker_router
+from app.brokers.tiger_service import _is_chinese_symbol
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+def _trading_asset_class(symbol: str) -> str:
+    """Route-aware asset class: 'cn' for Chinese codes, 'us-stocks' for US tickers."""
+    symbol = str(symbol or "").strip()
+    if _is_chinese_symbol(symbol):
+        return "cn"
+    detected = broker_router.detect_asset_class(symbol)
+    return "us-stocks" if detected == "stocks" else detected
 
 
 @router.post("/execute")
@@ -29,10 +41,15 @@ async def execute_trade(
     order_type: str = "market",
     portfolio_id: Optional[int] = None,
     broker: str = "auto",
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Execute a trade.
+
+    Routes through the unified trade gate: practice mode executes in the
+    universal paper engine; live mode only with a live-configured device AND a
+    connected non-paper broker.
 
     Args:
         symbol: Trading symbol
@@ -43,7 +60,61 @@ async def execute_trade(
         broker: Broker name or "auto" for automatic selection
     """
     try:
-        # Check circuit breaker first
+        from app.services import trade_gate
+
+        device_id = (x_device_id or "").strip() or "default-device"
+        mode = await trade_gate.resolve_mode(db, device_id)
+        live_asset_class = _trading_asset_class(symbol)
+
+        # Resolve a market price (needed for the gate + paper fills).
+        price = await ValuationService().get_price(symbol)
+
+        gate = await trade_gate.check_prerequisites(
+            db,
+            device_id,
+            symbol=symbol,
+            side=side,
+            qty=quantity,
+            price=price or 0.0,
+            intent=mode,
+            asset_class=live_asset_class,
+            broker=broker,
+            portfolio_id=portfolio_id,
+            route="execute",
+        )
+        if not gate["passed"]:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Trade blocked: {trade_gate.describe_failures(gate)}",
+            )
+
+        # ----- Paper mode: universal paper engine -----
+        if mode == "paper":
+            if not price or price <= 0:
+                raise HTTPException(status_code=400, detail="Could not resolve a market price for paper fill")
+            result = await trade_gate.execute_paper(
+                device_id=device_id,
+                symbol=symbol.upper(),
+                side=side.lower(),
+                qty=quantity,
+                price=price,
+                asset_class=live_asset_class,
+                agent_name="manual",
+                reasoning=f"order_type={order_type}, broker={broker}",
+            )
+            if result.get("error"):
+                raise HTTPException(status_code=400, detail=result)
+            return {
+                "status": "success",
+                "mode": "paper",
+                "trade_id": None,
+                "broker": "paper",
+                "message": f"Paper {side} {quantity} {symbol} @ ${price:.4g}",
+                **result,
+            }
+
+        # ----- Live mode -----
+        # Check circuit breaker first (live guardian)
         circuit = get_circuit_breaker()
         if not circuit.can_trade():
             logger.warning(
@@ -58,6 +129,93 @@ async def execute_trade(
                 detail=f"Trading halted: {circuit.trigger_reason}",
             )
 
+        # ----- Live CN/US via per-device funded broker (Tiger preferred) -----
+        from app.brokers.tiger_service import place_tiger_live_order, tiger_configured
+
+        tiger_result = None
+        if live_asset_class == "cn":
+            tiger_result = await place_tiger_live_order(
+                db, device_id, symbol=symbol, side=side, quantity=quantity,
+                order_type=order_type, asset_class="cn",
+            )
+        elif live_asset_class in ("stocks", "us-stocks") and await tiger_configured(db, device_id):
+            tiger_result = await place_tiger_live_order(
+                db, device_id, symbol=symbol, side=side, quantity=quantity,
+                order_type=order_type, asset_class="us-stocks",
+            )
+
+        if tiger_result:
+            portfolio_service = PortfolioService(db)
+
+            if portfolio_id is None:
+                portfolios = await portfolio_service.get_portfolios()
+                if not portfolios:
+                    portfolio = await portfolio_service.create_portfolio(
+                        name="Default",
+                        initial_cash=100000.0,
+                        is_paper=True,
+                    )
+                    portfolio_id = portfolio.id
+                else:
+                    portfolio_id = portfolios[0].id
+
+            filled_price = float(tiger_result.get("filled_price") or price or 0)
+            trade = Trade(
+                symbol=symbol,
+                side=side.lower(),
+                quantity=quantity,
+                price=filled_price,
+                order_type=order_type,
+                status="filled",
+                broker="tiger",
+                broker_order_id=tiger_result.get("order_id"),
+                agent_name="tiger-live",
+                created_at=datetime.utcnow(),
+            )
+            db.add(trade)
+            await db.commit()
+            await db.refresh(trade)
+
+            try:
+                if side.lower() == "buy":
+                    await portfolio_service.add_position(
+                        portfolio_id=portfolio_id,
+                        symbol=symbol,
+                        quantity=quantity,
+                        price=filled_price,
+                    )
+                    await portfolio_service.update_cash(
+                        portfolio_id=portfolio_id,
+                        amount=-quantity * filled_price,
+                        description=f"Buy {quantity} {symbol} (Tiger)",
+                    )
+                else:
+                    p_result = await portfolio_service.reduce_position(
+                        portfolio_id=portfolio_id,
+                        symbol=symbol,
+                        quantity=quantity,
+                        price=filled_price,
+                    )
+                    if not p_result.get("error"):
+                        await portfolio_service.update_cash(
+                            portfolio_id=portfolio_id,
+                            amount=quantity * filled_price,
+                            description=f"Sell {quantity} {symbol} (Tiger)",
+                        )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Portfolio bookkeeping failed for Tiger trade", error=str(e))
+
+            return {
+                "status": "success",
+                "mode": "live",
+                "trade_id": trade.id,
+                "broker_order_id": trade.broker_order_id,
+                "broker": "tiger",
+                "message": tiger_result.get("message", f"Executed {side} {quantity} {symbol}"),
+                **tiger_result,
+            }
+
+        # ----- Live mode: existing execution-agent path (crypto/forex/solana/trove) -----
         # Initialize brokers if needed
         execution_agent = agent_registry.get("execution")
 
@@ -145,7 +303,7 @@ async def execute_trade(
             if settings.TELEGRAM_BOT_TOKEN:
                 asyncio.create_task(_send_trade_telegram_notification(
                     trade, 
-                    "default_device",  # TODO: Get from request headers
+                    device_id,
                     db
                 ))
 
@@ -421,6 +579,7 @@ async def get_trade_details(
 
 async def _send_trade_telegram_notification(trade: Trade, device_id: str, db: AsyncSession):
     """Send Telegram notification for executed trade"""
+    from app.config import settings
     from app.services.telegram_bot_service import get_telegram_bot_service
     from app.models import TelegramUser
     from sqlalchemy import select

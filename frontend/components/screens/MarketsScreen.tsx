@@ -1,131 +1,224 @@
-﻿'use client';
+'use client';
 
-import React, { useState, useEffect } from 'react';
-import { TrendingUp, ArrowUpRight, ArrowDownRight, Compass, Microscope } from 'lucide-react';
-import { Card, Badge, RowLink } from '@/components/ui';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
+import { TrendingUp, Compass, Microscope, Star, Sparkles } from 'lucide-react';
+import { Card } from '@/components/ui';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { DEFAULT_DEVICE_ID } from '@/lib/constants';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-type Action = 'BUY' | 'HOLD' | 'SELL';
-interface Recommend { symbol: string; name: string; action: Action; reason: string; confidence: number; }
-interface TrendingCoin { symbol: string; name: string; change: number; }
-
-const actionCopy: Record<Action, { label: string; tone: 'up' | 'down' | 'warning'; explain: string }> = {
-  BUY: { label: 'Buy', tone: 'up', explain: 'AI thinks this will go up.' },
-  HOLD: { label: 'Hold', tone: 'warning', explain: 'AI sees no clear direction.' },
-  SELL: { label: 'Sell', tone: 'down', explain: 'AI thinks this will fall.' },
-};
-
-interface MarketsScreenProps {
-  onNavigate: (tab: string) => void;
-  triggerToast: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void;
+interface MarketItem {
+  symbol: string;
+  name: string;
+  change?: number;
+  price_usd?: number | null;
+  source?: string;
+  asset_class: 'crypto' | 'stocks' | 'cn';
+  inWatchlist?: boolean;
 }
 
-export default function MarketsScreen({ onNavigate }: MarketsScreenProps) {
-  const [recs, setRecs] = useState<Recommend[]>([]);
-  const [trending, setTrending] = useState<TrendingCoin[]>([]);
-  const [loading, setLoading] = useState(true);
+function deviceHeaders(): Record<string, string> {
+  let deviceId: string;
+  try {
+    deviceId = getOrCreateDeviceId();
+  } catch {
+    deviceId = DEFAULT_DEVICE_ID;
+  }
+  return { 'X-Device-ID': deviceId };
+}
 
-  useEffect(() => {
-    (async () => {
+function normalize(items: any[]): MarketItem[] {
+  return (items || [])
+    .map((c: any) => ({
+      symbol: (c.symbol || c.base_symbol || c.ticker || '').toUpperCase(),
+      name: c.name || c.base_name || c.symbol || '',
+      change: Number(c.change || c.price_change_24h || c.change_24h || 0),
+      price_usd: c.price_usd ?? null,
+      source: c.source || undefined,
+      asset_class: 'crypto' as const,
+    }))
+    .filter((i: MarketItem) => i.symbol);
+}
+
+export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string) => void; triggerToast?: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void }) {
+  const [newTokens, setNewTokens] = useState<MarketItem[]>([]);
+  const [trending, setTrending] = useState<MarketItem[]>([]);
+  const [watchlist, setWatchlist] = useState<MarketItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const mounted = useRef(true);
+
+  const refreshWatchlist = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/watchlist`, { headers: deviceHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const items: MarketItem[] = (data.watchlist || []).map((w: any) => ({
+        symbol: (w.symbol || '').toUpperCase(),
+        name: w.name || w.symbol || '',
+        price_usd: w.price_usd ?? null,
+        asset_class: (w.asset_class === 'stocks' || w.asset_class === 'cn' ? w.asset_class : 'crypto') as MarketItem['asset_class'],
+        change: 0,
+      }));
+      setWatchlist(items);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const toggleWatch = useCallback(
+    async (item: MarketItem) => {
+      const symbol = item.symbol;
+      const current = watchlist.some((w) => w.symbol === symbol);
       try {
-        const [mRes, tRes] = await Promise.all([
-          fetch(`${API_URL}/api/v1/market-data/trending`).catch(() => null),
-          fetch(`${API_URL}/api/v1/memecoin/discover?limit=8`).catch(() => null),
-        ]);
-        if (tRes && tRes.ok) {
-          const data = await tRes.json();
-          const coins = Array.isArray(data) ? data : data?.coins || data?.data || [];
-          setTrending(coins.slice(0, 8).map((c: any) => ({
-            symbol: (c.symbol || c.ticker || '').toUpperCase(),
-            name: c.name || c.symbol || '',
-            change: Number(c.change || c.price_change_percent || c.change_24h || 0),
-          })).filter((c: any) => c.symbol));
-        }
-        if (mRes && mRes.ok) {
-          const data = await mRes.json();
-          const items = Array.isArray(data) ? data : data?.recommendations || data?.recs || data?.trending || [];
-          if (Array.isArray(items) && items.length) {
-            setRecs(items.slice(0, 5).map((r: any) => ({
-              symbol: (r.symbol || r.ticker || '').toUpperCase(),
-              name: r.name || r.symbol || '',
-              action: (r.action || r.rating || r.signal || 'HOLD').toUpperCase() as Action,
-              reason: r.reason || r.summary || '',
-              confidence: Number(r.confidence || r.score || 0),
-            })).filter((r: any) => r.symbol && actionCopy[(r.action || 'HOLD') as Action]));
-          }
+        if (current) {
+          await fetch(`${API_URL}/api/v1/watchlist/${symbol}`, { method: 'DELETE', headers: deviceHeaders() });
+        } else {
+          await fetch(`${API_URL}/api/v1/watchlist`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...deviceHeaders() },
+            body: JSON.stringify({ symbol, name: item.name, asset_class: item.asset_class, source: item.source }),
+          });
         }
       } catch {
-        /* ignore */
-      } finally {
+        return;
+      }
+      await refreshWatchlist();
+    },
+    [watchlist, refreshWatchlist],
+  );
+
+  useEffect(() => {
+    mounted.current = true;
+    (async () => {
+      const [disco, trend, watchRes] = await Promise.all([
+        fetch(`${API_URL}/api/v1/memecoin/discover?limit=8`).catch(() => null),
+        fetch(`${API_URL}/api/v1/memecoin/trending?limit=8`).catch(() => null),
+        fetch(`${API_URL}/api/v1/watchlist`, { headers: deviceHeaders() }).catch(() => null),
+      ]);
+      if (mounted.current) {
+        if (disco && disco.ok) {
+          const data = await disco.json();
+          setNewTokens(normalize(data.results || data.coins || data.data || []));
+        }
+        if (trend && trend.ok) {
+          const data = await trend.json();
+          setTrending(normalize(data.results || data.coins || data.data || []));
+        }
+        if (watchRes && watchRes.ok) {
+          const data = await watchRes.json();
+          const items: MarketItem[] = (data.watchlist || []).map((w: any) => ({
+            symbol: (w.symbol || '').toUpperCase(),
+            name: w.name || w.symbol || '',
+            price_usd: w.price_usd ?? null,
+            asset_class: (w.asset_class === 'stocks' || w.asset_class === 'cn' ? w.asset_class : 'crypto') as MarketItem['asset_class'],
+            change: 0,
+          }));
+          setWatchlist(items);
+        }
         setLoading(false);
       }
     })();
+    return () => {
+      mounted.current = false;
+    };
   }, []);
+
+  const watched = (m: MarketItem) => watchlist.some((w) => w.symbol === m.symbol);
+
+  const renderCard = (item: MarketItem) => (
+    <Card key={item.symbol} hover className="p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-slate-900 dark:text-slate-50">{item.symbol}</p>
+          <p className="truncate text-xs text-slate-500 dark:text-slate-400">{item.name || item.symbol}</p>
+        </div>
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label={watched(item) ? `Remove ${item.symbol} from watchlist` : `Add ${item.symbol} to watchlist`}
+          data-onboarding="watchlist-star"
+          onClick={() => toggleWatch(item)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleWatch(item); } }}
+          className={
+            watched(item)
+              ? 'shrink-0 cursor-pointer text-amber-400 transition hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
+              : 'shrink-0 cursor-pointer text-slate-300 transition hover:scale-110 hover:text-amber-400 dark:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
+          }
+        >
+          <Star className="h-4 w-4 fill-current" />
+        </span>
+      </div>
+      {typeof item.change === 'number' && item.asset_class === 'crypto' && (
+        <p className={`tnum mt-1 text-sm font-semibold ${item.change >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+          {item.change >= 0 ? '+' : ''}{item.change}%
+        </p>
+      )}
+      {typeof item.price_usd === 'number' && item.price_usd > 0 && (
+        <p className="tnum mt-1 text-xs text-slate-400 dark:text-slate-500">${Number(item.price_usd).toLocaleString(undefined, { maximumFractionDigits: 8 })}</p>
+      )}
+    </Card>
+  );
 
   return (
     <div className="flex flex-col gap-8">
       <div>
         <p className="eyebrow">Markets</p>
         <h1 className="page-title mt-1">What is worth buying today</h1>
-        <p className="mt-2 max-w-xl muted-caption">Plain-English ideas from the AI, plus what is trending right now.</p>
+        <p className="mt-2 max-w-xl muted-caption">New launches, what is trending right now, and the symbols you are watching.</p>
       </div>
 
-      {/* AI Recommendations */}
+      {/* My watchlist */}
       <section>
-        <h2 className="text-lg font-display font-bold text-slate-900 dark:text-slate-50" data-onboarding="markets-recs">AI recommendations</h2>
+        <div className="flex items-center gap-2">
+          <Star className="h-5 w-5 text-amber-400" />
+          <h2 className="text-lg font-display font-bold text-slate-900 dark:text-slate-50">My watchlist</h2>
+        </div>
         {loading ? (
-          <div className="mt-4 grid gap-3">{[0,1,2].map(i => <div key={i} className="skeleton h-24 w-full" />)}</div>
-        ) : recs.length === 0 ? (
-          <div className="mt-4 flex items-center gap-3 rounded-card border border-dashed border-slate-300 bg-slate-50/50 px-6 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
-            <Compass className="h-5 w-5 text-brand-500" /> No recommendations yet. Check back soon.
-          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-24 w-full" />)}</div>
+        ) : watchlist.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+            Nothing pinned yet. Tap the star on a coin below to watch it here.
+          </p>
         ) : (
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-            {recs.map(r => {
-              const a = actionCopy[r.action] || actionCopy.HOLD;
-              return (
-                <Card key={r.symbol} hover className="flex flex-col p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-display text-lg font-bold text-slate-900 dark:text-slate-50">{r.symbol}</p>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">{r.name}</p>
-                    </div>
-                    <Badge tone={a.tone} className="uppercase">{a.label}</Badge>
-                  </div>
-                  <p className="mt-3 flex-1 text-sm text-slate-600 dark:text-slate-300">{r.reason || a.explain}</p>
-                  <div className="mt-4 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
-                    <span>Confidence</span>
-                    <span className="tnum font-semibold text-slate-700 dark:text-slate-200">{r.confidence ? `${r.confidence}%` : 'n/a'}</span>
-                  </div>
-                </Card>
-              );
-            })}
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {watchlist.map(renderCard)}
           </div>
         )}
       </section>
 
-      {/* Trending */}
+      {/* Trending right now */}
       <section>
         <div className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-brand-500" />
           <h2 className="text-lg font-display font-bold text-slate-900 dark:text-slate-50">Trending right now</h2>
         </div>
-        {trending.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">Nothing trending yet.</p>
+        {loading ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-24 w-full" />)}</div>
+        ) : trending.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">Nothing trending yet. Check back soon.</p>
         ) : (
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {trending.map(t => (
-              <Card key={t.symbol} hover className="p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold text-slate-900 dark:text-slate-50">{t.symbol}</p>
-                  {t.change >= 0 ? <ArrowUpRight className="h-4 w-4 text-emerald-500" /> : <ArrowDownRight className="h-4 w-4 text-rose-500" />}
-                </div>
-                <p className={`tnum mt-1 text-sm font-semibold ${t.change >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                  {t.change >= 0 ? '+' : ''}{t.change}%
-                </p>
-              </Card>
-            ))}
+            {trending.map(renderCard)}
+          </div>
+        )}
+      </section>
+
+      {/* New tokens (discover) */}
+      <section>
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-violet-500" />
+          <h2 className="text-lg font-display font-bold text-slate-900 dark:text-slate-50">New tokens</h2>
+        </div>
+        {loading ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-24 w-full" />)}</div>
+        ) : newTokens.length === 0 ? (
+          <p className="mt-4 flex items-center gap-3 rounded-card border border-dashed border-slate-300 bg-slate-50/50 px-6 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
+            <Compass className="h-5 w-5 text-brand-500" /> No new launches right now. Check back soon.
+          </p>
+        ) : (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {newTokens.map(renderCard)}
           </div>
         )}
       </section>
@@ -139,7 +232,9 @@ export default function MarketsScreen({ onNavigate }: MarketsScreenProps) {
             <p className="text-xs text-slate-500 dark:text-slate-400">Backtesting and factor research, for curious users.</p>
           </div>
         </div>
-        <RowLink onClick={() => onNavigate('backtest')}>Open research</RowLink>
+        <button type="button" onClick={() => onNavigate('backtest')} className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
+          Open research
+        </button>
       </Card>
     </div>
   );

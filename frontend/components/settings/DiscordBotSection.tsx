@@ -5,6 +5,7 @@ import { MessageSquare, Check, Send, Hash } from 'lucide-react';
 import { Toast } from '@/app/types';
 import InfoModal, { SetupStep, ApiLink, BenefitItem } from './InfoModal';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 
 interface DiscordBotSettings {
   bot_token: string;
@@ -31,7 +32,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
   const saveDiscordSettings = async () => {
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/settings/discord-bot`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/discord-bot`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -59,7 +60,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
     setTesting(true);
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/discord/start`, {
+      const res = await apiFetch(`${API_URL}/api/v1/discord/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -89,7 +90,7 @@ export default function DiscordBotSection({ discord, setDiscord, triggerToast }:
     setTesting(true);
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/discord/test`, {
+      const res = await apiFetch(`${API_URL}/api/v1/discord/test`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

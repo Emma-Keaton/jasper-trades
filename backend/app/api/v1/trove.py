@@ -4,12 +4,15 @@ Nigerian (NGX) and US stocks trading via Trove Finance API
 """
 from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Dict, Any
 import asyncio
 import structlog
 import os
 import httpx
 from datetime import datetime
+
+from app.database import get_db
 
 logger = structlog.get_logger(__name__)
 
@@ -136,11 +139,12 @@ async def get_trove_quote(symbol: str):
 @router.post("/trove/order", response_model=TroveOrderResponse, tags=["trove"])
 async def place_trove_order(
     order: TroveOrderRequest,
-    x_device_id: Optional[str] = Header(None)
+    x_device_id: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Place a trade order via Trove API.
-    
+    Place a trade order via Trove API (paper->paper engine; live->Trove API).
+
     Args:
         symbol: Stock symbol to trade
         side: "buy" or "sell"
@@ -149,19 +153,81 @@ async def place_trove_order(
         price: Limit price (required for limit orders)
         is_sandbox: Use sandbox environment (default: True)
     """
-    if not TROVE_API_KEY:
-        raise HTTPException(status_code=400, detail="Trove API key not configured")
-    
+    from app.services import trade_gate
+    from app.services.paper_trading_service import get_paper_trading_service
+
+    device_id = (x_device_id or "").strip() or "default-device"
+
     # Validate limit order
     if order.order_type == "limit" and order.price is None:
         raise HTTPException(status_code=400, detail="Price required for limit orders")
-    
+
     # Validate side
     if order.side not in ["buy", "sell"]:
         raise HTTPException(status_code=400, detail="Side must be 'buy' or 'sell'")
-    
-    target_url = f"{TROVE_BASE_URL}/trading/order"
-    
+
+    mode = await trade_gate.resolve_mode(db, device_id)
+
+    # ----- Practice -> universal paper engine -----
+    if mode == "paper":
+        price = order.price or await _best_market_price(order.symbol)
+        if not price or price <= 0:
+            raise HTTPException(status_code=400, detail="Could not resolve a market price for this symbol")
+
+        result = await get_paper_trading_service().place_trade(
+            device_id=device_id,
+            symbol=order.symbol.upper(),
+            side=order.side,
+            qty=float(order.quantity),
+            price=float(price),
+            asset_class="stocks",
+            agent_name="trove-paper",
+            reasoning=f"Trove paper order ({order.order_type})",
+        )
+        if result.get("error"):
+            raise HTTPException(status_code=400, detail=result)
+        logger.info(
+            "Trove paper order placed", symbol=order.symbol, side=order.side,
+            quantity=order.quantity, device_id=device_id,
+        )
+        return TroveOrderResponse(
+            order_id="paper-" + str(result.get("trade_count", 0)),
+            status="filled",
+            symbol=order.symbol.upper(),
+            side=order.side,
+            quantity=order.quantity,
+            filled_quantity=order.quantity,
+            price=price,
+            created_at=datetime.now(),
+        )
+
+    # ----- Live -> Trove API (gated) -----
+    credentials = await _get_trove_credentials(db, device_id)
+    if not credentials:
+        raise HTTPException(status_code=400, detail="Trove API key not configured")
+
+    gate = await trade_gate.check_prerequisites(
+        db, device_id,
+        symbol=order.symbol,
+        side=order.side,
+        qty=float(order.quantity),
+        price=order.price or 0.0,
+        intent="live",
+        asset_class="stocks",
+        broker="trove",
+        route="trove",
+    )
+    if not gate["passed"]:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Live Trove trade blocked: {trade_gate.describe_failures(gate)}",
+        )
+
+    base_url = credentials["base_url"]
+    api_key = credentials["api_key"]
+
+    target_url = f"{base_url}/trading/order"
+
     try:
         payload = {
             "symbol": order.symbol,
@@ -179,7 +245,7 @@ async def place_trove_order(
                 target_url,
                 json=payload,
                 headers={
-                    "Authorization": f"Bearer {TROVE_API_KEY}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
                 },
                 timeout=30.0
@@ -193,7 +259,7 @@ async def place_trove_order(
                 side=order.side,
                 quantity=order.quantity,
                 order_id=data.get("order_id"),
-                device_id=x_device_id
+                device_id=device_id
             )
             
             return TroveOrderResponse(
@@ -213,6 +279,37 @@ async def place_trove_order(
     except Exception as e:
         logger.error(f"Failed to place Trove order: {e}")
         raise HTTPException(status_code=500, detail="Failed to place order")
+
+
+async def _best_market_price(symbol: str) -> Optional[float]:
+    """Fallback price lookup for paper Trove orders (valuation service)."""
+    try:
+        from app.services.valuation_service import ValuationService
+
+        return await ValuationService().get_price(symbol)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def _get_trove_credentials(
+    db: AsyncSession, device_id: str
+) -> Optional[Dict[str, Any]]:
+    """Trove API key/base URL from per-device DB settings (env fallback)."""
+    from sqlalchemy import select
+    from app.models import DeviceSettings
+    from app.services.encryption import EncryptionHelper
+
+    res = await db.execute(select(DeviceSettings).where(DeviceSettings.device_id == device_id))
+    ds = res.scalar_one_or_none()
+    if ds and ds.trove_api_key:
+        encryption = EncryptionHelper()
+        return {
+            "api_key": encryption.decrypt(ds.trove_api_key),
+            "base_url": ds.trove_base_url or TROVE_BASE_URL,
+        }
+    if TROVE_API_KEY:
+        return {"api_key": TROVE_API_KEY, "base_url": TROVE_BASE_URL}
+    return None
 
 
 @router.get("/trove/positions", response_model=List[TrovePosition], tags=["trove"])

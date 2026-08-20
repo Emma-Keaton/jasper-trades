@@ -79,3 +79,29 @@ export interface NotificationItem {
   time: string;
   unread: boolean;
 }
+
+/** One symbol the AI is watching, with the latest factor-decider signal. */
+export interface WatchedEntry {
+  symbol: string;
+  name?: string | null;
+  asset_class?: string;
+  source?: string | null;
+  last_signal?: string | null;
+  direction?: string | null;
+  confidence?: number | null;
+  last_status?: string | null;
+  price_usd?: number | null;
+}
+
+/** One decision the factor sweep has already acted on (or skipped). */
+export interface FactorSignal {
+  id: string;
+  symbol: string;
+  side: string;
+  confidence: number;
+  rationale?: string | null;
+  execution_status: string;
+  executed: boolean;
+  entry_price?: number | null;
+  created_at?: string | null;
+}

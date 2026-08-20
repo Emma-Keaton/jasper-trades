@@ -89,3 +89,6 @@ Desktop.ini
 **.node-persist**
 **_IGNORE_**
 # end managed
+
+# tracked-by-mistake env templates
+backend/.env.render

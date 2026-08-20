@@ -1,10 +1,9 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import { Play, RotateCcw, TrendingUp, Activity, Gauge, BarChart } from 'lucide-react';
 import { Card, Button, Badge, Spinner } from '@/components/ui';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { apiFetch } from '@/lib/api-client';
 
 interface BacktestScreenProps {
   selectedAlphaFactors: string[];
@@ -31,8 +30,8 @@ export default function BacktestScreen({ selectedAlphaFactors, removeAlphaFactor
     setRunning(true); setProgress(0); setResult(null);
     const tick = setInterval(() => setProgress(p => (p >= 90 ? p : p + 12)), 120);
     try {
-      const res = await fetch(`${API_URL}/api/v1/backtest/run`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+const res = await apiFetch(`/api/v1/backtest/run`, {
+        method: 'POST',
         body: JSON.stringify({
           strategy_name: stratName,
           factor_ids: selectedAlphaFactors.map((n, i) => `f-${i + 1}`),

@@ -8,7 +8,7 @@ Gemini 2.5 Flash (free tier, with multi-key rotation) implemented in
 
 To avoid touching every agent that does `from app.nvidia_nim import
 nvidia_client`, this module re-exports `nvidia_client` as a transparent
-proxy that delegates to the Gemini client when GEMINI_API_KEYS is set, and
+proxy that delegates to the Gemini client when GEMINI_API_KEY is set, and
 falls back to a real NVIDIA NIM client (single key) otherwise. Agents keep
 calling nvidia_client.chat_completion(...) etc. unchanged.
 """
@@ -162,7 +162,7 @@ class _NVIDIANIMFallback:
 # Transparent proxy -> Gemini-first with NVIDIA NIM runtime fallback.
 #
 # The primary client is Gemini 2.5 Flash (multi-key rotation) when
-# GEMINI_API_KEYS is set. Every request pings Gemini first; on a call-level
+# GEMINI_API_KEY is set. Every request pings Gemini first; on a call-level
 # failure (network error, 429-exhaustion, timeouts) it retries the same call
 # against NVIDIA NIM so the app stays responsive during Gemini outages.
 # Importing this module never fails even when no keys are configured.
@@ -175,7 +175,7 @@ class _FallbackProxy:
         self._nvidia = None
 
     def _primary(self):
-        if self._gemini is None and settings.GEMINI_API_KEYS:
+        if self._gemini is None and settings.gemini_keys:
             from app.services.llm_service import get_gemini_client
 
             client = get_gemini_client()
@@ -210,7 +210,7 @@ class _FallbackProxy:
                 if primary is not None:
                     raise RuntimeError(f"LLM call '{name}' failed and NVIDIA fallback is not configured")
                 raise RuntimeError(
-                    "No LLM configured: set GEMINI_API_KEYS (primary) and/or NVIDIA_API_KEY (fallback)"
+                    "No LLM configured: set GEMINI_API_KEY (primary) and/or NVIDIA_API_KEY (fallback)"
                 )
             method = getattr(fallback, name)
             result = method(*args, **kwargs)
@@ -236,7 +236,7 @@ class _FallbackProxy:
 
 
 def _raise_no_llm():
-    raise RuntimeError("No LLM configured: set GEMINI_API_KEYS (primary) and/or NVIDIA_API_KEY (fallback)")
+    raise RuntimeError("No LLM configured: set GEMINI_API_KEY (primary) and/or NVIDIA_API_KEY (fallback)")
 
 
 # Backward-compatible global singleton. All existing

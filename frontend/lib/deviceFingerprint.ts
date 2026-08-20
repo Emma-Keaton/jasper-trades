@@ -94,6 +94,21 @@ export function getOrCreateDeviceId(): string {
 }
 
 /**
+ * Build common headers with the device ID attached.
+ * Every request to the backend should carry X-Device-ID so
+ * device-scoped routes (portfolio, watchlist, signals, brokers) work.
+ */
+export function deviceHeaders(
+  extra?: Record<string, string>
+): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    'X-Device-ID': getOrCreateDeviceId(),
+    ...extra,
+  };
+}
+
+/**
  * Get device metadata for debugging/support
  */
 export function getDeviceInfo(): DeviceInfo | null {

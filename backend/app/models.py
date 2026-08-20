@@ -250,6 +250,13 @@ class DeviceSettings(Base):
     trove_account_id = Column(String, nullable=True)  # Primary Trove account ID
     trove_sandbox = Column(Boolean, default=True)  # True = Sandbox, False = Live
 
+    # Tiger OpenAPI (CN A-shares + US stocks - LIVE ONLY, encrypted)
+    # Paper trading always goes through the Universal Paper Trading engine.
+    tiger_id = Column(String, nullable=True)  # Tiger account ID (tiger_id)
+    tiger_api_key = Column(String, nullable=True)  # Encrypted API public key
+    tiger_private_key = Column(String, nullable=True)  # Encrypted RSA private key
+    tiger_enabled = Column(Boolean, default=False)
+
     # AKShare (Chinese stocks - JSON config)
     # Structure: {
     #   "enabled": true,
@@ -771,3 +778,20 @@ class SourceFollow(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class WatchlistItem(Base):
+    """A symbol pinned by a device (separate from transient trending data).
+
+    Trending is provider-driven and never persisted; the watchlist is the
+    user-owned, durable list shown in the Markets screen.
+    """
+    __tablename__ = "watchlist_items"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, index=True)
+    symbol = Column(String(32), nullable=False)
+    name = Column(String(128), nullable=True)
+    asset_class = Column(String(32), default="crypto")  # crypto | stocks | cn | forex
+    source = Column(String(64), nullable=True)  # e.g. "coingecko", "raydium", "trove"
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -4,6 +4,7 @@
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 // Types matching backend schemas
 export interface Portfolio {
@@ -114,15 +115,32 @@ export interface ApiResponse<T> {
   detail?: string;
 }
 
+// Shared fetch wrapper that always attaches the device ID plus content type.
+// Use this instead of raw fetch() for one-off backend calls so all
+// device-scoped routes (portfolio, watchlist, signals, brokers) work.
+export function apiFetch(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const url = endpoint.startsWith('http') ? endpoint : `${API_URL}${endpoint}`;
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> | undefined),
+    'X-Device-ID': getOrCreateDeviceId(),
+  };
+  return fetch(url, { ...options, headers });
+}
+
 // Helper function for API calls (exported for extensions)
 export async function apiRequest<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<ApiResponse<T>> {
-  const url = `${API_URL}${endpoint}`;
+  const url = endpoint.startsWith('http') ? endpoint : `${API_URL}${endpoint}`;
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options?.headers,
+    'X-Device-ID': getOrCreateDeviceId(),
   };
 
   try {
@@ -365,13 +383,20 @@ export const backtestAPI = {
 
 // Alpha Zoo APIs
 export const alphaAPI = {
-  getFactors: (category?: string) => {
+  getFactors: (category?: string, deviceId?: string) => {
     const params = category ? `?category=${category}` : '';
-    return apiRequest<AlphaFactor[]>(`/api/v1/alpha/factors${params}`);
+    return apiRequest<AlphaFactor[]>(`/api/v1/alpha-factors${params}`, {
+      headers: deviceId ? { 'X-Device-ID': deviceId } : undefined,
+    });
   },
-  getFactor: (id: string) =>
-    apiRequest<AlphaFactor>(`/api/v1/alpha/factors/${id}`),
-  getCategories: () => apiRequest<string[]>('/api/v1/alpha/categories'),
+  getFactor: (id: string, deviceId?: string) =>
+    apiRequest<AlphaFactor>(`/api/v1/alpha-factors/${id}`, {
+      headers: deviceId ? { 'X-Device-ID': deviceId } : undefined,
+    }),
+  getCategories: (deviceId?: string) =>
+    apiRequest<string[]>('/api/v1/alpha-factors/categories', {
+      headers: deviceId ? { 'X-Device-ID': deviceId } : undefined,
+    }),
 };
 
 // Settings API

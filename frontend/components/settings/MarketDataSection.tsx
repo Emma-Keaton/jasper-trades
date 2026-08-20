@@ -5,6 +5,7 @@ import { TrendingUp, Check, Info, ExternalLink } from 'lucide-react';
 import { Toast } from '@/app/types';
 import InfoModal from './InfoModal';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 
 interface MarketDataSettings {
   alphavantage_key: string;
@@ -32,7 +33,7 @@ export default function MarketDataSection({ marketData, setMarketData, triggerTo
   const saveMarketDataKeys = async () => {
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/settings/market-data`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/market-data`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -61,7 +62,7 @@ export default function MarketDataSection({ marketData, setMarketData, triggerTo
                   service === 'polygon' ? marketData.polygon_key :
                   service === 'fred' ? marketData.fred_key : '';
 
-      const res = await fetch(`${API_URL}/api/v1/settings/market-data/test`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/market-data/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ service, key }),

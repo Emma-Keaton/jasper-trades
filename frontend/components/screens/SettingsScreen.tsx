@@ -56,7 +56,7 @@ export default function SettingsScreen({ triggerToast, onNavigate, defaultOpen, 
     return () => { mounted = false; };
   }, []);
 
-  const geminiConfigured = !!envStatus?.environment_variables?.gemini_api_keys?.configured;
+  const geminiConfigured = !!envStatus?.environment_variables?.gemini_api_key?.configured;
 
   const setTradingMode = (m: 'practice' | 'live') => {
     setMode(m);
@@ -200,7 +200,7 @@ export default function SettingsScreen({ triggerToast, onNavigate, defaultOpen, 
           <p className="text-sm text-slate-600 dark:text-slate-300">Jasper uses Gemini to watch markets, reason about trades in plain English, and explain what it did.</p>
           {!geminiConfigured && (
             <div className="rounded-control bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-              Set <code className="font-semibold">GEMINI_API_KEYS</code> (comma-separated) in your Render dashboard environment
+              Set <code className="font-semibold">GEMINI_API_KEY</code> (~3 keys, comma-separated) in your Render dashboard environment
               variables to enable the AI engine. NVIDIA NIM is kept as a deprecated fallback only.
             </div>
           )}

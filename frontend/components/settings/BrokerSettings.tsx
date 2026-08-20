@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { DollarSign, Activity, Info } from 'lucide-react';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -39,7 +40,7 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
 
   const loadConfig = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/settings/universal-paper-trading`, {
+      const response = await apiFetch(`${API_URL}/api/v1/settings/universal-paper-trading`, {
         headers: { 'X-Device-ID': deviceId }
       });
       
@@ -57,7 +58,7 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await fetch(`${API_URL}/api/v1/settings/universal-paper-trading`, {
+      const response = await apiFetch(`${API_URL}/api/v1/settings/universal-paper-trading`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

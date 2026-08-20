@@ -52,10 +52,14 @@ from app.api.v1 import banks  # Nigerian bank list
 from app.api.v1 import trove  # Trove stocks (Nigerian/US stocks)
 from app.api.v1 import akshare  # AKShare Chinese stocks
 from app.api.v1 import akshare_settings  # AKShare settings
+from app.api.v1 import tiger  # Tiger OpenAPI live CN/US stocks
 from app.api.v1 import exchanges
 from app.api.v1 import geo  # geo-availability probe (Nigeria-safe sources)
 from app.api.v1 import paper_trading  # Universal Paper Trading engine
 from app.api.v1 import memecoin  # Solana memecoin discovery (DexScreener)
+from app.api.v1 import market_data  # Unified market-data router (trending/prices/providers)
+from app.api.v1 import watchlist  # Per-device durable symbol watchlist
+from app.api.v1 import factor_trading  # Factor-sweep results (traded + watching)
 
 # cTrader OAuth token refresh scheduler
 try:
@@ -179,13 +183,20 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("TELEGRAM_BOT_TOKEN not set - Telegram bot disabled")
 
-    # Start auto-payout scheduler
-    try:
-        from app.services.payout_scheduler import payout_scheduler
-        await payout_scheduler.start()
-        logger.info("Auto-payout scheduler started (checks every hour)")
-    except Exception as e:
-        logger.warning(f"Auto-payout scheduler startup failed: {e}")
+    # Start auto-payout scheduler (safe-by-default: only in production when enabled)
+    if settings.AUTO_PAYOUTS_ENABLED and _is_prod:
+        try:
+            from app.services.payout_scheduler import payout_scheduler
+            await payout_scheduler.start()
+            logger.info("Auto-payout scheduler started (checks every hour)")
+        except Exception as e:
+            logger.warning(f"Auto-payout scheduler startup failed: {e}")
+    else:
+        logger.info(
+            "Auto-payout scheduler not started "
+            f"(AUTO_PAYOUTS_ENABLED={settings.AUTO_PAYOUTS_ENABLED}, "
+            f"ENVIRONMENT={settings.ENVIRONMENT})"
+        )
 
     # Start cTrader OAuth token refresh scheduler (refreshes tokens every 6 hours)
     if CTRADER_SCHEDULER_AVAILABLE:
@@ -280,11 +291,17 @@ async def lifespan(app: FastAPI):
 
 
 # Create FastAPI app
+# Interactive API docs are a dev convenience; disable them in production so the
+# attack surface isn't discoverable (OpenAPI schema stays internal-only).
+_is_prod = settings.ENVIRONMENT == "production"
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="Superpowered AI Trader - Merging Fincept, AI-Trader, Vibe-Trading, and AutoHedge",
     lifespan=lifespan,
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
 )
 
 # CRITICAL: Security validation on startup
@@ -409,9 +426,13 @@ app.include_router(symbols.router, prefix="/api/v1", tags=["symbols"])  # Symbol
 app.include_router(trove.router, prefix="/api/v1", tags=["trove"])  # Trove trading (Nigerian/US stocks)
 app.include_router(akshare.router, prefix="/api/v1", tags=["akshare"])  # AKShare Chinese stocks
 app.include_router(akshare_settings.router, tags=["akshare-settings"])  # AKShare settings
+app.include_router(tiger.router, prefix="/api/v1", tags=["tiger"])  # Tiger OpenAPI (live CN/US)
 app.include_router(geo.router, prefix="/api/v1", tags=["geo"])  # geo-availability
 app.include_router(paper_trading.router, prefix="/api/v1", tags=["paper-trading"])  # paper engine
 app.include_router(memecoin.router, prefix="/api/v1", tags=["memecoin"])  # Solana memecoins
+app.include_router(market_data.router, prefix="/api/v1", tags=["market-data"])  # unified market data
+app.include_router(watchlist.router, prefix="/api/v1", tags=["watchlist"])  # durable watchlist
+app.include_router(factor_trading.router, prefix="/api/v1", tags=["factor-trading"])  # factor results
 
 
 @app.get("/")
@@ -425,6 +446,18 @@ async def root():
         "docs": "/docs",
         "scheduler_running": scheduler._running if scheduler else False,
     }
+
+
+# In production the interactive docs are disabled; expose a neutral root response.
+if _is_prod:
+    @app.get("/docs")
+    @app.get("/redoc")
+    @app.get("/openapi.json")
+    async def _docs_disabled():
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Not Found"},
+        )
 
 
 @app.get("/api/v1/status")

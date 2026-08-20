@@ -169,6 +169,8 @@ async def maybe_auto_execute(db: AsyncSession, device_id: str, tip: SignalTip) -
 
 async def execute_signal(db: AsyncSession, device_id: str, tip: SignalTip) -> Dict[str, Any]:
     """Place the order for a tip (paper by default, live when eligible)."""
+    from app.services import trade_gate
+
     if tip.execution_status == "executed":
         return {"error": "already executed"}
 
@@ -178,31 +180,44 @@ async def execute_signal(db: AsyncSession, device_id: str, tip: SignalTip) -> Di
         await db.commit()
         return {"error": "no portfolio"}
 
-    equity = float(portfolio.cash or 0.0)
-    if equity <= 0:
-        _mark(tip, "skipped", "portfolio has zero cash")
-        await db.commit()
-        return {"error": "zero cash"}
-
-    s = await get_signal_settings(db, device_id)
-    notional = equity * s.max_position_pct
-    notional = await _apply_caps(db, portfolio.id, equity, notional)
-    if notional <= 0:
-        _mark(tip, "skipped", "position budget is zero after caps")
-        await db.commit()
-        return {"error": "zero budget"}
-
     price = await ValuationService().get_price(tip.symbol)
     if not price or price <= 0:
         _mark(tip, "skipped", f"no market price for {tip.symbol}")
         await db.commit()
         return {"error": f"no price for {tip.symbol}"}
 
-    qty = notional / price
+    mode = await trade_gate.resolve_mode(db, device_id)
     side = "buy" if (tip.side or "long").lower() == "long" else "sell"
     asset_class = _asset_class(tip.symbol)
 
-    if not await _is_live(db, device_id):
+    s = await get_signal_settings(db, device_id)
+    notional = (float(portfolio.cash or 0.0)) * s.max_position_pct
+    notional = await _apply_caps(db, portfolio.id, float(portfolio.cash or 0.0), notional)
+    if notional <= 0:
+        _mark(tip, "skipped", "position budget is zero after caps")
+        await db.commit()
+        return {"error": "zero budget"}
+
+    qty = notional / price
+
+    gate = await trade_gate.check_prerequisites(
+        db,
+        device_id,
+        symbol=tip.symbol,
+        side=side,
+        qty=qty,
+        price=price,
+        intent=mode,
+        asset_class=asset_class,
+        portfolio_id=portfolio.id,
+    )
+    if not gate["passed"]:
+        detail = trade_gate.describe_failures(gate)
+        _mark(tip, "skipped", detail or "prerequisite check failed")
+        await db.commit()
+        return {"error": detail or "prerequisites failed", "checks": gate["checks"]}
+
+    if mode == "paper":
         return await _execute_paper(db, device_id, tip, side, qty, price, notional)
     return await _execute_live(db, device_id, tip, portfolio.id, side, qty, price)
 
@@ -212,7 +227,7 @@ async def _execute_paper(
 ) -> Dict[str, Any]:
     from app.services.paper_trading_service import get_paper_trading_service
 
-    asset_class = "crypto" if _asset_class(tip.symbol) == "crypto" else "stocks"
+    asset_class = _asset_class(tip.symbol)
     result = await get_paper_trading_service().place_trade(
         device_id=device_id,
         symbol=tip.symbol,
@@ -252,6 +267,40 @@ async def _execute_live(
         _mark(tip, "skipped", f"circuit breaker open: {circuit.trigger_reason}")
         await db.commit()
         return {"error": "circuit breaker open"}
+
+    # Live CN/US stocks: per-device funded broker (Tiger). No global registry.
+    asset_class = _asset_class(tip.symbol)
+    if asset_class == "cn" or (asset_class == "stocks" and await _tiger_ready(db, device_id)):
+        from app.brokers.tiger_service import place_tiger_live_order
+
+        try:
+            tiger_result = await place_tiger_live_order(
+                db, device_id, symbol=tip.symbol, side=side, quantity=qty,
+                order_type="market", asset_class="cn" if asset_class == "cn" else "us-stocks",
+            )
+        except Exception as e:  # noqa: BLE001
+            _mark(tip, "failed", f"tiger live order failed: {e}")
+            await db.commit()
+            return {"error": f"tiger live order failed: {e}"}
+
+        ps = PortfolioService(db)
+        fill_price = float(tiger_result.get("filled_price") or price or 0)
+        if side == "buy":
+            await ps.add_position(portfolio_id, symbol=tip.symbol, quantity=qty, price=fill_price)
+            cost = qty * fill_price
+            if cost > 0:
+                await ps.update_cash(portfolio_id, amount=-cost, description=f"Auto-trade buy {tip.symbol} (Tiger)")
+        else:
+            await ps.reduce_position(portfolio_id, symbol=tip.symbol, quantity=qty, price=fill_price)
+
+        tip.executed = True
+        tip.entry_price = fill_price
+        tip.execution_status = "executed"
+        tip.execution_detail = f"Live {side.upper()} {qty:g} {tip.symbol} via Tiger"
+        tip.executed_at = datetime.utcnow()
+        await db.commit()
+        return {"success": True, "mode": "live", "broker": "tiger", "symbol": tip.symbol,
+                "side": side, "quantity": qty, "price": fill_price}
 
     execution_agent = agent_registry.get("execution")
     if execution_agent is None:
@@ -325,28 +374,24 @@ async def _apply_caps(db: AsyncSession, portfolio_id: int, equity: float, notion
 
 
 async def _is_live(db: AsyncSession, device_id: str) -> bool:
-    res = await db.execute(select(DeviceSettings).where(DeviceSettings.device_id == device_id))
-    ds = res.scalar_one_or_none()
-    if ds is None:
-        return False
-    mode = (ds.trading_mode or "practice").lower()
-    env = (ds.environment_mode or "sandbox").lower()
-    if mode != "live" or env != "live":
-        return False
-    try:
-        from app.brokers import broker_registry
-    except Exception:  # noqa: BLE001
-        return False
-    stats = broker_registry.get_stats()
-    return any(
-        (info.get("connected") and not info.get("paper_trading")) for info in stats.values()
-    )
+    """Backward-compat alias: live eligibility via the unified trade gate."""
+    from app.services import trade_gate
+
+    return await trade_gate.resolve_mode(db, device_id) == "live"
+
+
+async def _tiger_ready(db: AsyncSession, device_id: str) -> bool:
+    from app.brokers.tiger_service import tiger_configured
+
+    return await tiger_configured(db, device_id)
 
 
 def _asset_class(symbol: str) -> str:
     sym = (symbol or "").upper()
     if sym in _CRYPTO:
         return "crypto"
+    if sym.isdigit() and len(sym) == 6:
+        return "cn"
     if 2 <= len(sym) <= 5 and sym.isalpha():
         return "stocks"
     return "crypto"

@@ -12,7 +12,7 @@ import { ConnectionStatus } from '@/lib/websocket';
 import { useCurrency } from '@/lib/currencyContext';
 import { fetchTradingMode } from '@/lib/preferences';
 import { useTheme } from '@/lib/theme';
-import { Holding, TradeHistoryItem, Toast } from '@/app/types';
+import { Holding, TradeHistoryItem, Toast, WatchedEntry } from '@/app/types';
 import { Badge } from '@/components/ui';
 import ChatWidget from '@/components/ChatWidget';
 import { OnboardingProvider } from '@/components/onboarding/OnboardingProvider';
@@ -25,14 +25,16 @@ import SignalsScreen from '@/components/screens/SignalsScreen';
 import SettingsScreen, { StepId } from '@/components/screens/SettingsScreen';
 import BacktestScreen from '@/components/screens/BacktestScreen';
 import AlphaZooScreen from '@/components/screens/AlphaZooScreen';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<{ data?: T; error?: string }> {
   try {
+    const deviceId = getOrCreateDeviceId();
     const response = await fetch(`${API_URL}${endpoint}`, {
       ...options,
-      headers: { 'Content-Type': 'application/json', ...options?.headers },
+      headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId, ...options?.headers },
     });
     const data = await response.json();
     if (!response.ok) return { error: data.detail || data.error || `HTTP ${response.status}` };
@@ -61,9 +63,11 @@ export default function Home() {
   const [settingsDefaultOpen, setSettingsDefaultOpen] = useState<StepId | null>(null);
   const [tradingMode, setTradingMode] = useState<'practice' | 'live' | null>(null);
 
-  const [cash, setCash] = useState<number>(0);
+const [cash, setCash] = useState<number>(0);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
+  const [watched, setWatched] = useState<WatchedEntry[]>([]);
+  const [factorStats, setFactorStats] = useState<{ traded: number; watching: number }>({ traded: 0, watching: 0 });
   const [portfolioInitialized, setPortfolioInitialized] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [backendConnected, setBackendConnected] = useState<boolean>(false);
@@ -95,6 +99,20 @@ const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
   useEffect(() => {
     fetchTradingMode().then(setTradingMode);
   }, [activeTab, settingsDefaultOpen]);
+
+  const fetchFactorData = useCallback(async () => {
+    const [signalsRes, statsRes] = await Promise.all([
+      apiRequest<any>('/api/v1/factor-trading/signals'),
+      apiRequest<any>('/api/v1/factor-trading/stats'),
+    ]);
+    if (signalsRes.data?.watching) setWatched(signalsRes.data.watching as WatchedEntry[]);
+    if (statsRes.data) {
+      setFactorStats({
+        traded: statsRes.data.trades_taken ?? 0,
+        watching: statsRes.data.watching ?? watched.length,
+      });
+    }
+  }, [watched.length]);
 
   const fetchBackendData = useCallback(async () => {
     setLoading(true);
@@ -164,9 +182,10 @@ const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
 
   useEffect(() => {
     fetchBackendData();
-    const t = setInterval(refreshBackendData, 30000);
+    fetchFactorData();
+    const t = setInterval(() => { refreshBackendData(); fetchFactorData(); }, 15000);
     return () => clearInterval(t);
-  }, [fetchBackendData, refreshBackendData]);
+  }, [fetchBackendData, refreshBackendData, fetchFactorData]);
 
   const addAlphaFactor = useCallback((name: string) => {
     setSelectedAlphaFactors(prev => {
@@ -212,8 +231,8 @@ const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
 
   let content: React.ReactNode;
   switch (activeTab) {
-    case 'trades':
-      content = <TradesScreen cash={cash} holdings={holdings} tradeHistory={tradeHistory} loading={loading} portfolioInitialized={portfolioInitialized} onNavigate={nav} triggerToast={triggerToast} />;
+case 'trades':
+      content = <TradesScreen cash={cash} holdings={holdings} tradeHistory={tradeHistory} watched={watched} factorStats={factorStats} loading={loading} portfolioInitialized={portfolioInitialized} onNavigate={nav} triggerToast={triggerToast} />;
       break;
     case 'markets':
       content = <MarketsScreen onNavigate={nav} triggerToast={triggerToast} />;

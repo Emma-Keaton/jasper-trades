@@ -510,6 +510,131 @@ async def save_preferences(
     return {"success": True, "preferences": current}
 
 
+# ============ Onboarding State Endpoints ============
+
+class OnboardingRequest(BaseModel):
+    """Page-level onboarding state. Shallow-merged into preferences.onboarding."""
+    onboarding: Dict[str, Any]
+
+
+async def _load_preferences(session, device_id: str) -> Dict[str, Any]:
+    import json
+    result = await session.execute(
+        select(DeviceSettings.preferences).where(DeviceSettings.device_id == device_id)
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        return {}
+    try:
+        return json.loads(row) or {}
+    except (TypeError, ValueError):
+        return {}
+
+
+@router.get("/onboarding")
+async def get_onboarding_state(
+    device_id: str = Header(None, alias="X-Device-ID"),
+):
+    """Get the persisted onboarding state for the device.
+
+    Returns the full `preferences.onboarding` object (welcome_done,
+    onboarding_completed, completed_tours, and per-page flags) so the frontend
+    can restore tour progress across visits and devices.
+    """
+    import json
+    if not device_id:
+        return {"onboarding": {}}
+    async with async_session() as session:
+        prefs = await _load_preferences(session, device_id)
+    onboarding = prefs.get("onboarding") or {}
+    if not isinstance(onboarding, dict):
+        onboarding = {}
+    return {"onboarding": onboarding}
+
+
+@router.post("/onboarding")
+async def save_onboarding_state(
+    request: OnboardingRequest,
+    device_id: str = Header(None, alias="X-Device-ID"),
+):
+    """Persist a page-level onboarding update (shallow-merged per key)."""
+    import json
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-ID header required")
+
+    patch = request.onboarding or {}
+    async with async_session() as session:
+        result = await session.execute(
+            select(DeviceSettings).where(DeviceSettings.device_id == device_id)
+        )
+        row = result.scalar_one_or_none()
+
+        current: Dict[str, Any] = {}
+        if row and row.preferences:
+            try:
+                current = json.loads(row.preferences)
+            except (TypeError, ValueError):
+                current = {}
+
+        onboarding = current.get("onboarding") or {}
+        if not isinstance(onboarding, dict):
+            onboarding = {}
+        for key, value in patch.items():
+            onboarding[key] = value
+        current["onboarding"] = onboarding
+
+        if row:
+            row.preferences = json.dumps(current)
+        else:
+            row = DeviceSettings(device_id=device_id, preferences=json.dumps(current))
+            session.add(row)
+
+        await session.commit()
+
+    logger.info(f"Saved onboarding state for {device_id}")
+    return {"success": True, "onboarding": onboarding}
+
+
+@router.post("/onboarding/reset")
+async def reset_onboarding_state(
+    device_id: str = Header(None, alias="X-Device-ID"),
+):
+    """Zero-out the onboarding block (settings-triggered full tour reset)."""
+    import json
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-ID header required")
+
+    async with async_session() as session:
+        result = session.execute(
+            select(DeviceSettings).where(DeviceSettings.device_id == device_id)
+        )
+        row = result.scalar_one_or_none()
+
+        current: Dict[str, Any] = {}
+        if row and row.preferences:
+            try:
+                current = json.loads(row.preferences)
+            except (TypeError, ValueError):
+                current = {}
+
+        current["onboarding"] = {
+            "welcome_done": False,
+            "onboarding_completed": False,
+            "completed_tours": [],
+        }
+
+        if row:
+            row.preferences = json.dumps(current)
+        else:
+            row = DeviceSettings(device_id=device_id, preferences=json.dumps(current))
+            session.add(row)
+
+        await session.commit()
+
+    logger.info(f"Reset onboarding state for {device_id}")
+    return {"success": True, "message": "Onboarding reset", "onboarding": current["onboarding"]}
+
+
 # ============ Trove API Endpoints ============
 
 class TroveSettingsRequest(BaseModel):

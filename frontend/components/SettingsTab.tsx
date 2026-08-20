@@ -7,6 +7,7 @@ import { SkeletonCard } from './Skeleton';
 import TradingCapsSection from './TradingCapsSection';
 import MarketDataSection from './settings/MarketDataSection';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { SystemStatusPanel } from '@/components/panels/SystemStatusPanel';
@@ -140,7 +141,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
 
   const fetchEnvStatus = async () => {
     try {
-      const envRes = await fetch(`${API_URL}/api/v1/settings/env-status`);
+      const envRes = await apiFetch(`${API_URL}/api/v1/settings/env-status`);
       const envData = await envRes.json();
       setEnvStatus(envData);
     } catch (error) {
@@ -155,7 +156,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
       let deviceId = getOrCreateDeviceId();
       console.log('Using persistent device ID:', deviceId);
 
-      const res = await fetch(`${API_URL}/api/v1/settings`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings`, {
         headers: {
           'X-Device-ID': deviceId,
         },
@@ -177,7 +178,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
       setDeviceInfo(`Device ID: ${deviceId}`);
 
       // Get portfolio ID for trading caps
-      const portfolioRes = await fetch(`${API_URL}/api/v1/portfolio`);
+      const portfolioRes = await apiFetch(`${API_URL}/api/v1/portfolio`);
       const portfolios = await portfolioRes.json();
       if (portfolios.data && portfolios.data.length > 0) {
         setPortfolioId(portfolios.data[0].id);
@@ -208,7 +209,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
   const testConnection = async (service: string) => {
     setTesting(service);
     try {
-      const res = await fetch(`${API_URL}/api/v1/settings/validate-key`, {
+      const res = await apiFetch(`${API_URL}/api/v1/settings/validate-key`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -242,7 +243,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
         akshare_token: formData.akshare_token,
       };
 
-      const response = await fetch(`${API_URL}/api/v1/settings`, {
+      const response = await apiFetch(`${API_URL}/api/v1/settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -269,7 +270,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
   const savePaymentGateways = async () => {
     try {
       const deviceId = getOrCreateDeviceId();
-      await fetch(`${API_URL}/api/v1/settings/payment-gateways`, {
+      await apiFetch(`${API_URL}/api/v1/settings/payment-gateways`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -288,7 +289,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
   const checkPolymarketConnection = async () => {
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/polymarket/connection/status`, {
+      const res = await apiFetch(`${API_URL}/api/v1/polymarket/connection/status`, {
         headers: { 'X-Device-ID': deviceId! },
       });
       const data = await res.json();
@@ -321,7 +322,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
 
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/polymarket/connection/configure`, {
+      const res = await apiFetch(`${API_URL}/api/v1/polymarket/connection/configure`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -368,7 +369,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
 
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/polymarket/connection`, {
+      const res = await apiFetch(`${API_URL}/api/v1/polymarket/connection`, {
         method: 'DELETE',
         headers: { 'X-Device-ID': deviceId! },
       });
@@ -408,7 +409,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
   const refreshBalance = async () => {
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/polymarket/account/balance`, {
+      const res = await apiFetch(`${API_URL}/api/v1/polymarket/account/balance`, {
         headers: { 'X-Device-ID': deviceId! },
       });
 
@@ -428,7 +429,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
   const followLeader = async (leaderId: string, leaderName: string) => {
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/polymarket/leader/${leaderId}/follow`, {
+      const res = await apiFetch(`${API_URL}/api/v1/polymarket/leader/${leaderId}/follow`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -472,7 +473,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
   const savePayoutSettings = async () => {
     try {
       const deviceId = getOrCreateDeviceId();
-      await fetch(`${API_URL}/api/v1/withdrawal/payout/settings`, {
+      await apiFetch(`${API_URL}/api/v1/withdrawal/payout/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId! },
         body: JSON.stringify({
@@ -495,7 +496,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
       return;
     }
     try {
-      const res = await fetch(`${API_URL}/api/v1/withdrawal/payout/validate-wallet`, {
+      const res = await apiFetch(`${API_URL}/api/v1/withdrawal/payout/validate-wallet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address: payoutSettings.crypto_wallet, network: 'ethereum' }),
@@ -554,7 +555,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
           defaultOpen={true}
           storageKey="settings-ai-services-open"
           completionStatus={
-            envStatus?.environment_variables?.gemini_api_keys?.configured
+            envStatus?.environment_variables?.gemini_api_key?.configured
               ? 'Gemini ready'
               : `${getApiConfiguredCount(formData)} of 2 configured`
           }
@@ -568,7 +569,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
                   <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Gemini (Primary AI)</h3>
                 </div>
                 <div className="flex items-center gap-2">
-                  {envStatus?.environment_variables?.gemini_api_keys?.configured ? (
+                  {envStatus?.environment_variables?.gemini_api_key?.configured ? (
                     <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
                       <Lock className="w-3 h-3" /> ENV
                     </span>
@@ -579,11 +580,11 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
                   )}
                 </div>
               </div>
-              {envStatus?.environment_variables?.gemini_api_keys?.configured ? (
+              {envStatus?.environment_variables?.gemini_api_key?.configured ? (
                 <div className="p-2 bg-green-500/10 border border-green-500/30 rounded">
                   <p className="text-xs text-green-400 flex items-center gap-1 font-medium">
                     <Lock className="w-3 h-3" />
-                    <span>Managed via Render: GEMINI_API_KEYS detected</span>
+                    <span>Managed via Render: GEMINI_API_KEY detected</span>
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     Gemini 2.5 Flash is the primary engine for AI chat, trade analysis, and trade reasoning.
@@ -592,7 +593,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
               ) : (
                 <div className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded">
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Gemini is the primary AI model. Set <code className="text-[#8B5CF6]">GEMINI_API_KEYS</code> (comma-separated) in the Render dashboard to enable AI chat, analysis, and trade reasoning.
+                    Gemini is the primary AI model. Set <code className="text-[#8B5CF6]">GEMINI_API_KEY</code> (~3 keys, comma-separated) in the Render dashboard to enable AI chat, analysis, and trade reasoning.
                   </p>
                 </div>
               )}

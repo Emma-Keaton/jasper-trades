@@ -110,11 +110,23 @@ async def get_settings(
             if not row:
                 return {"settings": {}}
 
-            # Convert to dict, excluding sensitive fields
-            settings_dict = {
-                key: value for key, value in row.__dict__.items()
-                if not key.startswith('_') and key not in ['device_id']
+            # Convert to dict, masking sensitive fields.
+            SENSITIVE_FIELDS = {
+                "alphavantage_key", "finnhub_key", "twelvedata_key", "polygon_key",
+                "fred_key", "newsapi_key", "cryptopanic_key", "tatum_api_key",
+                "trove_api_key", "tiger_api_key", "tiger_private_key", "tiger_id",
+                "solana_rpc_url", "naira_bank_details", "sendgrid_config",
+                "discord_bot_config", "akshare_config", "payout_config",
+                "broker_paper_trading_config", "universal_paper_trading_config",
             }
+            settings_dict: Dict[str, object] = {}
+            for key, value in row.__dict__.items():
+                if key.startswith('_') or key == 'device_id':
+                    continue
+                if value is not None and key in SENSITIVE_FIELDS and isinstance(value, str) and len(value) > 4:
+                    settings_dict[key] = f"{value[:4]}…{value[-4:]}"
+                else:
+                    settings_dict[key] = value
 
             return {"settings": settings_dict}
 
@@ -151,10 +163,11 @@ async def get_env_status():
     environment variables during deployment.
     """
     env_status = {
-        "gemini_api_keys": {
-            "configured": bool(settings.GEMINI_API_KEYS),
-            "env_var": "GEMINI_API_KEYS",
-            "description": "Google Gemini 2.5 API keys (primary LLM). Comma-separated for multi-key rotation",
+        "gemini_api_key": {
+            "configured": settings.gemini_configured,
+            "env_var": "GEMINI_API_KEY",
+            "key_count": len(settings.gemini_keys),
+            "description": "Google Gemini 2.5 API keys (primary LLM). Comma-separated, ~3 keys for rotation",
             "required_for": "AI chat, trade analysis, explanation, tip extraction"
         },
         "nvidia_api_key": {

@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Bot, Play, Pause, Sparkles, ArrowRight, Activity } from 'lucide-react';
 import { Holding, TradeHistoryItem } from '@/app/types';
 import { EquityDataPoint } from '@/hooks/usePortfolioHistory';
+import { apiFetch } from '@/lib/api-client';
 import { Card, Stat, Button, Badge, EmptyState, RowLink } from '@/components/ui';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 import { StepId } from '@/components/screens/SettingsScreen';
@@ -78,7 +79,7 @@ export default function HomeScreen({
       setStarting(true);
       try {
         for (const name of ['director', 'quant', 'risk', 'execution']) {
-          await fetch(`${API_URL}/api/v1/agents/${name}/stop`, { method: 'POST' }).catch(() => null);
+          await apiFetch(`${API_URL}/api/v1/agents/${name}/stop`, { method: 'POST' }).catch(() => null);
         }
         setRunState(false);
       } finally {
@@ -106,7 +107,7 @@ export default function HomeScreen({
     setStarting(true);
     try {
       for (const name of ['director', 'quant', 'risk', 'execution']) {
-        await fetch(`${API_URL}/api/v1/agents/${name}/start`, { method: 'POST' }).catch(() => null);
+        await apiFetch(`${API_URL}/api/v1/agents/${name}/start`, { method: 'POST' }).catch(() => null);
       }
       setRunState(true);
     } finally {

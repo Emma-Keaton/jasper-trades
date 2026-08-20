@@ -71,7 +71,7 @@ class UniversalPaperTradingService:
             try:
                 async with async_session() as db:
                     result = await db.execute(
-                        select(DeviceSettings).limit(1)
+                        select(DeviceSettings).where(DeviceSettings.device_id == device_id)
                     )
                     ds = result.scalar_one_or_none()
                     if ds and ds.universal_paper_trading_config:
@@ -86,10 +86,12 @@ class UniversalPaperTradingService:
     async def _save_state(self, device_id: str, state: Dict[str, Any]) -> None:
         try:
             async with async_session() as db:
-                result = await db.execute(select(DeviceSettings).limit(1))
+                result = await db.execute(
+                    select(DeviceSettings).where(DeviceSettings.device_id == device_id)
+                )
                 ds = result.scalar_one_or_none()
                 if ds is None:
-                    ds = DeviceSettings()
+                    ds = DeviceSettings(device_id=device_id)
                     db.add(ds)
                 ds.universal_paper_trading_config = json.dumps(state)
                 await db.commit()
