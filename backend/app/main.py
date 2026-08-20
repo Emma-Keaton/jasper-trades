@@ -126,6 +126,11 @@ async def lifespan(app: FastAPI):
     await scheduler.start()
     logger.info("Scheduler started")
 
+    # Start WebSocket publisher tasks (prices/signals/trades queued to frontends)
+    from app.api.websocket.streams import start_publisher_tasks
+    await start_publisher_tasks()
+    logger.info("WebSocket publisher tasks started")
+
     # Create default portfolio if none exists
     try:
         from app.services.portfolio_service import PortfolioService
@@ -163,6 +168,17 @@ async def lifespan(app: FastAPI):
             symbols = [p.symbol for p in positions] if positions else ["AAPL", "NVDA", "SPY"]
             await market_data_service.start(symbols)
             logger.info(f"Market data started with {len(symbols)} symbols")
+
+            # Real-time crypto ticker stream (CCXT watchTicker) for the watchlist.
+            crypto_symbols = [
+                s for s in symbols
+                if any(x in s.upper() for x in ["BTC", "ETH", "USDT", "USDC", "SOL", "BNB"])
+            ]
+            if crypto_symbols:
+                from app.services.ccxt_watch_service import get_ccxt_watch_service
+
+                await get_ccxt_watch_service().start(crypto_symbols)
+                logger.info(f"CCXT watch service started with {len(crypto_symbols)} crypto symbols")
         
         await db.close()
     except Exception as e:

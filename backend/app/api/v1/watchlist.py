@@ -77,6 +77,17 @@ async def add_watchlist_item(
     db.add(item)
     await db.commit()
     await db.refresh(item)
+
+    # Kick the real-time CCXT ticker watcher for crypto symbols so a newly
+    # pinned coin starts streaming without waiting for the next startup.
+    if (req.asset_class or "crypto").lower() in ("crypto", "solana", "defi"):
+        try:
+            from app.services.ccxt_watch_service import get_ccxt_watch_service
+
+            await get_ccxt_watch_service().watch([symbol])
+        except Exception:  # noqa: BLE001
+            pass
+
     return {"success": True, "already_watched": False, "item": row_to_dict(item)}
 
 

@@ -188,6 +188,8 @@ class MarketDataService:
                 finnhub = get_finnhub_service(settings.FINNHUB_API_KEY if hasattr(settings, 'FINNHUB_API_KEY') else None)
                 if await finnhub.connect():
                     await finnhub.subscribe(list(self.stock_symbols))
+                    for sym in self.stock_symbols:
+                        await finnhub.set_callback(sym, self._handle_finnhub_message)
                     self.finnhub_ws = finnhub
                     logger.info("Finnhub WebSocket started for US stocks 🚀")
             except Exception as e:
@@ -342,33 +344,28 @@ class MarketDataService:
                 await asyncio.sleep(10)
     
     async def _handle_finnhub_message(self, data: Dict[str, Any]):
-        """Handle Finnhub WebSocket trade message."""
-        if data.get("type") != "trade":
+        """Handle Finnhub WebSocket trade message (per-symbol payload)."""
+        symbol = data.get("symbol", "").upper()
+        price = data.get("price", 0)
+        volume = data.get("volume", 0)
+        if not symbol or not price:
             return
-        
-        trades = data.get("data", [])
-        for trade in trades:
-            symbol = trade.get("s", "").upper()
-            price = trade.get("p", 0)
-            volume = trade.get("v", 0)
-            
-            # Update cache
-            self.price_cache.set(symbol, price, {
-                "volume": volume,
-                "timestamp": trade.get("t", 0),
-                "source": "finnhub_ws",
-            })
-            
-            # Publish
-            await publish_price_update({
-                "symbol": symbol,
-                "price": price,
-                "volume": volume,
-                "timestamp": datetime.utcnow().isoformat(),
-                "source": "finnhub_ws",
-            })
-            
-            logger.debug(f"Finnhub WS: {symbol} @ ${price}")
+
+        # Update cache
+        self.price_cache.set(symbol, price, {
+            "volume": volume,
+            "timestamp": data.get("timestamp", 0),
+            "source": "finnhub_ws",
+        })
+
+        # Publish
+        await publish_price_update({
+            "symbol": symbol,
+            "price": price,
+            "volume": volume,
+            "timestamp": datetime.utcnow().isoformat(),
+            "source": "finnhub_ws",
+        })
     
     async def _fetch_yfinance_price(self, symbol: str) -> Optional[float]:
         """Fetch price from yfinance (last resort fallback)."""

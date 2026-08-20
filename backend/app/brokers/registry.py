@@ -11,6 +11,7 @@ Supports:
 from typing import Dict, Any, Optional, List, Type
 import structlog
 
+from app.config import settings
 from app.brokers.base import BaseBrokerService
 from app.brokers.ccxt_service import CCXTBrokerService
 from app.brokers.solana_service import SolanaBrokerService

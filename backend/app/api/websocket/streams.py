@@ -248,16 +248,13 @@ async def start_publisher_tasks():
 
 
 # Helper functions to publish updates
-async def publish_price_update(symbol: str, price: float, change: float, volume: float):
-    """Publish price update to WebSocket subscribers"""
-    await price_queue.put({
-        "symbol": symbol,
-        "price": price,
-        "change": change,
-        "change_percent": (change / price * 100) if price > 0 else 0,
-        "volume": volume,
-        "timestamp": datetime.utcnow().isoformat()
-    })
+async def publish_price_update(price_data: dict):
+    """Publish price update to WebSocket subscribers.
+
+    Accepts the full payload dict already assembled by callers (symbol, price,
+    change, volume, timestamp, source, etc.).
+    """
+    await price_queue.put(price_data)
 
 
 async def publish_signal_created(signal_data: dict):

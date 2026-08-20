@@ -40,6 +40,11 @@ class FinnhubService:
     # API Endpoints
     WS_URL = "wss://ws.finnhub.io"
     HTTP_URL = "https://finnhub.io/api/v1"
+
+    @staticmethod
+    def _ws_url(api_token: str) -> str:
+        """Finnhub authenticates via the token as a query param on the WS URL."""
+        return f"{FinnhubService.WS_URL}?token={api_token}"
     
     def __init__(self, api_token: Optional[str] = None):
         """
@@ -67,18 +72,11 @@ class FinnhubService:
             return False
         
         try:
-            self.ws = await websockets.connect(self.WS_URL)
+            self.ws = await websockets.connect(self._ws_url(self.api_token))
             self.connected = True
             self._running = True
             
-            logger.info("Connected to Finnhub WebSocket")
-            
-            # Authenticate
-            auth_msg = {
-                "type": "access",
-                "token": self.api_token
-            }
-            await self.ws.send(json.dumps(auth_msg))
+            logger.info("Connected to Finnhub WebSocket", symbol_count=len(self.subscriptions))
             
             # Start message handler
             asyncio.create_task(self._handle_messages())
@@ -145,6 +143,7 @@ class FinnhubService:
                 
                 # Store latest trade
                 self._cache[symbol] = {
+                    "symbol": symbol,
                     "price": trade.get("p", 0),
                     "volume": trade.get("v", 0),
                     "timestamp": trade.get("t", 0),  # Unix timestamp in ms
