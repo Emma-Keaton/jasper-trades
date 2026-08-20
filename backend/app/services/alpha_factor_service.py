@@ -15,6 +15,8 @@ from datetime import datetime
 from importlib import import_module
 from pathlib import Path
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 import numpy as np
 import structlog
 
