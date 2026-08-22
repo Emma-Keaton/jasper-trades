@@ -21,7 +21,6 @@ interface HomeScreenProps {
   equityData?: EquityDataPoint[];
   portfolioInitialized?: boolean;
   loading?: boolean;
-  backendConnected?: boolean;
   triggerToast: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void;
   onNavigate: (tab: string, opts?: { defaultOpen?: StepId }) => void;
 }
@@ -36,7 +35,7 @@ export async function isAiRunning(): Promise<boolean> {
 
 export default function HomeScreen({
   cash, holdings, tradeHistory, equityData = [],
-  loading = false, backendConnected = false, triggerToast, onNavigate,
+  loading = false, triggerToast, onNavigate,
 }: HomeScreenProps) {
   const { formatMoney } = useCurrencyFormatter();
   const [running, setRunning] = useState<boolean>(false);
@@ -78,9 +77,11 @@ export default function HomeScreen({
     if (running) {
       setStarting(true);
       try {
-        for (const name of ['director', 'quant', 'risk', 'execution']) {
-          await apiFetch(`${API_URL}/api/v1/agents/${name}/stop`, { method: 'POST' }).catch(() => null);
-        }
+        await Promise.allSettled(
+          ['director', 'quant', 'risk', 'execution'].map(name =>
+            apiFetch(`${API_URL}/api/v1/agents/${name}/stop`, { method: 'POST' })
+          )
+        );
         setRunState(false);
       } finally {
         setStarting(false);
@@ -106,8 +107,19 @@ export default function HomeScreen({
 
     setStarting(true);
     try {
-      for (const name of ['director', 'quant', 'risk', 'execution']) {
-        await apiFetch(`${API_URL}/api/v1/agents/${name}/start`, { method: 'POST' }).catch(() => null);
+      const results = await Promise.allSettled(
+        ['director', 'quant', 'risk', 'execution'].map(name =>
+          apiFetch(`${API_URL}/api/v1/agents/${name}/start`, { method: 'POST' })
+        )
+      );
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      if (succeeded === 0) {
+        triggerToast('warning', 'Agents unavailable', 'No agents could be started. The backend may be starting up — try again in a moment.');
+        setStarting(false);
+        return;
+      }
+      if (succeeded < 4) {
+        triggerToast('info', 'Partial start', `${succeeded} of 4 agents started. The others may not be registered yet.`);
       }
       setRunState(true);
     } finally {
@@ -145,7 +157,7 @@ export default function HomeScreen({
                 : 'Press START and Jasper will begin watching and trading with practice money.'}
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Button size="lg" onClick={handleStartStop} disabled={starting || !backendConnected} className="min-w-44" data-onboarding="home-start">
+              <Button size="lg" onClick={handleStartStop} disabled={starting} className="min-w-44" data-onboarding="home-start">
                 {starting ? (<Sparkles className="h-5 w-5 animate-spin" />) : running ? (<Pause className="h-5 w-5" />) : (<Play className="h-5 w-5 fill-current" />)}
                 {running ? 'Pause' : 'Start'}
               </Button>
@@ -180,7 +192,7 @@ export default function HomeScreen({
               icon={<Bot className="h-6 w-6" />}
               title="No trades yet"
               description="Press START and Jasper will begin watching the markets. Recent trades will show up here."
-              action={<Button onClick={handleStartStop} disabled={!backendConnected}><Play className="h-4 w-4 fill-current" /> Start now</Button>}
+              action={<Button onClick={handleStartStop}><Play className="h-4 w-4 fill-current" /> Start now</Button>}
             />
           </div>
         ) : (

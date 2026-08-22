@@ -73,7 +73,8 @@ const [cash, setCash] = useState<number>(0);
   const [backendConnected, setBackendConnected] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
-  const [selectedAlphaFactors, setSelectedAlphaFactors] = useState<string[]>([]);
+  const [selectedAlphaFactors, setSelectedAlphaFactors] = useState<{id: string; name: string}[]>([]);
+  const [portfolioId, setPortfolioId] = useState<number | null>(null);
 
   usePriceStream({
     onPriceUpdate: (update) => {
@@ -86,7 +87,7 @@ const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
     onStatusChange: setWsStatus,
   });
 
-  const { data: portfolioHistory } = usePortfolioHistory({ portfolioId: 1, period: '1m', refreshInterval: 30000 });
+  const { data: portfolioHistory } = usePortfolioHistory({ portfolioId: portfolioId || 1, period: '1m', refreshInterval: 30000 });
 
   const triggerToast = useCallback((type: Toast['type'], title: string, message: string) => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -114,19 +115,28 @@ const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
     }
   }, [watched.length]);
 
-  const fetchBackendData = useCallback(async () => {
+const fetchBackendData = useCallback(async () => {
     setLoading(true);
+    // Try status endpoint first, fall back to health if it fails
     const statusResult = await apiRequest<any>('/api/v1/status');
-    setBackendConnected(!!statusResult.data);
+    if (!statusResult.data) {
+      const healthResult = await apiRequest<any>('/api/v1/health');
+      setBackendConnected(!!healthResult.data);
+    } else {
+      setBackendConnected(true);
+    }
 
-    const portfoliosResult = await apiRequest<any[]>('/api/v1/portfolio');
-    if (portfoliosResult.data && portfoliosResult.data.length > 0) {
-      const portfolio = portfoliosResult.data[0];
-      const portfolioId = portfolio.id;
-      const initRes = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/initialization-status`);
+    // Backend returns a single portfolio summary object (not an array).
+    const portfolioResult = await apiRequest<any>('/api/v1/portfolio');
+    if (portfolioResult.data && portfolioResult.data.id) {
+      const pid = portfolioResult.data.id;
+      setPortfolioId(pid);
+      setCash(portfolioResult.data.cash || 0);
+
+      const initRes = await apiRequest<any>(`/api/v1/portfolio/${pid}/initialization-status`);
       if (initRes.data) setPortfolioInitialized(!!initRes.data.is_initialized);
-      setCash(portfolio.cash || 0);
-      const hRes = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/holdings`);
+
+      const hRes = await apiRequest<any>(`/api/v1/portfolio/${pid}/holdings`);
       if (hRes.data) {
         const arr = Array.isArray(hRes.data) ? hRes.data : (hRes.data.holdings || []);
         setHoldings(arr.map((h: any) => ({
@@ -135,7 +145,7 @@ const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
           currentPrice: h.current_price || h.avg_price || 0, pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0,
         })));
       }
-      const tRes = await apiRequest<any[]>(`/api/v1/portfolio/${portfolioId}/trades?limit=30`);
+      const tRes = await apiRequest<any[]>(`/api/v1/portfolio/${pid}/trades?limit=30`);
       if (tRes.data) {
         setTradeHistory(tRes.data.map((t: any) => ({
           id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
@@ -148,37 +158,41 @@ const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
 
   const refreshBackendData = useCallback(async () => {
     try {
-      const portfoliosResult = await apiRequest<any[]>('/api/v1/portfolio');
-      if (portfoliosResult.data && portfoliosResult.data.length > 0) {
-        const portfolio = portfoliosResult.data[0];
-        const portfolioId = portfolio.id;
-        const fresh = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}`);
-        if (fresh.data) setCash(prev => Math.abs(prev - (fresh.data.cash || 0)) > 0.01 ? (fresh.data.cash || 0) : prev);
-        const hRes = await apiRequest<any>(`/api/v1/portfolio/${portfolioId}/holdings`);
-        const arr = hRes.data ? (Array.isArray(hRes.data) ? hRes.data : (hRes.data.holdings || [])) : [];
-        if (arr.length) {
-          const next = arr.map((h: any) => ({
-            symbol: h.symbol, name: h.name || h.symbol, type: h.type || 'Stock',
-            shares: h.shares || h.quantity || 0, avgPrice: h.avg_price || 0,
-            currentPrice: h.current_price || h.avg_price || 0, pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0,
-          }));
-          setHoldings(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
+      const pid = portfolioId;
+      if (!pid) {
+        const portfolioResult = await apiRequest<any>('/api/v1/portfolio');
+        if (portfolioResult.data?.id) {
+          setPortfolioId(portfolioResult.data.id);
+          setCash(portfolioResult.data.cash || 0);
         }
-        const tRes = await apiRequest<any[]>(`/api/v1/portfolio/${portfolioId}/trades?limit=10`);
-        if (tRes.data && tRes.data.length) {
-          const next = tRes.data.slice(0, 10).map((t: any) => ({
-            id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-            type: t.type, symbol: t.symbol, side: 'Long' as 'Long' | 'Short', shares: t.shares, price: t.price, total: t.total, agent: 'Director',
-          }));
-          setTradeHistory(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
-        }
+        return;
+      }
+      const fresh = await apiRequest<any>(`/api/v1/portfolio/${pid}`);
+      if (fresh.data) setCash(prev => Math.abs(prev - (fresh.data.cash || 0)) > 0.01 ? (fresh.data.cash || 0) : prev);
+      const hRes = await apiRequest<any>(`/api/v1/portfolio/${pid}/holdings`);
+      const arr = hRes.data ? (Array.isArray(hRes.data) ? hRes.data : (hRes.data.holdings || [])) : [];
+      if (arr.length) {
+        const next = arr.map((h: any) => ({
+          symbol: h.symbol, name: h.name || h.symbol, type: h.type || 'Stock',
+          shares: h.shares || h.quantity || 0, avgPrice: h.avg_price || 0,
+          currentPrice: h.current_price || h.avg_price || 0, pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0,
+        }));
+        setHoldings(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
+      }
+      const tRes = await apiRequest<any[]>(`/api/v1/portfolio/${pid}/trades?limit=10`);
+      if (tRes.data && tRes.data.length) {
+        const next = tRes.data.slice(0, 10).map((t: any) => ({
+          id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          type: t.type, symbol: t.symbol, side: 'Long' as 'Long' | 'Short', shares: t.shares, price: t.price, total: t.total, agent: 'Director',
+        }));
+        setTradeHistory(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
       }
       const statusResult = await apiRequest<any>('/api/v1/status');
       setBackendConnected(!!statusResult.data);
     } catch {
       /* silent */
     }
-  }, []);
+  }, [portfolioId]);
 
   useEffect(() => {
     fetchBackendData();
@@ -187,16 +201,16 @@ const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
     return () => clearInterval(t);
   }, [fetchBackendData, refreshBackendData, fetchFactorData]);
 
-  const addAlphaFactor = useCallback((name: string) => {
+const addAlphaFactor = useCallback((factor: {id: string; name: string}) => {
     setSelectedAlphaFactors(prev => {
-      if (prev.includes(name)) { triggerToast('info', 'Already added', `${name} is in your strategy.`); return prev; }
-      triggerToast('success', 'Factor added', `${name} added to backtest strategy.`);
-      return [...prev, name];
+      if (prev.some(f => f.id === factor.id)) { triggerToast('info', 'Already added', `${factor.name} is in your strategy.`); return prev; }
+      triggerToast('success', 'Factor added', `${factor.name} added to backtest strategy.`);
+      return [...prev, factor];
     });
   }, [triggerToast]);
 
-  const removeAlphaFactor = useCallback((name: string) => {
-    setSelectedAlphaFactors(prev => { triggerToast('info', 'Factor removed', `${name} removed.`); return prev.filter(f => f !== name); });
+  const removeAlphaFactor = useCallback((id: string) => {
+    setSelectedAlphaFactors(prev => { const f = prev.find(x => x.id === id); triggerToast('info', 'Factor removed', `${f?.name || id} removed.`); return prev.filter(x => x.id !== id); });
   }, [triggerToast]);
 
 
@@ -259,7 +273,6 @@ case 'trades':
           equityData={portfolioHistory?.equity || []}
           portfolioInitialized={portfolioInitialized}
           loading={loading}
-          backendConnected={backendConnected}
           triggerToast={triggerToast}
           onNavigate={nav}
         />

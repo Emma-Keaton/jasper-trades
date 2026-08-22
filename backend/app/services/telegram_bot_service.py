@@ -601,6 +601,7 @@ class TelegramBotService:
 
 # Singleton instance (initialize with token from env)
 telegram_bot_service: Optional[TelegramBotService] = None
+_polling_started: bool = False
 
 
 def get_telegram_bot_service(bot_token: str) -> TelegramBotService:
@@ -609,3 +610,15 @@ def get_telegram_bot_service(bot_token: str) -> TelegramBotService:
     if telegram_bot_service is None:
         telegram_bot_service = TelegramBotService(bot_token)
     return telegram_bot_service
+
+
+def is_polling_started() -> bool:
+    """Check if polling has already been started (singleton guard)."""
+    global _polling_started
+    return _polling_started
+
+
+def mark_polling_started() -> None:
+    """Mark polling as started to prevent double-start on multi-worker deployments."""
+    global _polling_started
+    _polling_started = True

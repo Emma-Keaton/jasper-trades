@@ -187,13 +187,17 @@ async def lifespan(app: FastAPI):
     # Start Telegram Bot (Notifications + 2-Way Chat)
     if settings.TELEGRAM_BOT_TOKEN:
         try:
-            from app.services.telegram_bot_service import get_telegram_bot_service
-            bot_service = get_telegram_bot_service(settings.TELEGRAM_BOT_TOKEN)
-            await bot_service.initialize()
-            
-            # Start polling in background (for local dev)
-            asyncio.create_task(bot_service.start_polling())
-            logger.info("Telegram Bot started (long polling mode)")
+            from app.services.telegram_bot_service import get_telegram_bot_service, is_polling_started, mark_polling_started
+            if not is_polling_started():
+                bot_service = get_telegram_bot_service(settings.TELEGRAM_BOT_TOKEN)
+                await bot_service.initialize()
+                
+                # Start polling in background (for local dev)
+                asyncio.create_task(bot_service.start_polling())
+                mark_polling_started()
+                logger.info("Telegram Bot started (long polling mode)")
+            else:
+                logger.info("Telegram Bot polling already active, skipping duplicate start")
         except Exception as e:
             logger.warning(f"Telegram Bot startup failed: {e}")
     else:

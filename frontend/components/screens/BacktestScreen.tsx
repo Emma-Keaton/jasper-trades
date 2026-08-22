@@ -6,8 +6,8 @@ import { Card, Button, Badge, Spinner } from '@/components/ui';
 import { apiFetch } from '@/lib/api-client';
 
 interface BacktestScreenProps {
-  selectedAlphaFactors: string[];
-  removeAlphaFactor: (factorName: string) => void;
+  selectedAlphaFactors: {id: string; name: string}[];
+  removeAlphaFactor: (id: string) => void;
   triggerToast: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void;
   onNavigate: (tab: string) => void;
 }
@@ -34,7 +34,7 @@ const res = await apiFetch(`/api/v1/backtest/run`, {
         method: 'POST',
         body: JSON.stringify({
           strategy_name: stratName,
-          factor_ids: selectedAlphaFactors.map((n, i) => `f-${i + 1}`),
+          factor_ids: selectedAlphaFactors.map(f => f.id),
           start_date: dateFrom, end_date: dateTo, initial_capital: capital,
           asset_scope: assetScope.split(',').map(s => s.trim()).filter(Boolean),
           engine, feed,
@@ -91,8 +91,8 @@ const res = await apiFetch(`/api/v1/backtest/run`, {
                 <p className="mt-2 text-xs text-slate-400">No factors selected yet.</p>
               ) : (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {selectedAlphaFactors.map(f => (
-                    <Badge key={f} tone="accent">{f}<button onClick={() => removeAlphaFactor(f)} className="ml-1 font-bold hover:opacity-70">×</button></Badge>
+{selectedAlphaFactors.map(f => (
+                    <Badge key={f.id} tone="accent">{f.name}<button onClick={() => removeAlphaFactor(f.id)} className="ml-1 font-bold hover:opacity-70">×</button></Badge>
                   ))}
                 </div>
               )}
