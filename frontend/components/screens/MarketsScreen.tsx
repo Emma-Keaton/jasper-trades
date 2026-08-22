@@ -177,11 +177,15 @@ export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const [cryptoRes, stockRes] = await Promise.all([
+        const [cgRes, cryptoRes, stockRes] = await Promise.all([
+          fetch(`${API_URL}/api/v1/market-data/search?q=${encodeURIComponent(q)}&limit=15`).catch(() => null),
           fetch(`${API_URL}/api/v1/memecoin/search?q=${encodeURIComponent(q)}&limit=15`).catch(() => null),
           fetch(`${API_URL}/api/v1/symbols?search=${encodeURIComponent(q)}`).catch(() => null),
         ]);
 
+        const cgItems = cgRes && cgRes.ok
+          ? normalizeCrypto((await cgRes.json()).results || [])
+          : [];
         const cryptoItems = cryptoRes && cryptoRes.ok
           ? normalizeCrypto((await cryptoRes.json()).results || (await cryptoRes.json()).coins || [])
           : [];
@@ -190,7 +194,10 @@ export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string
           : [];
 
         const bySymbol = new Map<string, MarketItem>();
-        for (const item of cryptoItems) bySymbol.set(item.symbol, item);
+        for (const item of cgItems) bySymbol.set(item.symbol, item);
+        for (const item of cryptoItems) {
+          if (!bySymbol.has(item.symbol)) bySymbol.set(item.symbol, item);
+        }
         for (const item of stockItems) {
           if (!bySymbol.has(item.symbol)) bySymbol.set(item.symbol, item);
         }
