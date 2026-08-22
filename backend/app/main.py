@@ -327,19 +327,28 @@ def validate_security_config():
     warnings = []
     
     # 1. Check SECRET_KEY is not default
+    is_production = settings.ENVIRONMENT == "production"
     if settings.SECRET_KEY == "change-this-in-production":
-        errors.append(
-            "CRITICAL: SECRET_KEY is set to default 'change-this-in-production'. "
+        msg = (
+            "SECRET_KEY is set to default 'change-this-in-production'. "
             "This allows attackers to forge valid JWT tokens. "
             "Generate a strong key: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
         )
+        if is_production:
+            errors.append("CRITICAL: " + msg)
+        else:
+            warnings.append("WARNING (dev): " + msg)
     
     if len(settings.SECRET_KEY) < 32:
-        errors.append(
-            f"CRITICAL: SECRET_KEY is too short ({len(settings.SECRET_KEY)} chars). "
+        msg = (
+            f"SECRET_KEY is too short ({len(settings.SECRET_KEY)} chars). "
             "Must be at least 32 characters for security. "
             "Generate: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
         )
+        if is_production:
+            errors.append("CRITICAL: " + msg)
+        else:
+            warnings.append("WARNING (dev): " + msg)
     
     # 2. Check CORS configuration
     if "*" in settings.cors_origins_list:
