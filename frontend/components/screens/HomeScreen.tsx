@@ -165,7 +165,7 @@ export default function HomeScreen({
             </div>
           </div>
 
-          <div className="grid w-full max-w-sm grid-cols-1 gap-6 rounded-card border border-slate-100 bg-white/60 p-5 dark:border-slate-800 dark:bg-slate-900/50 sm:grid-cols-2 lg:w-80" data-onboarding="home-stats">
+          <div className="grid w-full max-w-sm grid-cols-1 gap-6 rounded-card border border-slate-100 bg-white/60 p-5 dark:border-slate-800 dark:bg-slate-900/50" data-onboarding="home-stats">
             <Stat label="Balance" value={formatMoney(cash)} caption="practice money" tone="accent" />
             <Stat label="Today's P&L" value={
               <span className={todayPnl.value >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
@@ -173,7 +173,7 @@ export default function HomeScreen({
                 <span className="text-base font-medium">({todayPnl.value >= 0 ? '+' : '-'}{Math.abs(todayPnl.pct).toFixed(1)}%)</span>
               </span>
             } caption="what I earned today" />
-            <div className="sm:col-span-2"><Stat label="Total portfolio" value={formatMoney(totalValue)} caption="cash + what I own" /></div>
+            <Stat label="Total portfolio" value={formatMoney(totalValue)} caption="cash + what I own" />
           </div>
         </div>
       </Card>
