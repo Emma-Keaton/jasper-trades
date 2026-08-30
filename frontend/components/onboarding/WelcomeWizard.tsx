@@ -23,7 +23,7 @@ export default function WelcomeWizard() {
   };
 
   const finish = () => {
-    close();
+    setShowWelcome(false);
     completeOnboarding();
   };
 

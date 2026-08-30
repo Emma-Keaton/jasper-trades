@@ -1,4 +1,4 @@
-﻿"""
+"""
 Database Migration System
 Automatically migrates database schema on application startup.
 No external tools (Alembic) needed - simple SQLAlchemy-based migrations.
@@ -157,8 +157,8 @@ async def _migrate_portfolios():
     expected_columns = [
         ("device_id", "TEXT NOT NULL DEFAULT 'legacy_device'", "VARCHAR(255) NOT NULL DEFAULT 'legacy_device'"),
         ("name", "TEXT DEFAULT 'Default'", "VARCHAR(255) DEFAULT 'Default'"),
-        ("cash", "REAL DEFAULT 100000.0", "FLOAT DEFAULT 100000.0"),
-        ("initial_value", "REAL DEFAULT 100000.0", "FLOAT DEFAULT 100000.0"),
+        ("cash", "REAL DEFAULT 10000.0", "FLOAT DEFAULT 10000.0"),
+        ("initial_value", "REAL DEFAULT 10000.0", "FLOAT DEFAULT 10000.0"),
         ("initial_capital", "REAL DEFAULT 10000.0", "FLOAT DEFAULT 10000.0"),
         ("is_paper", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
         ("broker", "TEXT", "VARCHAR(64)"),

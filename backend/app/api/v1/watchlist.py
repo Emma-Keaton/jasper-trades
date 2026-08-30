@@ -54,10 +54,21 @@ async def add_watchlist_item(
     device_id: str = Depends(_device_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Pin a symbol to the watchlist (idempotent per device)."""
+    """Pin a symbol to the watchlist (idempotent per device, max 12)."""
     symbol = req.symbol.strip().upper()
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
+
+    # Enforce 12-item cap
+    count_result = await db.execute(
+        select(WatchlistItem).where(WatchlistItem.device_id == device_id)
+    )
+    current_count = len(count_result.scalars().all())
+    if current_count >= 12:
+        raise HTTPException(
+            status_code=409,
+            detail="Watchlist is full. Remove an item first (max 12).",
+        )
 
     existing = await db.execute(
         select(WatchlistItem).where(

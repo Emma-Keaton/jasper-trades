@@ -68,40 +68,29 @@ export function usePortfolioHistory(options: UsePortfolioHistoryOptions = {}) {
       const now = Date.now();
       const equity: EquityDataPoint[] = [];
 
-      if (performance.is_initialized && portfolio.total_value) {
-        // Generate historical points (simplified - would be replaced with actual history endpoint)
-        // This creates points showing the portfolio value progression
-        const numPoints = period === '1d' ? 24 : period === '1w' ? 7 : period === '1m' ? 30 : 90;
-        const pointInterval = period === '1d' ? 3600000 : // 1 hour
-          period === '1w' ? 86400000 : // 1 day
-          86400000; // 1 day
-
-        const initialValue = portfolio.initial_value || portfolio.total_value || 0;
+      if (portfolio.total_value) {
+        const initialValue = portfolio.initial_value || portfolio.total_value;
         const currentValue = portfolio.total_value;
-        const totalChange = currentValue - initialValue;
 
-        // Create smooth curve with some realistic variation
-        for (let i = numPoints; i >= 0; i--) {
-          const timestamp = now - (i * pointInterval);
-          // Add realistic noise to the curve
-          const progress = 1 - (i / numPoints);
-          const baseValue = initialValue + (totalChange * progress);
-          // Add small random variation (±2%)
-          const noise = (Math.random() - 0.5) * 0.04 * initialValue;
-          const value = Math.max(0, baseValue + noise);
+        if (performance.is_initialized) {
+          const numPoints = period === '1d' ? 24 : period === '1w' ? 7 : period === '1m' ? 30 : 90;
+          const pointInterval = period === '1d' ? 3600000 : 86400000;
+          const totalChange = currentValue - initialValue;
 
-          equity.push({
-            x: timestamp,
-            y: value,
-          });
+          for (let i = numPoints; i >= 0; i--) {
+            const timestamp = now - (i * pointInterval);
+            const progress = 1 - (i / numPoints);
+            const value = initialValue + (totalChange * progress);
+            equity.push({ x: timestamp, y: Math.max(0, value) });
+          }
+        } else {
+          // No trades yet — single dot at current value
+          equity.push({ x: now, y: currentValue });
         }
       } else {
-        // Not initialized - show flat line at 0
+        // Not initialized — flat zero line
         for (let i = 10; i >= 0; i--) {
-          equity.push({
-            x: now - (i * 86400000),
-            y: 0,
-          });
+          equity.push({ x: now - (i * 86400000), y: 0 });
         }
       }
 

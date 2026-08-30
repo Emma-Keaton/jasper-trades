@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Save, Key, Shield, Check, DollarSign, TrendingUp, Plane, Cpu, Briefcase, Lock, Brain } from 'lucide-react';
 import { Toast } from '@/app/types';
 import { SkeletonCard } from './Skeleton';
+import { API_URL } from '@/lib/constants';
 import TradingCapsSection from './TradingCapsSection';
 import MarketDataSection from './settings/MarketDataSection';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
@@ -76,8 +77,8 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
     payout_enabled: false,
     payout_percentage: 50,
     payout_schedule_hour: 20,
-    payout_destination: 'crypto_wallet' as 'crypto_wallet' | 'naira_bank' | 'forex_account' | 'split',
-    split_ratio: 50,
+    payout_schedule_minute: 0,
+    payout_frequency: 'custom_time' as 'custom_time' | 'end_of_trade',
     min_payout_threshold: 10,
     configured: false,
   });
@@ -137,8 +138,6 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
     };
   } | null>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
   const fetchEnvStatus = async () => {
     try {
       const envRes = await apiFetch(`${API_URL}/api/v1/settings/env-status`);
@@ -179,9 +178,9 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
 
       // Get portfolio ID for trading caps
       const portfolioRes = await apiFetch(`${API_URL}/api/v1/portfolio`);
-      const portfolios = await portfolioRes.json();
-      if (portfolios.data && portfolios.data.length > 0) {
-        setPortfolioId(portfolios.data[0].id);
+      const portfolioData = await portfolioRes.json();
+      if (portfolioData && portfolioData.id) {
+        setPortfolioId(portfolioData.id);
       }
 
       // Load notification settings from unified settings endpoint
@@ -198,6 +197,27 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
       // Load broker connection status for completion counting
       // Load environment variable status
       await fetchEnvStatus();
+
+      // Load auto-payout settings
+      const payoutRes = await apiFetch(`${API_URL}/api/v1/withdrawal/payout/settings`, {
+        headers: { 'X-Device-ID': deviceId },
+      });
+      if (payoutRes.ok) {
+        const pd = await payoutRes.json();
+        if (pd.crypto_wallet || pd.payout_enabled !== undefined) {
+          setPayoutSettings(prev => ({
+            ...prev,
+            crypto_wallet: pd.crypto_wallet || '',
+            payout_enabled: pd.payout_enabled || false,
+            payout_percentage: pd.payout_percentage ?? 50,
+            payout_schedule_hour: pd.payout_schedule_hour ?? 20,
+            payout_schedule_minute: pd.payout_schedule_minute ?? 0,
+            payout_frequency: pd.payout_frequency || 'custom_time',
+            min_payout_threshold: pd.min_payout_threshold ?? 10,
+            configured: !!pd.configured,
+          }));
+        }
+      }
 
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -473,7 +493,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
   const savePayoutSettings = async () => {
     try {
       const deviceId = getOrCreateDeviceId();
-      await apiFetch(`${API_URL}/api/v1/withdrawal/payout/settings`, {
+      const res = await apiFetch(`${API_URL}/api/v1/withdrawal/payout/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId! },
         body: JSON.stringify({
@@ -481,10 +501,21 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
           payout_enabled: payoutSettings.payout_enabled,
           payout_percentage: payoutSettings.payout_percentage,
           payout_schedule_hour: payoutSettings.payout_schedule_hour,
+          payout_schedule_minute: payoutSettings.payout_schedule_minute,
+          payout_frequency: payoutSettings.payout_frequency,
+          min_payout_threshold: payoutSettings.min_payout_threshold,
         }),
       });
-      setPayoutSettings({ ...payoutSettings, configured: true });
-      triggerToast('success', 'Auto-Payout Configured', 'Daily profit auto-payout settings saved.');
+      if (res.ok) {
+        const result = await res.json();
+        if (result.success) {
+          setPayoutSettings(prev => ({ ...prev, configured: true }));
+          const modeLabel = payoutSettings.payout_frequency === 'end_of_trade' ? 'end-of-trade' : 'daily';
+          triggerToast('success', 'Auto-Payout Saved', `Payouts will send ${payoutSettings.payout_percentage}% of profits via ${modeLabel}.`);
+        }
+      } else {
+        triggerToast('error', 'Failed', 'Could not save payout settings.');
+      }
     } catch {
       triggerToast('error', 'Failed', 'Could not save payout settings.');
     }
@@ -952,24 +983,121 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
             <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
               <div className="flex items-center gap-2 mb-3">
                 <DollarSign className="w-5 h-5 text-[#10B981]" />
-                <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Auto-Payout (50% Daily Profit)</h3>
+                <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Auto-Payout</h3>
               </div>
-              
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                Automatically send 50% of your daily trading profits to your crypto wallet. 
-                Executes at your scheduled time (ET) each day.
+
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                Payouts are sent to your configured USDT wallet.
               </p>
 
-              {/* Crypto Wallet */}
-              <div className="mb-3">
-                <label htmlFor="crypto-wallet" className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Crypto Wallet Address (USDC/USDT)</label>
+              {/* Enable toggle */}
+              <div className="mb-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={payoutSettings.payout_enabled}
+                    onChange={(e) => setPayoutSettings({...payoutSettings, payout_enabled: e.target.checked})}
+                    className="w-4 h-4 accent-[#10B981]"
+                  />
+                  <span className="text-sm text-slate-700 dark:text-slate-200">Enable auto-payout</span>
+                </label>
+              </div>
+
+              {/* Frequency toggle */}
+              <div className="mb-4">
+                <span className="block text-sm text-slate-600 dark:text-slate-300 mb-2">When to pay out</span>
+                <div className="flex gap-2">
+                  {(['custom_time', 'end_of_trade'] as const).map(freq => (
+                    <button
+                      key={freq}
+                      onClick={() => setPayoutSettings(p => ({ ...p, payout_frequency: freq }))}
+                      className={`flex-1 py-2 text-sm rounded-md border transition ${
+                        payoutSettings.payout_frequency === freq
+                          ? 'bg-[#10B981]/10 border-[#10B981] text-[#10B981] font-semibold'
+                          : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {freq === 'custom_time' ? 'Custom daily time' : 'End of each trade'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom time picker */}
+              {payoutSettings.payout_frequency === 'custom_time' && (
+                <div className="mb-4 grid grid-cols-2 gap-2">
+                  <div>
+                    <label htmlFor="payout-hour" className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Hour (WAT)</label>
+                    <select
+                      id="payout-hour"
+                      value={payoutSettings.payout_schedule_hour}
+                      onChange={(e) => setPayoutSettings(p => ({ ...p, payout_schedule_hour: parseInt(e.target.value) }))}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100"
+                    >
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <option key={i} value={i}>{String(i).padStart(2, '0')}h</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="payout-minute" className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Minute (WAT)</label>
+                    <select
+                      id="payout-minute"
+                      value={payoutSettings.payout_schedule_minute}
+                      onChange={(e) => setPayoutSettings(p => ({ ...p, payout_schedule_minute: parseInt(e.target.value) }))}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100"
+                    >
+                      {[0, 15, 30, 45].map(m => (
+                        <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Percentage */}
+              <div className="mb-4">
+                <label htmlFor="payout-percentage" className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Payout % of profits</label>
+                <input
+                  id="payout-percentage"
+                  type="range"
+                  min="1"
+                  max="100"
+                  value={payoutSettings.payout_percentage}
+                  onChange={(e) => setPayoutSettings(p => ({ ...p, payout_percentage: parseInt(e.target.value) }))}
+                  className="w-full accent-[#10B981]"
+                />
+                <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  <span>1%</span>
+                  <span className="text-[#10B981] font-semibold">{payoutSettings.payout_percentage}%</span>
+                  <span>100%</span>
+                </div>
+              </div>
+
+              {/* Min threshold */}
+              <div className="mb-4">
+                <label htmlFor="payout-threshold" className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Min profit before payout ($)</label>
+                <input
+                  id="payout-threshold"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={payoutSettings.min_payout_threshold}
+                  onChange={(e) => setPayoutSettings(p => ({ ...p, min_payout_threshold: parseFloat(e.target.value) || 0 }))}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm"
+                />
+              </div>
+
+              {/* Crypto wallet */}
+              <div className="mb-4">
+                <label htmlFor="crypto-wallet" className="block text-sm text-slate-600 dark:text-slate-300 mb-2">USDT Wallet Address</label>
                 <div className="flex gap-2">
                   <input
                     id="crypto-wallet"
                     type="text"
                     value={payoutSettings.crypto_wallet}
-                    onChange={(e) => setPayoutSettings({...payoutSettings, crypto_wallet: e.target.value})}
-                    placeholder="0x... (Ethereum USDT/USDC) or Solana USDT/USDC"
+                    onChange={(e) => setPayoutSettings(p => ({ ...p, crypto_wallet: e.target.value }))}
+                    placeholder="0x... (ERC20) or Solana address"
                     className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 font-mono text-sm"
                   />
                   <button
@@ -980,79 +1108,11 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
                   </button>
                 </div>
                 <p className="text-xs text-amber-500 mt-1.5 flex items-center gap-1">
-                  ⚠️ <strong>USDT or USDC only</strong> - All profits (forex, stocks, crypto) are converted to USDT before payout
+                  ⚠️ <strong>USDT only</strong> — profits are sent as USDT to this wallet.
                 </p>
               </div>
 
-              {/* Enable Auto-Payout */}
-              <div className="mb-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={payoutSettings.payout_enabled}
-                    onChange={(e) => setPayoutSettings({...payoutSettings, payout_enabled: e.target.checked})}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm text-slate-600 dark:text-slate-300">Enable Auto-Payout</span>
-                </label>
-              </div>
-
-              {/* Payout Percentage */}
-              <div className="mb-3">
-                <label htmlFor="payout-percentage" className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Payout Percentage</label>
-                <input
-                  id="payout-percentage"
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={payoutSettings.payout_percentage}
-                  onChange={(e) => setPayoutSettings({...payoutSettings, payout_percentage: parseInt(e.target.value)})}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  <span>0%</span>
-                  <span className="text-[#10B981] font-semibold">{payoutSettings.payout_percentage}%</span>
-                  <span>100%</span>
-                </div>
-                <p className="text-xs text-gray-500 mt-1.5">
-                  Percentage of daily profit to auto-withdraw
-                </p>
-              </div>
-
-              {/* Payout Schedule Time */}
-              <div className="mb-3">
-                <label htmlFor="payout-time" className="block text-sm text-slate-600 dark:text-slate-300 mb-2">Payout Time (ET)</label>
-                <select
-                  id="payout-time"
-                  value={payoutSettings.payout_schedule_hour}
-                  onChange={(e) => setPayoutSettings({...payoutSettings, payout_schedule_hour: parseInt(e.target.value)})}
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm"
-                >
-                  {[...Array(24)].map((_, i) => {
-                    const hour = i % 12 || 12;
-                    const ampm = i < 12 ? 'AM' : 'PM';
-                    return (
-                      <option key={i} value={i}>
-                        {hour}:00 {ampm} ET
-                      </option>
-                    );
-                  })}
-                </select>
-                <p className="text-xs text-amber-500 mt-1.5 flex items-center gap-1">
-                  ⏰ Time is in <strong>Eastern Time (ET)</strong> - US Eastern timezone
-                </p>
-              </div>
-
-              {/* Info Box */}
-              <div className="bg-[#10B981]/10 border border-[#10B981]/30 rounded-lg p-3 mb-3">
-                <p className="text-xs text-[#10B981]">
-                  ðŸ’¡ Auto-payout runs once per day at your scheduled time. It calculates your total realized 
-                  profit for the day and sends {payoutSettings.payout_percentage}% to your wallet. 
-                  No profit = no payout.
-                </p>
-              </div>
-
-              {/* Save Button */}
+              {/* Save */}
               <button
                 onClick={savePayoutSettings}
                 className="w-full py-2.5 bg-[#10B981] hover:bg-[#059669] text-white font-medium rounded-lg transition-colors"
@@ -1060,7 +1120,6 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
                 Save Auto-Payout Settings
               </button>
             </div>
-
             {/* Payment Gateways - Nigerian Banks */}
             <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700" data-tour="payment-gateways">
               <div className="flex items-center justify-between mb-3">

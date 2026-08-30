@@ -80,7 +80,7 @@ class PortfolioService:
     async def create_portfolio(
         self,
         name: str,
-        initial_cash: float = 100000.0,
+        initial_cash: float = 10000.0,
         is_paper: bool = True,
         broker: str = "ctrader",
         device_id: Optional[str] = None,

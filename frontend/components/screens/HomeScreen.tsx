@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useMemo } from 'react';
 import { Bot, Play, Pause, Sparkles, ArrowRight, Activity } from 'lucide-react';
@@ -9,10 +9,8 @@ import { Card, Stat, Button, Badge, EmptyState, RowLink } from '@/components/ui'
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 import { StepId } from '@/components/screens/SettingsScreen';
 import { fetchPreferences, fetchTradingMode, savePreferences } from '@/lib/preferences';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-const DEFAULT_WATCHING = ['BTC', 'ETH', 'EURUSD', 'AAPL', 'SOL'];
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { API_URL } from '@/lib/constants';
 
 interface HomeScreenProps {
   cash: number;
@@ -42,20 +40,40 @@ export default function HomeScreen({
   const [starting, setStarting] = useState(false);
   const [tradingMode, setTradingMode] = useState<'practice' | 'live' | null>(null);
 
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+
   React.useEffect(() => {
     isAiRunning().then(setRunning);
     fetchTradingMode().then((m) => setTradingMode(m));
+    const deviceId = getOrCreateDeviceId();
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/watchlist`, {
+      headers: { 'X-Device-ID': deviceId },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.watchlist) {
+          const syms = d.watchlist.map((w: any) => w.symbol).slice(0, 12);
+          setWatchlist(syms);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  const watching = useMemo(() => {
-    const owned = holdings.map(h => h.symbol);
-    return Array.from(new Set([...owned, ...DEFAULT_WATCHING])).slice(0, 6).join(', ');
-  }, [holdings]);
+
 
   const totalValue = useMemo(
     () => holdings.reduce((s, h) => s + h.shares * h.currentPrice, 0) + cash,
     [holdings, cash]
   );
+
+  const watching = useMemo(() => {
+    if (watchlist.length === 0) return '';
+    const display = watchlist.slice(0, 6).join(', ');
+    if (watchlist.length > 6) return `${display} +${watchlist.length - 6} more`;
+    return display;
+  }, [watchlist]);
+
+  const watchlistFull = watchlist.length >= 12;
 
   const todayPnl = useMemo(() => {
     if (equityData.length > 0 && equityData[0].y > 0) {
@@ -149,8 +167,19 @@ export default function HomeScreen({
             </div>
             <p className="mt-4 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
               <Activity className="h-4 w-4 text-brand-500" />
-              <span className="tnum">Watching {watching}</span>
+              <span className="tnum">Watching {watching || 'nothing yet'}</span>
             </p>
+            {!watching && (
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                No assets watched yet.{' '}
+                <button onClick={() => onNavigate('markets')} className="font-semibold text-brand-600 underline-offset-2 hover:underline dark:text-brand-400">
+                  Go to Markets to pick what to watch →
+                </button>
+              </p>
+            )}
+            {watchlistFull && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Watchlist is full (max 12). Remove an asset in Markets to add more.</p>
+            )}
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {running
                 ? 'Jasper is monitoring the markets and placing practice trades for you. Check Trades to see what it is doing.'

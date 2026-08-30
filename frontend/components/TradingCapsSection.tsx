@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Shield, Check, DollarSign, Percent, AlertTriangle } from 'lucide-react';
 import { Toast } from '@/app/types';
+import { API_URL } from '@/lib/constants';
 
 interface TradingCaps {
   configured: boolean;
@@ -20,8 +21,6 @@ interface TradingCapsSectionProps {
   portfolioId: number | null;
   triggerToast: (type: Toast['type'], title: string, message: string) => void;
 }
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function TradingCapsSection({ portfolioId, triggerToast }: TradingCapsSectionProps) {
   const [caps, setCaps] = useState<TradingCaps>({

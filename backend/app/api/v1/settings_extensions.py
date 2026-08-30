@@ -605,7 +605,7 @@ async def reset_onboarding_state(
         raise HTTPException(status_code=400, detail="X-Device-ID header required")
 
     async with async_session() as session:
-        result = session.execute(
+        result = await session.execute(
             select(DeviceSettings).where(DeviceSettings.device_id == device_id)
         )
         row = result.scalar_one_or_none()

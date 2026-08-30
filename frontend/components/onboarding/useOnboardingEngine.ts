@@ -194,7 +194,7 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     setOnboardingCompleted(true);
     const allTours = ['home', 'trades', 'markets', 'signals', 'settings'];
     setCompletedTours(allTours);
-    saveOnboardingPrefs({ onboarding_completed: true, completed_tours: allTours }).catch((error) => {
+    saveOnboardingPrefs({ onboarding_completed: true, welcome_done: true, completed_tours: allTours }).catch((error) => {
       console.error('Failed to save onboarding state:', error);
     });
   }, []);

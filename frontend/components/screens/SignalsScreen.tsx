@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Plus, RefreshCw, CheckCircle, XCircle, Send, Radio, Wifi, MessageSquare, User, Trash2, Bot, Link2, Zap } from 'lucide-react';
@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/segmented';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { signalsAPI } from '@/lib/api-client';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { API_URL } from '@/lib/constants';
 
 interface Source { id: number; source_type: string; display_name: string; config?: Record<string, unknown>; is_active: boolean; last_fetched_at: string | null; }
 interface Tip { id: number; slug: string; symbol: string; side: string; timeframe: string | null; confidence: number; rationale: string | null; source_type: string; text: string | null; url: string | null; created_at: string; executed: boolean; execution_status?: string; execution_detail?: string | null; }
@@ -41,7 +41,10 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
   const [adding, setAdding] = useState(false);
   const [newType, setNewType] = useState('rss');
   const [newName, setNewName] = useState('');
-  const [newConfig, setNewConfig] = useState('{}');
+  const [rssUrls, setRssUrls] = useState('');
+  const [redditSubs, setRedditSubs] = useState('');
+  const [redditFilter, setRedditFilter] = useState('');
+  const [stSymbols, setStSymbols] = useState('');
 
   const [tgOpen, setTgOpen] = useState(false);
   const [tgStep, setTgStep] = useState(0);
@@ -92,14 +95,27 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
 
   const addSource = async (e: React.FormEvent) => {
     e.preventDefault(); setAdding(true);
-    let cfg: object = {};
-    try { cfg = JSON.parse(newConfig); } catch { triggerToast('error', 'Something is off', 'The config must be valid JSON.'); setAdding(false); return; }
-    const r = await fetch(`${API_URL}/api/v1/signals/sources`, { method: 'POST', headers, body: JSON.stringify({ source_type: newType, display_name: newName, config: cfg }) });
+    let cfg: Record<string, unknown> = {};
+    if (newType === 'rss') {
+      const urls = rssUrls.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!urls.length) { triggerToast('error', 'URL required', 'Paste at least one RSS feed URL.'); setAdding(false); return; }
+      cfg = { urls };
+    } else if (newType === 'reddit') {
+      const subs = redditSubs.split(',').map(s => s.trim()).filter(Boolean);
+      if (!subs.length) { triggerToast('error', 'Subreddits required', 'Enter at least one subreddit name.'); setAdding(false); return; }
+      cfg = { subreddits: subs };
+      if (redditFilter.trim()) cfg.filter_keyword = redditFilter.trim();
+    } else if (newType === 'stocktwits') {
+      const syms = stSymbols.split(',').map(s => s.trim()).filter(Boolean);
+      if (!syms.length) { triggerToast('error', 'Symbols required', 'Enter at least one StockTwits symbol.'); setAdding(false); return; }
+      cfg = { symbols: syms };
+    }
+    const r = await fetch(`${API_URL}/api/v1/signals/sources`, { method: 'POST', headers, body: JSON.stringify({ source_type: newType, display_name: newName || newType, config: cfg }) });
     if (r.ok) {
       const created = await r.json();
       await fetch(`${API_URL}/api/v1/signals/follow`, { method: 'POST', headers, body: JSON.stringify({ source_id: created.id }) });
       triggerToast('success', 'Source added', 'The AI can now look here for ideas.');
-      setShowForm(false); setNewName(''); setNewConfig('{}'); load();
+      setShowForm(false); setNewName(''); setRssUrls(''); setRedditSubs(''); setRedditFilter(''); setStSymbols(''); load();
     } else triggerToast('error', 'Could not add', 'Please check the details and try again.');
     setAdding(false);
   };
@@ -258,6 +274,25 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
         )}
       </section>
 
+      {/* How to set up - collapsible */}
+      <details className="rounded-card border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/40" data-onboarding="signals-howto">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200">How to set up your sources</summary>
+        <div className="mt-3 space-y-3 text-xs text-slate-500 dark:text-slate-400">
+          <div>
+            <p className="font-medium text-slate-700 dark:text-slate-200">RSS feeds</p>
+            <p>Paste any RSS feed URL. Jasper reads headlines and extracts trading signals. One URL per line.</p>
+          </div>
+          <div>
+            <p className="font-medium text-slate-700 dark:text-slate-200">Reddit</p>
+            <p>Add subreddits where traders share ideas (comma-separated). Jasper reads posts for sentiment. Add a filter keyword to narrow results.</p>
+          </div>
+          <div>
+            <p className="font-medium text-slate-700 dark:text-slate-200">StockTwits</p>
+            <p>Enter symbols (comma-separated). Jasper reads trader commentary and bullish/bearish tags for each symbol.</p>
+          </div>
+        </div>
+      </details>
+
       <section>
         <div className="rounded-card border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/40">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -375,18 +410,41 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
         <form onSubmit={addSource} className="space-y-4">
           <div>
             <label htmlFor="sig-type" className="field-label">Type</label>
-            <select id="sig-type" value={newType} onChange={e => setNewType(e.target.value)} className="input">
+            <select id="sig-type" value={newType} onChange={e => setNewType(e.target.value)} className="input" data-onboarding="signals-add-type">
               {SOURCE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
             <label htmlFor="sig-name" className="field-label">Name</label>
-            <input id="sig-name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. My crypto news feed" className="input" required />
+            <input id="sig-name" value={newName} onChange={e => setNewName(e.target.value)} placeholder={`e.g. My ${newType} source`} className="input" required />
           </div>
-          <div>
-            <label htmlFor="sig-config" className="field-label">Config (JSON)</label>
-            <textarea id="sig-config" value={newConfig} onChange={e => setNewConfig(e.target.value)} rows={3} className="input font-mono text-xs" placeholder='{ "url": "https://example.com/rss" }' />
-          </div>
+          {newType === 'rss' && (
+            <div>
+              <label htmlFor="rss-urls" className="field-label">Feed URL(s)</label>
+              <textarea id="rss-urls" value={rssUrls} onChange={e => setRssUrls(e.target.value)} rows={3} className="input font-mono text-xs" placeholder="Paste RSS feed URLs, one per line" />
+              <p className="mt-1 text-xs text-slate-400">One URL per line.</p>
+            </div>
+          )}
+          {newType === 'reddit' && (
+            <>
+              <div>
+                <label htmlFor="reddit-subs" className="field-label">Subreddits</label>
+                <input id="reddit-subs" value={redditSubs} onChange={e => setRedditSubs(e.target.value)} placeholder="wallstreetbets,stocks,btc" className="input" />
+                <p className="mt-1 text-xs text-slate-400">Comma-separated subreddit names.</p>
+              </div>
+              <div>
+                <label htmlFor="reddit-filter" className="field-label">Filter keyword (optional)</label>
+                <input id="reddit-filter" value={redditFilter} onChange={e => setRedditFilter(e.target.value)} placeholder="e.g. earnings, breakout" className="input" />
+              </div>
+            </>
+          )}
+          {newType === 'stocktwits' && (
+            <div>
+              <label htmlFor="st-symbols" className="field-label">Symbols</label>
+              <input id="st-symbols" value={stSymbols} onChange={e => setStSymbols(e.target.value)} placeholder="AAPL,TSLA,BTC.X" className="input" />
+              <p className="mt-1 text-xs text-slate-400">Comma-separated StockTwits symbols.</p>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
             <Button type="submit" disabled={adding}>{adding ? 'Adding...' : 'Add source'}</Button>

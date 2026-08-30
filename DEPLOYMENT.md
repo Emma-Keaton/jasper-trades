@@ -214,14 +214,17 @@ frontend/.env.local
    ```
 
    **Database — use Supabase for persistence (recommended).** Render free tier wipes its disk on every redeploy, so SQLite data is lost. Supabase Postgres survives redeploys and the app's schema is auto-created on startup (no manual DDL):
+
+   For **jasper-trades** the Supabase project is `ocemkfkrmznpzuydajlq` (region `aws-0-ca-central-1`, i.e. Central Canada). Use the **session pooler** on port `5432` (good for a persistent web service like Render):
+
    ```
-   DATABASE_URL=postgresql://postgres.<ref>:<db_password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+   DATABASE_URL=postgresql://postgres.ocemkfkrmznpzuydajlq:<db_password>@aws-0-ca-central-1.pooler.supabase.com:5432/postgres
    ```
-   - Create a project at https://supabase.com → Project Settings → Database → Connection string → **Transaction** pooler (port 6543).
-   - Paste it as `DATABASE_URL` (URL-encode any special characters in the password).
-   - Optional (only if you use realtime/auth/storage): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+   Verified working on 2026-08-20 against the live project: PostgreSQL 17.6, full schema present, incremental migrations run cleanly on top. Set `<db_password>` to your actual Supabase DB password (URL-encode any special characters; `!` passes through fine, not URL-encoded).
    - The backend detects Postgres from the `postgresql://` scheme and uses the asyncpg driver; migrations run at startup.
+   - Optional (only if you use realtime/auth/storage): `SUPABASE_URL=https://ocemkfkrmznpzuydajlq.supabase.co`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
    - If you skip Supabase, use `DATABASE_URL=sqlite+aiosqlite:///./data/sqlite/jasper_trades.db` and `DATA_DIR=./data` (data wiped on redeploy).
+   - ⚠️ **Auth note:** repeated wrong-password attempts trigger Supabase's circuit breaker (`ECIRCUITBREAKER: too many authentication failures`). Wait several minutes before retrying, and paste the exact dashboard password — do not add `[ ]` brackets around it.
 
    **Note:** Leave API keys blank - configure via Settings page after deployment.
 

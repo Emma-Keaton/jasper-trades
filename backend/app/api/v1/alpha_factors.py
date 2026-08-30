@@ -292,7 +292,7 @@ async def auto_trade(
     if portfolio is None:
         from app.services.portfolio_service import PortfolioService
         ps = PortfolioService(db)
-        portfolio = await ps.create_portfolio(name="Default", initial_cash=100000.0, is_paper=True)
+        portfolio = await ps.create_portfolio(name="Default", initial_cash=10000.0, is_paper=True)
 
     equity = float(portfolio.cash or 0.0)
     notional = equity * max_position_pct

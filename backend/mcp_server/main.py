@@ -139,7 +139,7 @@ async def backtest_run(
     symbol: str,
     start_date: str,
     end_date: str,
-    initial_capital: float = 100000.0
+    initial_capital: float = 10000.0
 ) -> Dict[str, Any]:
     """
     Run a backtest for a strategy.

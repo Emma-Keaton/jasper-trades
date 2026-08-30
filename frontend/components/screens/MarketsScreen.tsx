@@ -75,7 +75,7 @@ function assetBadge(ac: MarketItem['asset_class']) {
   return <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">Stock</span>;
 }
 
-export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string) => void; triggerToast?: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void }) {
+export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate: (tab: string) => void; triggerToast?: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void }) {
   const [newTokens, setNewTokens] = useState<MarketItem[]>([]);
   const [trending, setTrending] = useState<MarketItem[]>([]);
   const [watchlist, setWatchlist] = useState<MarketItem[]>([]);
@@ -84,7 +84,7 @@ export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<MarketItem[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [searchState, setSearchState] = useState<'idle' | 'loading' | 'found' | 'empty' | 'error'>('idle');
   const [filter, setFilter] = useState<Filter>('all');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -110,6 +110,10 @@ export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string
     async (item: MarketItem) => {
       const symbol = item.symbol;
       const current = watchlist.some((w) => w.symbol === symbol);
+      if (!current && watchlist.length >= 12) {
+        triggerToast?.('warning', 'Watchlist full', 'Watchlist full (max 12). Remove one first.');
+        return;
+      }
       try {
         if (current) {
           await fetch(`${API_URL}/api/v1/watchlist/${symbol}`, { method: 'DELETE', headers: deviceHeaders() });
@@ -125,7 +129,7 @@ export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string
       }
       await refreshWatchlist();
     },
-    [watchlist, refreshWatchlist],
+    [watchlist, refreshWatchlist, triggerToast],
   );
 
   useEffect(() => {
@@ -168,14 +172,16 @@ export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string
     const q = searchQuery.trim();
     if (!q) {
       setSearchResults([]);
-      setSearching(false);
+      setSearchState('idle');
       return;
     }
 
-    setSearching(true);
+    setSearchState('loading');
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(async () => {
+      let allItems: MarketItem[] = [];
+      let anyOk = false;
       try {
         const [cgRes, cryptoRes, stockRes] = await Promise.all([
           fetch(`${API_URL}/api/v1/market-data/search?q=${encodeURIComponent(q)}&limit=15`).catch(() => null),
@@ -183,13 +189,17 @@ export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string
           fetch(`${API_URL}/api/v1/symbols?search=${encodeURIComponent(q)}`).catch(() => null),
         ]);
 
-        const cgItems = cgRes && cgRes.ok
+        if (cgRes?.ok) anyOk = true;
+        if (cryptoRes?.ok) anyOk = true;
+        if (stockRes?.ok) anyOk = true;
+
+        const cgItems = cgRes?.ok
           ? normalizeCrypto((await cgRes.json()).results || [])
           : [];
-        const cryptoItems = cryptoRes && cryptoRes.ok
+        const cryptoItems = cryptoRes?.ok
           ? normalizeCrypto((await cryptoRes.json()).results || (await cryptoRes.json()).coins || [])
           : [];
-        const stockItems = stockRes && stockRes.ok
+        const stockItems = stockRes?.ok
           ? normalizeStocks((await stockRes.json()).symbols || (await stockRes.json()).results || [])
           : [];
 
@@ -201,13 +211,19 @@ export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string
         for (const item of stockItems) {
           if (!bySymbol.has(item.symbol)) bySymbol.set(item.symbol, item);
         }
-
-        setSearchResults(Array.from(bySymbol.values()));
+        allItems = Array.from(bySymbol.values());
       } catch {
-        setSearchResults([]);
-      } finally {
-        if (mounted.current) setSearching(false);
+        /* ignore */
       }
+      if (!mounted.current) return;
+      if (anyOk && allItems.length === 0) {
+        setSearchState('empty');
+      } else if (anyOk) {
+        setSearchState('found');
+      } else {
+        setSearchState('error');
+      }
+      setSearchResults(allItems);
     }, 350);
 
     return () => {
@@ -313,23 +329,34 @@ export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string
       </div>
 
       {/* Search results */}
-      {isSearching && (
+      {searchState !== 'idle' && (
         <section>
           <div className="flex items-center gap-2">
             <Search className="h-5 w-5 text-brand-500" />
             <h2 className="text-lg font-display font-bold text-slate-900 dark:text-slate-50">
-              {searching ? 'Searching...' : `Results for "${searchQuery.trim()}"`}
+              {searchState === 'loading' ? 'Searching...' : `Results for "${searchQuery.trim()}"`}
             </h2>
           </div>
-          {searching ? (
+          {searchState === 'loading' && (
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {[0, 1, 2, 3].map((i) => (
                 <div key={i} className="skeleton h-24 w-full" />
               ))}
             </div>
-          ) : filteredSearch.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">No results found.</p>
-          ) : (
+          )}
+          {searchState === 'empty' && (
+            <div className="mt-4 rounded-card border border-dashed border-slate-300 bg-slate-50/50 px-6 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
+              <p>No assets found for &ldquo;{searchQuery.trim()}&rdquo;.</p>
+              <p className="mt-1">Check the spelling, or add the exchange/feed you&apos;re looking for, and try again.</p>
+              <button onClick={() => setSearchQuery('')} className="mt-3 text-sm font-medium text-brand-600 hover:underline dark:text-brand-400">Clear search</button>
+            </div>
+          )}
+          {searchState === 'error' && (
+            <div className="mt-4 rounded-card border border-rose-200 bg-rose-50 px-6 py-8 text-center text-sm text-rose-600 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-400">
+              <p>Couldn&apos;t reach the market data. Check your connection and try again.</p>
+            </div>
+          )}
+          {(searchState === 'found' && filteredSearch.length > 0) && (
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {filteredSearch.map(renderCard)}
             </div>
@@ -354,7 +381,7 @@ export default function MarketsScreen({ onNavigate }: { onNavigate: (tab: string
               </div>
             ) : watchlist.length === 0 ? (
               <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
-                Nothing pinned yet. Tap the star on a coin below to watch it here.
+                Star any asset below or search above to start watching.
               </p>
             ) : (
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">

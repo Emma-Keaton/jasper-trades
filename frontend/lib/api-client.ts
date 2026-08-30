@@ -3,8 +3,8 @@
  * Connects frontend to the FastAPI backend
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { API_URL } from '@/lib/constants';
 
 // Types matching backend schemas
 export interface Portfolio {
@@ -630,5 +630,4 @@ export const systemAPI = {
   getMarketData: () => apiRequest<any>('/api/v1/system/market-data'),
 };
 
-// Export API URL for use in components
 export { API_URL };

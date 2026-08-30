@@ -208,7 +208,7 @@ class DailySummaryService:
         
         # Calculate total PnL percent (simplified - based on initial capital)
         # In production, you'd track daily starting balance
-        portfolio_value_estimate = 100000.0  # Default starting value
+        portfolio_value_estimate = 10000.0  # Default starting value
         total_pnl_percent = (total_pnl / portfolio_value_estimate * 100) if portfolio_value_estimate > 0 else 0.0
         
         # Get top symbols by trade count

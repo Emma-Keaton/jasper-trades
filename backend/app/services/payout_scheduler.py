@@ -53,7 +53,7 @@ class PayoutScheduler:
     def __init__(self):
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
-        self.et_timezone = pytz.timezone('America/New_York')
+        self.wat_timezone = pytz.timezone('Africa/Lagos')  # WAT = UTC+1
 
     async def start(self):
         """Start the background scheduler."""
@@ -101,14 +101,13 @@ class PayoutScheduler:
         3. Positive daily profit above threshold
         4. Hasn't paid out today
         """
-        now_et = datetime.now(self.et_timezone)
-        current_hour_et = now_et.hour
+        now_wat = datetime.now(self.wat_timezone)
+        current_hour_wat = now_wat.hour
+        current_minute_wat = now_wat.minute
 
-        # Only execute during user-configured hours (default 9 AM - 10 PM ET)
-        logger.debug(f"Payout scheduler check - current hour: {current_hour_et} ET")
+        logger.debug(f"Payout scheduler check - current WAT: {current_hour_wat}:{current_minute_wat:02d}")
 
         async with async_session() as session:
-            # Get all device settings with payout config
             settings_query = select(DeviceSettings).where(
                 DeviceSettings.payout_config.isnot(None)
             )
@@ -121,23 +120,24 @@ class PayoutScheduler:
 
             for settings in settings_list:
                 try:
-                    # Decrypt payout config
                     from app.services.encryption import EncryptionHelper
                     encryption = EncryptionHelper()
-                    
                     payout_config = encryption.decrypt_json(settings.payout_config)
                     if not payout_config:
                         continue
 
-                    # Check if enabled
                     if not payout_config.get("payout_enabled", False):
                         skipped_count += 1
                         continue
 
-                    # Check scheduled hour
+                    # End-of-trade mode is handled in paper_trading_service; skip daily pass
+                    if payout_config.get("payout_frequency") == "end_of_trade":
+                        skipped_count += 1
+                        continue
+
                     scheduled_hour = payout_config.get("payout_schedule_hour", 20)
-                    if current_hour_et != scheduled_hour:
-                        # Not the scheduled hour
+                    scheduled_minute = payout_config.get("payout_schedule_minute", 0)
+                    if current_hour_wat != scheduled_hour or current_minute_wat != scheduled_minute:
                         continue
 
                     # Get portfolio (linked via device_id - in production, use proper portfolio mapping)
@@ -216,11 +216,11 @@ class PayoutScheduler:
 
     def get_status(self) -> dict:
         """Get scheduler status."""
-        now_et = datetime.now(self.et_timezone)
+        now_wat = datetime.now(self.wat_timezone)
         return {
             "is_running": self.is_running,
-            "current_hour_et": now_et.hour,
-            "current_time_et": now_et.strftime("%Y-%m-%d %H:%M:%S %Z"),
+            "current_hour_wat": now_wat.hour,
+            "current_time_wat": now_wat.strftime("%Y-%m-%d %H:%M:%S %Z"),
             "next_check": "Within 1 hour",
         }
 

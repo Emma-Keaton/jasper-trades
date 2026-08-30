@@ -172,6 +172,15 @@ class UniversalPaperTradingService:
         state["trade_count"] += 1
         await self._save_state(device_id, state)
 
+        # End-of-trade auto-payout: if enabled, pay out % of realized profit immediately on profitable closes
+        if side == "sell" and realized > 0:
+            try:
+                await self._maybe_execute_end_of_trade_payout(
+                    device_id=device_id, realized_pnl=realized, symbol=symbol,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("End-of-trade payout failed (non-fatal)", error=str(e))
+
         try:
             async with async_session() as db:
                 t = Trade(
@@ -263,6 +272,71 @@ class UniversalPaperTradingService:
             "win_rate": round(wins / (wins + losses), 4) if (wins + losses) else 0.0,
             "positions": state.get("positions", {}),
         }
+
+    async def _maybe_execute_end_of_trade_payout(
+        self, device_id: str, realized_pnl: float, symbol: str,
+    ) -> None:
+        """Execute auto-payout for a profitable close if frequency == end_of_trade."""
+        from app.services.encryption import EncryptionHelper
+        from app.models import Portfolio
+        from app.services.withdrawal_service import WithdrawalService
+
+        async with async_session() as db:
+            ds_result = await db.execute(
+                select(DeviceSettings).where(DeviceSettings.device_id == device_id)
+            )
+            ds = ds_result.scalar_one_or_none()
+            if not ds or not ds.payout_config:
+                return
+
+            encryption = EncryptionHelper()
+            payout_cfg = encryption.decrypt_json(ds.payout_config)
+            if not payout_cfg:
+                return
+            if payout_cfg.get("payout_frequency") != "end_of_trade":
+                return
+            if not payout_cfg.get("payout_enabled", False):
+                return
+
+            threshold = payout_cfg.get("min_payout_threshold", 10.0)
+            if realized_pnl < threshold:
+                return
+
+            wallet = payout_cfg.get("crypto_wallet")
+            if not wallet:
+                return
+
+            percentage = payout_cfg.get("payout_percentage", 50.0)
+            payout_amount = round(realized_pnl * percentage / 100, 2)
+            if payout_amount <= 0:
+                return
+
+            # Find portfolio linked to this device
+            port_result = await db.execute(
+                select(Portfolio).where(Portfolio.device_id == device_id).limit(1)
+            )
+            portfolio = port_result.scalar_one_or_none()
+            if not portfolio:
+                return
+
+            ws = WithdrawalService(db)
+            try:
+                w = await ws.create_withdrawal(
+                    portfolio_id=portfolio.id,
+                    amount=payout_amount,
+                    withdrawal_type="auto_payout",
+                    destination_type="crypto_wallet",
+                    destination_address=wallet,
+                    daily_pnl=realized_pnl,
+                    payout_percentage=percentage,
+                )
+                await ws.process_withdrawal(w.id)
+                logger.info(
+                    f"End-of-trade payout: ${payout_amount:.2f} for {symbol} "
+                    f"(realized PnL=${realized_pnl:.2f}) on device {device_id[:8]}..."
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("End-of-trade payout creation failed", error=str(e))
 
     async def reset_account(self, device_id: str) -> Dict[str, Any]:
         await self._load_state(device_id)

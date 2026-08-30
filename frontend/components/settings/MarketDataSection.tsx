@@ -22,7 +22,7 @@ interface MarketDataSectionProps {
   triggerToast: (type: Toast['type'], title: string, message: string) => void;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { API_URL } from '@/lib/constants';
 
 export default function MarketDataSection({ marketData, setMarketData, triggerToast }: MarketDataSectionProps) {
   const [showAlphavantageModal, setShowAlphavantageModal] = useState(false);

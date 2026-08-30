@@ -4,11 +4,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import {
   Home as HomeIcon, Briefcase, TrendingUp, Radio, Settings as SettingsIcon,
-  Compass, Microscope, Sun, Moon, Coins, Bell, X,
+  Compass, Microscope, Sun, Moon, Coins, Bell, X, Menu,
 } from 'lucide-react';
 import { usePriceStream } from '@/hooks/usePriceStream';
 import { usePortfolioHistory } from '@/hooks/usePortfolioHistory';
-import { ConnectionStatus } from '@/lib/websocket';
+
 import { useCurrency } from '@/lib/currencyContext';
 import { fetchTradingMode } from '@/lib/preferences';
 import { useTheme } from '@/lib/theme';
@@ -25,24 +25,8 @@ import SignalsScreen from '@/components/screens/SignalsScreen';
 import SettingsScreen, { StepId } from '@/components/screens/SettingsScreen';
 import BacktestScreen from '@/components/screens/BacktestScreen';
 import AlphaZooScreen from '@/components/screens/AlphaZooScreen';
-import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<{ data?: T; error?: string }> {
-  try {
-    const deviceId = getOrCreateDeviceId();
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId, ...options?.headers },
-    });
-    const data = await response.json();
-    if (!response.ok) return { error: data.detail || data.error || `HTTP ${response.status}` };
-    return { data };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Network error' };
-  }
-}
+import { apiRequest } from '@/lib/api-client';
 
 const PRIMARY_TABS = [
   { id: 'home', label: 'Home', icon: HomeIcon },
@@ -59,7 +43,7 @@ const ADVANCED_TABS = [
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<string>('home');
-  const [, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsDefaultOpen, setSettingsDefaultOpen] = useState<StepId | null>(null);
   const [tradingMode, setTradingMode] = useState<'practice' | 'live' | null>(null);
 
@@ -72,7 +56,7 @@ const [cash, setCash] = useState<number>(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [backendConnected, setBackendConnected] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
-const [, setWsStatus] = useState<ConnectionStatus>('disconnected');
+const [, setWsStatus] = useState<string>('disconnected');
   const [selectedAlphaFactors, setSelectedAlphaFactors] = useState<{id: string; name: string}[]>([]);
   const [portfolioId, setPortfolioId] = useState<number | null>(null);
 
@@ -149,7 +133,7 @@ const fetchBackendData = useCallback(async () => {
       if (tRes.data) {
         setTradeHistory(tRes.data.map((t: any) => ({
           id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          type: t.type, symbol: t.symbol, side: 'Long', shares: t.shares, price: t.price, total: t.total, agent: 'Director',
+          type: t.type, symbol: t.symbol, side: (t.type === 'SELL' ? 'Short' : 'Long') as 'Long' | 'Short', shares: t.shares, price: t.price, total: t.total, agent: t.agent_name || 'System',
         })));
       }
     }
@@ -183,7 +167,7 @@ const fetchBackendData = useCallback(async () => {
       if (tRes.data && tRes.data.length) {
         const next = tRes.data.slice(0, 10).map((t: any) => ({
           id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          type: t.type, symbol: t.symbol, side: 'Long' as 'Long' | 'Short', shares: t.shares, price: t.price, total: t.total, agent: 'Director',
+          type: t.type, symbol: t.symbol, side: (t.type === 'SELL' ? 'Short' : 'Long') as 'Long' | 'Short', shares: t.shares, price: t.price, total: t.total, agent: t.agent_name || 'System',
         }));
         setTradeHistory(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
       }
@@ -283,8 +267,11 @@ case 'trades':
     <OnboardingProvider>
       <div className="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
         {/* ===== Mobile top bar ===== */}
-        <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/85 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 md:hidden">
+<header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/85 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 md:hidden">
           <div className="flex items-center gap-2">
+            <button onClick={() => setSidebarOpen(true)} aria-label="Open menu" className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+              <Menu className="h-5 w-5" />
+            </button>
             <Image src="/logo.png" alt="Jasper" width={28} height={28} className="h-7 w-7 object-contain" />
             <span className="font-display text-base font-bold tracking-tight">Jasper</span>
           </div>
@@ -294,7 +281,85 @@ case 'trades':
             </button>
             <button onClick={toggleCurrency} className="rounded-full px-2.5 py-1.5 text-xs font-semibold text-brand-600 dark:text-brand-300">{currency}</button>
           </div>
-        </header>
+</header>
+
+        {/* ===== Mobile sidebar drawer ===== */}
+        <div className={`fixed inset-0 z-[60] md:hidden ${sidebarOpen ? '' : 'pointer-events-none'}`}>
+          <div
+            className={`absolute inset-0 bg-slate-950/50 transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden
+          />
+          <aside
+            className={`absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-slate-200 bg-white shadow-card transition-transform duration-200 dark:border-slate-800 dark:bg-slate-900 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          >
+            <div className="flex items-center justify-between px-5 pb-4 pt-5">
+              <div className="flex items-center gap-2.5">
+                <Image src="/logo.png" alt="Jasper" width={32} height={32} className="h-8 w-8 object-contain" />
+                <div>
+                  <p className="font-display text-base font-bold leading-none tracking-tight">Jasper</p>
+                  <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-brand-600 dark:text-brand-300">AI Trader</p>
+                </div>
+              </div>
+              <button onClick={() => setSidebarOpen(false)} aria-label="Close menu" className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
+              <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Main</p>
+              {PRIMARY_TABS.map(t => {
+                const active = activeTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => nav(t.id)}
+                    className={`flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition ${
+                      active
+                        ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300'
+                        : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <t.icon className="h-[18px] w-[18px]" />
+                    {t.label}
+                  </button>
+                );
+              })}
+
+              <div className="pt-4">
+                <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">For pros</p>
+                {ADVANCED_TABS.map(t => {
+                  const active = activeTab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => nav(t.id)}
+                      className={`flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition ${
+                        active
+                          ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300'
+                          : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <t.icon className="h-[18px] w-[18px]" />
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-1 border-t border-slate-100 pt-3 dark:border-slate-800">
+                <button onClick={toggleTheme} className="flex w-full items-center justify-between rounded-control px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                  <span className="flex items-center gap-2">{theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />} Theme</span>
+                  <span className="text-xs capitalize text-slate-400">{theme}</span>
+                </button>
+                <button onClick={toggleCurrency} className="flex w-full items-center justify-between rounded-control px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                  <span className="flex items-center gap-2"><Coins className="h-4 w-4" /> Currency</span>
+                  <span className="text-xs font-semibold text-brand-600 dark:text-brand-300">{currency}</span>
+                </button>
+              </div>
+            </nav>
+          </aside>
+        </div>
 
         <div className="mx-auto flex w-full max-w-shell">
           {/* ===== Desktop sidebar ===== */}

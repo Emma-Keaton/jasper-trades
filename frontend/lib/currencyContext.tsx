@@ -2,9 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
+import { API_URL, WS_URL } from '@/lib/constants';
 
 // Types
 export type Currency = 'USD' | 'NGN' | 'CNY';

@@ -5,7 +5,7 @@ import { DollarSign, Activity, Info } from 'lucide-react';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { apiFetch } from '@/lib/api-client';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { API_URL } from '@/lib/constants';
 
 interface UniversalPaperTradingConfig {
   enabled: boolean;

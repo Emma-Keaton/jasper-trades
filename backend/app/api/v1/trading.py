@@ -152,7 +152,7 @@ async def execute_trade(
                 if not portfolios:
                     portfolio = await portfolio_service.create_portfolio(
                         name="Default",
-                        initial_cash=100000.0,
+initial_cash=10000.0,
                         is_paper=True,
                     )
                     portfolio_id = portfolio.id
@@ -235,7 +235,7 @@ async def execute_trade(
                 # Create default portfolio
                 portfolio = await portfolio_service.create_portfolio(
                     name="Default",
-                    initial_cash=100000.0,
+                    initial_cash=10000.0,
                     is_paper=True,
                 )
                 portfolio_id = portfolio.id

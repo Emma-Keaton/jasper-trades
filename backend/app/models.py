@@ -63,8 +63,8 @@ class Portfolio(Base):
     id = Column(Integer, primary_key=True)
     device_id = Column(String(255), nullable=False, index=True)  # Device fingerprint
     name = Column(String, default="Default")
-    cash = Column(Float, default=100000.0)  # Start with $100K for paper trading
-    initial_value = Column(Float, default=100000.0)
+    cash = Column(Float, default=10000.0)  # Start with $10K for paper trading
+    initial_value = Column(Float, default=10000.0)
     initial_capital = Column(Float, default=10000.0)  # For equity curve calculations
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -670,7 +670,6 @@ class TelegramUser(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_active_at = Column(DateTime, nullable=True)  # Last Telegram interaction
     last_active_at = Column(DateTime, nullable=True)  # Last Telegram interaction
 
 

@@ -121,7 +121,7 @@ async def get_performance(
 @router.post("")
 async def create_portfolio(
     name: str,
-    initial_cash: float = 100000.0,
+    initial_cash: float = 10000.0,
     is_paper: bool = True,
     broker: str = "ctrader",
     db: AsyncSession = Depends(get_db),

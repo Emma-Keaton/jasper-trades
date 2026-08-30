@@ -45,6 +45,9 @@ class PayoutSettingsRequest(BaseModel):
     payout_enabled: bool = False
     payout_percentage: float = Field(default=50.0, ge=0, le=100)
     payout_schedule_hour: int = Field(default=20, ge=0, le=23)
+    payout_schedule_minute: int = Field(default=0, ge=0, le=59)
+    payout_frequency: str = Field(default="custom_time", pattern="^(custom_time|end_of_trade)$")
+    min_payout_threshold: float = Field(default=10.0, ge=0)
     broker_account: Optional[str] = None
 
 
@@ -213,6 +216,9 @@ async def get_payout_settings(
                 "payout_enabled": False,
                 "payout_percentage": 50.0,
                 "payout_schedule_hour": 20,
+                "payout_schedule_minute": 0,
+                "payout_frequency": "custom_time",
+                "min_payout_threshold": 10.0,
             }
 
         encryption = EncryptionHelper()
@@ -224,6 +230,9 @@ async def get_payout_settings(
             "payout_enabled": payout_config.get("payout_enabled", False),
             "payout_percentage": payout_config.get("payout_percentage", 50.0),
             "payout_schedule_hour": payout_config.get("payout_schedule_hour", 20),
+            "payout_schedule_minute": payout_config.get("payout_schedule_minute", 0),
+            "payout_frequency": payout_config.get("payout_frequency", "custom_time"),
+            "min_payout_threshold": payout_config.get("min_payout_threshold", 10.0),
         }
     except Exception as e:
         logger.error(f"Error fetching payout settings: {e}")
@@ -232,6 +241,9 @@ async def get_payout_settings(
             "payout_enabled": False,
             "payout_percentage": 50.0,
             "payout_schedule_hour": 20,
+            "payout_schedule_minute": 0,
+            "payout_frequency": "custom_time",
+            "min_payout_threshold": 10.0,
             "error": "Failed to load settings"
         }
 
@@ -251,6 +263,9 @@ async def save_payout_settings(
         "payout_enabled": settings_req.payout_enabled,
         "payout_percentage": settings_req.payout_percentage,
         "payout_schedule_hour": settings_req.payout_schedule_hour,
+        "payout_schedule_minute": settings_req.payout_schedule_minute,
+        "payout_frequency": settings_req.payout_frequency,
+        "min_payout_threshold": settings_req.min_payout_threshold,
         "broker_account": settings_req.broker_account,
     }
     
@@ -281,6 +296,9 @@ async def save_payout_settings(
         "payout_enabled": settings_req.payout_enabled,
         "payout_percentage": settings_req.payout_percentage,
         "payout_schedule_hour": settings_req.payout_schedule_hour,
+        "payout_schedule_minute": settings_req.payout_schedule_minute,
+        "payout_frequency": settings_req.payout_frequency,
+        "min_payout_threshold": settings_req.min_payout_threshold,
     }
 
 

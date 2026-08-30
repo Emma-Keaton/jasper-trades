@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { Save, RotateCcw, Settings, Zap, Shield, Play, AlertTriangle, Info } from 'lucide-react';
 import { saveAgentConfig, loadAgentConfig, type AgentConfigMap } from '@/lib/preferences';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { API_URL } from '@/lib/constants';
 
 interface DirectorConfig {
   temperature: number;

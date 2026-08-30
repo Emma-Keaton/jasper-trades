@@ -41,7 +41,7 @@ class BacktestService:
         factor_ids: List[str],
         start_date: datetime,
         end_date: datetime,
-        initial_capital: float = 100000.0,
+        initial_capital: float = 10000.0,
         engine: str = "vibetrader",
         feed: str = "dailyohlc",
         assets: Optional[List[str]] = None,

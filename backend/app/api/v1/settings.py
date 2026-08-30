@@ -1,4 +1,4 @@
-﻿"""
+"""
 Settings management endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException, Header
