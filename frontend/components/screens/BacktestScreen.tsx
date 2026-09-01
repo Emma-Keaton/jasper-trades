@@ -18,7 +18,7 @@ export default function BacktestScreen({ selectedAlphaFactors, removeAlphaFactor
   const [stratName, setStratName] = useState('My first strategy');
   const [engine, setEngine] = useState('vibetrader');
   const [feed, setFeed] = useState('dailyohlc');
-  const [capital, setCapital] = useState<number>(100000);
+  const [capital, setCapital] = useState<number>(10000);
   const [assetScope, setAssetScope] = useState('NVDA, AAPL, MSFT, BTC, ETH');
   const [dateFrom, setDateFrom] = useState('2024-01-01');
   const [dateTo, setDateTo] = useState('2025-04-01');
