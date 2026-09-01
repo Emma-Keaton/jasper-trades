@@ -11,6 +11,7 @@ from datetime import datetime
 
 from app.database import get_db
 from app.models import Trade, Position
+from app.config import settings
 from app.services.portfolio_service import PortfolioService
 from app.services.valuation_service import ValuationService
 from app.services.circuit_breaker import get_circuit_breaker
@@ -152,7 +153,7 @@ async def execute_trade(
                 if not portfolios:
                     portfolio = await portfolio_service.create_portfolio(
                         name="Default",
-initial_cash=10000.0,
+                        initial_cash=settings.UNIVERSAL_PAPER_CAPITAL,
                         is_paper=True,
                     )
                     portfolio_id = portfolio.id
@@ -235,7 +236,7 @@ initial_cash=10000.0,
                 # Create default portfolio
                 portfolio = await portfolio_service.create_portfolio(
                     name="Default",
-                    initial_cash=10000.0,
+                    initial_cash=settings.UNIVERSAL_PAPER_CAPITAL,
                     is_paper=True,
                 )
                 portfolio_id = portfolio.id

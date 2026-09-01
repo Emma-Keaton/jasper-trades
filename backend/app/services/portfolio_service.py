@@ -80,7 +80,7 @@ class PortfolioService:
     async def create_portfolio(
         self,
         name: str,
-        initial_cash: float = 10000.0,
+        initial_cash: float = None,
         is_paper: bool = True,
         broker: str = "ctrader",
         device_id: Optional[str] = None,
@@ -90,7 +90,7 @@ class PortfolioService:
 
         Args:
             name: Portfolio name
-            initial_cash: Starting cash amount
+            initial_cash: Starting cash amount (None = read from config)
             is_paper: Paper trading or live
             broker: Default broker (defaults to ctrader)
             device_id: Device ID for the portfolio (required)
@@ -98,6 +98,9 @@ class PortfolioService:
         Returns:
             Created Portfolio object
         """
+        from app.config import settings as app_settings
+        if initial_cash is None:
+            initial_cash = app_settings.UNIVERSAL_PAPER_CAPITAL
         portfolio = Portfolio(
             device_id=device_id,
             name=name,

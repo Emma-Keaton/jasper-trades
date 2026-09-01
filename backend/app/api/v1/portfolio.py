@@ -124,17 +124,18 @@ async def get_performance(
 @router.post("")
 async def create_portfolio(
     name: str,
-    initial_cash: float = 10000.0,
+    initial_cash: float = None,
     is_paper: bool = True,
     broker: str = "ctrader",
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new portfolio."""
+    from app.config import settings as app_settings
     portfolio_service = PortfolioService(db)
 
     portfolio = await portfolio_service.create_portfolio(
         name=name,
-        initial_cash=initial_cash,
+        initial_cash=initial_cash if initial_cash is not None else app_settings.UNIVERSAL_PAPER_CAPITAL,
         is_paper=is_paper,
         broker=broker,
     )

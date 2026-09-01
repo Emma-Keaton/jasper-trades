@@ -143,7 +143,7 @@ async def lifespan(app: FastAPI):
             device_id = str(uuid.uuid4())
             await portfolio_service.create_portfolio(
                 name="Default",
-                initial_cash=10000.0,
+                initial_cash=settings.UNIVERSAL_PAPER_CAPITAL,
                 is_paper=True,
                 device_id=device_id,
             )

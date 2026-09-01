@@ -75,7 +75,15 @@ class DailySummaryService:
             return None
         
         # Calculate statistics
-        stats = self._calculate_statistics(trades)
+        portfolio_value = 10000.0
+        try:
+            pv_result = await self.db.execute(select(Portfolio).limit(1))
+            pv_portfolio = pv_result.scalar_one_or_none()
+            if pv_portfolio and pv_portfolio.cash:
+                portfolio_value = pv_portfolio.cash
+        except Exception:
+            pass
+        stats = self._calculate_statistics(trades, portfolio_value)
         
         if stats['total_trades'] == 0:
             return None
@@ -125,7 +133,7 @@ class DailySummaryService:
         
         return summary
     
-    def _calculate_statistics(self, trades: List[Trade]) -> Dict:
+    def _calculate_statistics(self, trades: List[Trade], portfolio_value: float = 10000.0) -> Dict:
         """Calculate trade statistics."""
         total_pnl = 0.0
         wins = 0
@@ -206,10 +214,8 @@ class DailySummaryService:
         total_trades = len(trades)
         win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
         
-        # Calculate total PnL percent (simplified - based on initial capital)
-        # In production, you'd track daily starting balance
-        portfolio_value_estimate = 10000.0  # Default starting value
-        total_pnl_percent = (total_pnl / portfolio_value_estimate * 100) if portfolio_value_estimate > 0 else 0.0
+        # Calculate total PnL percent based on actual portfolio value
+        total_pnl_percent = (total_pnl / portfolio_value * 100) if portfolio_value > 0 else 0.0
         
         # Get top symbols by trade count
         top_symbols = sorted(
