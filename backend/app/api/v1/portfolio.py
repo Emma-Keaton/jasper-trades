@@ -10,6 +10,9 @@ import structlog
 from app.database import get_db
 from app.services.portfolio_service import PortfolioService
 from app.services.valuation_service import ValuationService
+from app.models import PortfolioSnapshot
+from sqlalchemy import select
+from datetime import datetime, timedelta
 
 logger = structlog.get_logger(__name__)
 
@@ -302,6 +305,57 @@ async def get_initialization_status(
         "has_account_setup": portfolio.cash > 0 and (portfolio.is_paper or portfolio.broker),
         "cash": portfolio.cash,
         "initial_value": portfolio.initial_value if is_initialized else 0,
+    }
+
+
+@router.get("/{portfolio_id}/equity-curve")
+async def get_equity_curve(
+    portfolio_id: int,
+    period: str = "1m",
+    db: AsyncSession = Depends(get_db),
+):
+    """Return daily portfolio snapshots for the equity curve chart."""
+    portfolio_service = PortfolioService(db)
+
+    portfolio = await portfolio_service.get_portfolio(portfolio_id)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    # Calculate date range
+    now = datetime.utcnow()
+    period_days = {"1d": 1, "1w": 7, "1m": 30, "3m": 90, "6m": 180, "1y": 365, "all": 3650}
+    days = period_days.get(period, 30)
+    start_date = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    result = await db.execute(
+        select(PortfolioSnapshot)
+        .where(
+            PortfolioSnapshot.portfolio_id == portfolio_id,
+            PortfolioSnapshot.snapshot_date >= start_date,
+        )
+        .order_by(PortfolioSnapshot.snapshot_date)
+    )
+    snapshots = result.scalars().all()
+
+    # Also include initial_value as the first point if no snapshots exist yet
+    equity = []
+    if not snapshots:
+        equity.append({
+            "date": portfolio.created_at.strftime("%Y-%m-%d") if portfolio.created_at else now.strftime("%Y-%m-%d"),
+            "value": portfolio.initial_value or portfolio.cash,
+        })
+    else:
+        for snap in snapshots:
+            equity.append({
+                "date": snap.snapshot_date,
+                "value": snap.total_value,
+            })
+
+    return {
+        "portfolio_id": portfolio_id,
+        "period": period,
+        "initial_value": portfolio.initial_value or portfolio.cash,
+        "equity": equity,
     }
 
 

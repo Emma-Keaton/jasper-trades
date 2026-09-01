@@ -1,6 +1,7 @@
 """StockTwits signal source - free public streaming API (no key required)."""
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Dict, List
 
@@ -35,24 +36,21 @@ def _parse_timestamp(msg: Dict[str, Any]) -> float | None:
 
 
 async def _fetch_with_retry(
-    client: httpx.AsyncClient,
     url: str,
     params: dict,
     max_retries: int = 3,
 ) -> httpx.Response | None:
-    """GET with exponential backoff on 429/403."""
+    """GET with exponential backoff on 429/403. Creates a fresh client per attempt."""
     for attempt in range(max_retries):
         try:
-            r = await client.get(url, params=params, headers={"User-Agent": USER_AGENT})
-            if r.status_code == 429 or r.status_code == 403:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.get(url, params=params, headers={"User-Agent": USER_AGENT})
+            if r.status_code in (429, 403):
                 wait = 2 ** attempt
                 logger.warning(
                     "StockTwits rate-limited (429/403), retrying in %ss", wait,
                     status=r.status_code,
                 )
-                await client.aclose()
-                await client.__aenter__()  # reopen via new client
-                import asyncio
                 await asyncio.sleep(wait)
                 continue
             r.raise_for_status()
@@ -61,7 +59,6 @@ async def _fetch_with_retry(
             if exc.response.status_code in (429, 403) and attempt < max_retries - 1:
                 wait = 2 ** attempt
                 logger.warning("StockTwits error %s, retrying in %ss", exc.response.status_code, wait)
-                import asyncio
                 await asyncio.sleep(wait)
                 continue
             logger.warning("StockTwits fetch failed", url=url, status=exc.response.status_code)
@@ -80,26 +77,25 @@ class StockTwitsSource(SignalSourceAdapter):
         if isinstance(symbols, str):
             symbols = [s for s in symbols.replace(",", " ").split() if s]
         results: List[SignalDraft] = []
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            for sym in symbols:
-                r = await _fetch_with_retry(
-                    client, f"{BASE}/{sym}.json", {"limit": limit}
-                )
-                if r is None:
-                    continue
-                try:
-                    for msg in (r.json().get("messages") or [])[:limit]:
-                        results.append(
-                            SignalDraft(
-                                source_type="stocktwits",
-                                source_id=sym.upper(),
-                                title=msg.get("body", "")[:120],
-                                content=msg.get("body", ""),
-                                author=((msg.get("user") or {}).get("username")),
-                                url=msg.get("link"),
-                                created_at=_parse_timestamp(msg),
-                            )
+        for sym in symbols:
+            r = await _fetch_with_retry(
+                f"{BASE}/{sym}.json", {"limit": limit}
+            )
+            if r is None:
+                continue
+            try:
+                for msg in (r.json().get("messages") or [])[:limit]:
+                    results.append(
+                        SignalDraft(
+                            source_type="stocktwits",
+                            source_id=sym.upper(),
+                            title=msg.get("body", "")[:120],
+                            content=msg.get("body", ""),
+                            author=((msg.get("user") or {}).get("username")),
+                            url=msg.get("link"),
+                            created_at=_parse_timestamp(msg),
                         )
-                except Exception as e:  # noqa: BLE001
-                    logger.warning("StockTwits parse failed", symbol=sym, error=str(e))
+                    )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("StockTwits parse failed", symbol=sym, error=str(e))
         return results

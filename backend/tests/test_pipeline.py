@@ -110,7 +110,7 @@ async def test_execute_signal_no_portfolio(db, fake_confidence):
 
 async def test_execute_signal_paper_success(db, fake_confidence, fake_price):
     db.add(DeviceSettings(device_id="dev-1"))
-    db.add(Portfolio(device_id="dev-1", cash=100000.0))
+    db.add(Portfolio(device_id="dev-1", cash=10000.0))
     await db.commit()
     tip = await ingest.ingest_tip_dict(db, "dev-1", _tip_dict(3002))
     # Commit the tip so the paper engine's own DB session (same shared pool
@@ -128,7 +128,7 @@ async def test_execute_signal_paper_budget_from_caps(db, fake_confidence, fake_p
     from app.models import TradingCap
 
     db.add(DeviceSettings(device_id="dev-1"))
-    p = Portfolio(device_id="dev-1", cash=100000.0)
+    p = Portfolio(device_id="dev-1", cash=10000.0)
     db.add(p)
     await db.commit()
     await db.refresh(p)
@@ -145,7 +145,7 @@ async def test_execute_signal_paper_budget_from_caps(db, fake_confidence, fake_p
 
 async def test_execute_signal_live_cn_blocked_without_tiger(db, fake_confidence, fake_price):
     db.add(DeviceSettings(device_id="dev-1", trading_mode="live", environment_mode="live"))
-    db.add(Portfolio(device_id="dev-1", cash=100000.0))
+    db.add(Portfolio(device_id="dev-1", cash=10000.0))
     await db.commit()
     tip = await ingest.ingest_tip_dict(db, "dev-1", _tip_dict(3004, symbol="600000", slug="cn-long"))
     result = await ingest.execute_signal(db, "dev-1", tip)
@@ -158,7 +158,7 @@ async def test_execute_signal_live_us_via_tiger(db, fake_confidence, fake_price,
     from app.services import trade_gate
 
     db.add(DeviceSettings(device_id="dev-1", trading_mode="live", environment_mode="live"))
-    db.add(Portfolio(device_id="dev-1", cash=100000.0))
+    db.add(Portfolio(device_id="dev-1", cash=10000.0))
     await db.commit()
 
     async def _tiger_ready(db_, device_id_):

@@ -7,6 +7,7 @@ import structlog
 
 from app.brokers import get_broker, get_broker_for_asset
 from app.brokers.ccxt_service import CCXTBrokerService
+from app.brokers.registry import get_broker_for_asset as _get_broker_for_asset
 
 logger = structlog.get_logger(__name__)
 
@@ -189,7 +190,7 @@ class ValuationService:
             Current price or None
         """
         try:
-            broker = None  
+            broker = _get_broker_for_asset("stocks")
             if not broker or not broker.is_connected:
                 logger.debug("Stock broker not configured, skipping price fetch")
                 return None
@@ -224,7 +225,7 @@ class ValuationService:
         prices = {}
 
         try:
-            broker = None  
+            broker = _get_broker_for_asset("stocks")
             if not broker or not broker.is_connected:
                 logger.warning("Stock broker not connected")
                 return prices

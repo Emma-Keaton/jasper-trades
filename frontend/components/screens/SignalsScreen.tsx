@@ -242,7 +242,9 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-display font-bold text-slate-900 dark:text-slate-50" data-onboarding="signals-sources">My sources</h2>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setShowForm(true)}><Plus className="h-4 w-4" /> Add source</Button>
+            <Button variant="secondary" size="sm" onClick={() => { setNewType('rss'); setShowForm(true); }}><Plus className="h-4 w-4" /> RSS</Button>
+            <Button variant="secondary" size="sm" onClick={() => { setNewType('reddit'); setShowForm(true); }}><Plus className="h-4 w-4" /> Reddit</Button>
+            <Button variant="secondary" size="sm" onClick={() => { setNewType('stocktwits'); setShowForm(true); }}><Plus className="h-4 w-4" /> StockTwits</Button>
             <Button size="sm" onClick={fetchNow} disabled={loading}><RefreshCw className="h-4 w-4" /> Fetch now</Button>
           </div>
         </div>

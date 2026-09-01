@@ -41,57 +41,72 @@ export function usePortfolioHistory(options: UsePortfolioHistoryOptions = {}) {
 
   const fetchHistory = useCallback(async () => {
     try {
-      // Fetch portfolio performance
-      const performanceRes = await apiFetch(
-        `/api/v1/portfolio/performance?portfolio_id=${portfolioId}&period=${period}`
+      // Fetch real equity curve from backend snapshots
+      const equityRes = await apiFetch(
+        `/api/v1/portfolio/equity-curve?portfolio_id=${portfolioId}&period=${period}`
       );
 
-      if (!performanceRes.ok) {
-        throw new Error('Failed to fetch performance data');
+      if (equityRes.ok) {
+        const equityData = await equityRes.json();
+        const equity: EquityDataPoint[] = (equityData.equity || []).map(
+          (pt: { date: string; value: number }) => ({
+            x: new Date(pt.date).getTime(),
+            y: pt.value,
+          })
+        );
+
+        // Fetch portfolio summary for PnL
+        const portfolioRes = await apiFetch(
+          `/api/v1/portfolio?portfolio_id=${portfolioId}`
+        );
+        const portfolio = portfolioRes.ok ? await portfolioRes.json() : {};
+        const performanceRes = await apiFetch(
+          `/api/v1/portfolio/performance?portfolio_id=${portfolioId}&period=${period}`
+        );
+        const performance = performanceRes.ok ? await performanceRes.json() : {};
+
+        setData({
+          equity,
+          pnl: {
+            realized: performance.realized_pnl || 0,
+            unrealized: performance.unrealized_pnl || 0,
+            total: performance.total_pnl || 0,
+          },
+          isInitialized: performance.is_initialized ?? equity.length > 1,
+          initialValue: equityData.initial_value || portfolio.initial_value || portfolio.total_value || 0,
+        });
+        setError(null);
+        setLoading(false);
+        return;
       }
 
-      const performance = await performanceRes.json();
-
-      // Fetch portfolio summary for current value
+      // Fallback: construct from portfolio summary if equity-curve endpoint fails
       const portfolioRes = await apiFetch(
         `/api/v1/portfolio?portfolio_id=${portfolioId}`
       );
-
-      if (!portfolioRes.ok) {
-        throw new Error('Failed to fetch portfolio data');
-      }
-
+      if (!portfolioRes.ok) throw new Error('Failed to fetch portfolio data');
       const portfolio = await portfolioRes.json();
 
-      // Generate equity curve data points based on portfolio history
-      // For now, we'll create a simplified version - in production this would come from a dedicated history endpoint
+      const performanceRes = await apiFetch(
+        `/api/v1/portfolio/performance?portfolio_id=${portfolioId}&period=${period}`
+      );
+      const performance = performanceRes.ok ? await performanceRes.json() : {};
+
       const now = Date.now();
       const equity: EquityDataPoint[] = [];
-
-      if (portfolio.total_value) {
+      if (portfolio.total_value && performance.is_initialized) {
         const initialValue = portfolio.initial_value || portfolio.total_value;
         const currentValue = portfolio.total_value;
-
-        if (performance.is_initialized) {
-          const numPoints = period === '1d' ? 24 : period === '1w' ? 7 : period === '1m' ? 30 : 90;
-          const pointInterval = period === '1d' ? 3600000 : 86400000;
-          const totalChange = currentValue - initialValue;
-
-          for (let i = numPoints; i >= 0; i--) {
-            const timestamp = now - (i * pointInterval);
-            const progress = 1 - (i / numPoints);
-            const value = initialValue + (totalChange * progress);
-            equity.push({ x: timestamp, y: Math.max(0, value) });
-          }
-        } else {
-          // No trades yet — single dot at current value
-          equity.push({ x: now, y: currentValue });
+        const numPoints = period === '1d' ? 24 : period === '1w' ? 7 : period === '1m' ? 30 : 90;
+        const pointInterval = period === '1d' ? 3600000 : 86400000;
+        const totalChange = currentValue - initialValue;
+        for (let i = numPoints; i >= 0; i--) {
+          const timestamp = now - i * pointInterval;
+          const progress = 1 - i / numPoints;
+          equity.push({ x: timestamp, y: Math.max(0, initialValue + totalChange * progress) });
         }
       } else {
-        // Not initialized — flat zero line
-        for (let i = 10; i >= 0; i--) {
-          equity.push({ x: now - (i * 86400000), y: 0 });
-        }
+        equity.push({ x: now, y: portfolio.total_value || 0 });
       }
 
       setData({
@@ -104,7 +119,6 @@ export function usePortfolioHistory(options: UsePortfolioHistoryOptions = {}) {
         isInitialized: performance.is_initialized,
         initialValue: portfolio.initial_value || portfolio.total_value || 0,
       });
-
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');

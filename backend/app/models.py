@@ -794,3 +794,21 @@ class WatchlistItem(Base):
     asset_class = Column(String(32), default="crypto")  # crypto | stocks | cn | forex
     source = Column(String(64), nullable=True)  # e.g. "coingecko", "raydium", "trove"
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PortfolioSnapshot(Base):
+    """Daily portfolio value snapshot for equity curve rendering."""
+    __tablename__ = "portfolio_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False, index=True)
+    device_id = Column(String(255), nullable=False, index=True)
+
+    snapshot_date = Column(String, nullable=False, index=True)  # ISO date: "2026-09-01"
+    total_value = Column(Float, nullable=False)
+    cash = Column(Float, nullable=False)
+    market_value = Column(Float, default=0.0)
+    unrealized_pnl = Column(Float, default=0.0)
+    realized_pnl = Column(Float, default=0.0)
+
+    created_at = Column(DateTime, default=datetime.utcnow)

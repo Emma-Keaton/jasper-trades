@@ -78,6 +78,10 @@ class SchedulerService:
             self._run_periodic("poll_signal_sources", self._poll_signal_sources)
         )
 
+        self._tasks["cleanup"] = asyncio.create_task(
+            self._run_periodic("cleanup", self._cleanup)
+        )
+
         logger.info(f"Started {len(self._tasks)} scheduled tasks")
 
     async def stop(self):
@@ -272,23 +276,70 @@ class SchedulerService:
             logger.error(f"Error expiring signals: {e}")
 
     async def _calculate_pnl(self):
-        """Calculate daily PnL for all portfolios."""
+        """Calculate daily PnL for all portfolios and persist a snapshot."""
         try:
+            from datetime import datetime
+            from app.models import PortfolioSnapshot
+            from app.services.valuation_service import ValuationService
+
             db = self.db_session_factory()
             portfolio_service = PortfolioService(db)
+            valuation_service = ValuationService()
 
             portfolios = await portfolio_service.get_portfolios()
+            today = datetime.utcnow().strftime("%Y-%m-%d")
 
             for portfolio in portfolios:
                 pnl = await portfolio_service.get_pnl(portfolio.id)
+                positions = await portfolio_service.get_all_positions(portfolio.id)
+
+                # Get current market value
+                market_value = 0.0
+                if positions:
+                    prices = await valuation_service.get_prices([p.symbol for p in positions])
+                    for pos in positions:
+                        price = prices.get(pos.symbol, pos.current_price or pos.avg_price)
+                        market_value += pos.quantity * (price or 0)
+
+                total_value = portfolio.cash + market_value
+
+                # Upsert snapshot for today
+                from sqlalchemy import select
+                result = await db.execute(
+                    select(PortfolioSnapshot).where(
+                        PortfolioSnapshot.portfolio_id == portfolio.id,
+                        PortfolioSnapshot.snapshot_date == today,
+                    )
+                )
+                snap = result.scalar_one_or_none()
+                if snap:
+                    snap.total_value = total_value
+                    snap.cash = portfolio.cash
+                    snap.market_value = market_value
+                    snap.unrealized_pnl = pnl.get("unrealized_pnl", 0)
+                    snap.realized_pnl = pnl.get("realized_pnl", 0)
+                else:
+                    snap = PortfolioSnapshot(
+                        portfolio_id=portfolio.id,
+                        device_id=portfolio.device_id,
+                        snapshot_date=today,
+                        total_value=total_value,
+                        cash=portfolio.cash,
+                        market_value=market_value,
+                        unrealized_pnl=pnl.get("unrealized_pnl", 0),
+                        realized_pnl=pnl.get("realized_pnl", 0),
+                    )
+                    db.add(snap)
 
                 logger.info(
                     f"Portfolio {portfolio.name} PnL",
                     realized=pnl["realized_pnl"],
                     unrealized=pnl["unrealized_pnl"],
                     total=pnl["total_pnl"],
+                    snapshot_saved=True,
                 )
 
+            await db.commit()
             await db.close()
 
         except Exception as e:
@@ -352,6 +403,44 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Error sending daily summaries: {e}", exc_info=True)
+
+    async def _cleanup(self):
+        """Daily cleanup: purge expired tips, old snapshots, stale cache entries."""
+        try:
+            from datetime import datetime, timedelta
+            from app.models import SignalTip, PortfolioSnapshot
+            from sqlalchemy import delete
+
+            db = self.db_session_factory()
+            try:
+                cutoff = datetime.utcnow() - timedelta(days=90)
+
+                # Purge expired / old signal tips
+                result = await db.execute(
+                    delete(SignalTip).where(SignalTip.created_at < cutoff)
+                )
+                tips_purged = result.rowcount
+
+                # Purge old portfolio snapshots (keep 1 year)
+                snap_cutoff = datetime.utcnow() - timedelta(days=365)
+                result = await db.execute(
+                    delete(PortfolioSnapshot).where(PortfolioSnapshot.created_at < snap_cutoff)
+                )
+                snaps_purged = result.rowcount
+
+                await db.commit()
+
+                if tips_purged or snaps_purged:
+                    logger.info(
+                        "Cleanup complete",
+                        tips_purged=tips_purged,
+                        snapshots_purged=snaps_purged,
+                    )
+            finally:
+                await db.close()
+
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}", exc_info=True)
 
     # ========== Task Status ==========
 

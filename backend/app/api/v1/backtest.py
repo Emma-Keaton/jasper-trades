@@ -25,7 +25,7 @@ async def run_backtest(
         factor_ids: List of alpha factor IDs to use
         start_date: Backtest start date (ISO format)
         end_date: Backtest end date (ISO format)
-        initial_capital: Starting capital (default: $100,000)
+        initial_capital: Starting capital (default: $10,000)
         engine: Backtest engine (vibetrader, singlefactor, etc.)
         feed: Data feed resolution (dailyohlc, hourlyohlc, etc.)
         assets: List of assets to trade
@@ -46,7 +46,7 @@ async def run_backtest(
             factor_ids=request.get("factor_ids", []),
             start_date=start_date,
             end_date=end_date,
-            initial_capital=request.get("initial_capital", 100000.0),
+            initial_capital=request.get("initial_capital", 10000.0),
             engine=request.get("engine", "vibetrader"),
             feed=request.get("feed", "dailyohlc"),
             assets=request.get("assets"),

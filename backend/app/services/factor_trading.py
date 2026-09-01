@@ -2,13 +2,15 @@
 Factor Trading Service - scheduled, hands-free alpha-zoo driven trading.
 
 Runs on the scheduler's signal-generation tick. For every device with a
-watchlist it fetches live OHLCV, asks the factor advisor which way the winning
-factor consensus leans, and when the strategy confidence is high enough it
-feeds the decision into the same ledger + trade gate used by signal sources,
-so paper/live execution, position caps and the circuit breaker all apply.
+watchlist AND agents_started=true, it fetches live OHLCV, asks the factor
+advisor which way the winning factor consensus leans, and when the strategy
+confidence is high enough it feeds the decision into the same ledger + trade
+gate used by signal sources, so paper/live execution, position caps and the
+circuit breaker all apply.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -16,7 +18,7 @@ import structlog
 from sqlalchemy import select
 
 from app.config import settings
-from app.models import SignalSource, SignalTip, WatchlistItem
+from app.models import DeviceSettings, SignalSource, SignalTip, WatchlistItem
 
 logger = structlog.get_logger(__name__)
 
@@ -115,6 +117,21 @@ async def _already_traded(
     return res.scalar_one_or_none() is not None
 
 
+async def _is_agents_started(db, device_id: str) -> bool:
+    """True when the user has clicked Start on the dashboard for this device."""
+    try:
+        res = await db.execute(
+            select(DeviceSettings).where(DeviceSettings.device_id == device_id)
+        )
+        row = res.scalar_one_or_none()
+        if not row or not row.preferences:
+            return False
+        prefs = json.loads(row.preferences)
+        return bool(prefs.get("agents_started", False))
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Sweep
 # ---------------------------------------------------------------------------
@@ -146,6 +163,11 @@ async def run_factor_sweep(db) -> Dict[str, Any]:
         if source is None:
             continue
         stats["devices"] += 1
+
+        # Skip devices whose agents haven't been started
+        if not await _is_agents_started(db, device_id):
+            stats["skipped"] += len(items)
+            continue
 
         s = await get_signal_settings(db, device_id)
         if not s.auto_execute_enabled:

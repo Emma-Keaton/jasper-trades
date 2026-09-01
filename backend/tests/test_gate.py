@@ -197,7 +197,7 @@ async def test_buy_exceeding_cash_blocked(db):
 
 
 async def test_buy_within_cash_passes(db):
-    p = Portfolio(device_id="dev-1", cash=100000.0)
+    p = Portfolio(device_id="dev-1", cash=10000.0)
     db.add(p)
     await db.commit()
     await db.refresh(p)
@@ -209,7 +209,7 @@ async def test_buy_within_cash_passes(db):
 
 
 async def test_trading_cap_blocks_large_order(db):
-    p = Portfolio(device_id="dev-1", cash=100000.0)
+    p = Portfolio(device_id="dev-1", cash=10000.0)
     db.add(p)
     await db.commit()
     await db.refresh(p)
