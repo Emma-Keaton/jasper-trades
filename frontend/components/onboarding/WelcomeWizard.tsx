@@ -18,7 +18,7 @@ export default function WelcomeWizard() {
   const [step, setStep] = useState(0);
 
   const close = () => {
-    saveOnboardingPrefs({ welcome_done: true });
+    saveOnboardingPrefs({ welcome_done: true, onboarding_completed: false });
     setShowWelcome(false);
   };
 

@@ -43,7 +43,7 @@ const TOUR_MAP: Record<string, TourStep[]> = {
 export default function OnboardingTour({ activePage, enabled = true }: OnboardingTourProps) {
   const {
     startTour, endTour, isTourActive, currentStep, targetElement,
-    markTourComplete, isTourComplete, showWelcome, isOnboardingComplete,
+    markTourComplete, isTourComplete, showWelcome, isOnboardingComplete, isLoaded,
   } = useOnboarding();
 
   const tourKey = activePage.toLowerCase();
@@ -61,11 +61,12 @@ export default function OnboardingTour({ activePage, enabled = true }: Onboardin
   // Auto-start once per screen after the welcome modal has been dismissed
   useEffect(() => {
     if (!enabled || !hasTours || showWelcome) return;
+    if (!isLoaded) return;
     if (isOnboardingComplete()) return;
     if (isTourActive || isTourComplete(tourKey)) return;
     const t = setTimeout(() => startTour(TOUR_MAP[tourKey]), 350);
     return () => clearTimeout(t);
-  }, [activePage, enabled, hasTours, showWelcome, isOnboardingComplete, isTourActive, isTourComplete, startTour, tourKey]);
+  }, [activePage, enabled, hasTours, showWelcome, isLoaded, isOnboardingComplete, isTourActive, isTourComplete, startTour, tourKey]);
 
   if (isTourActive) {
     return (

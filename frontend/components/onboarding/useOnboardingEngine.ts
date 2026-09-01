@@ -1,6 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { loadOnboardingPrefs, saveOnboardingPrefs } from '@/lib/preferences';
 
+const ONBOARDING_STORAGE_KEY = 'jasper_onboarding_state';
+
+function loadLocalOnboarding(): { completed_tours: string[]; onboarding_completed: boolean } {
+  try {
+    const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { completed_tours: [], onboarding_completed: false };
+}
+
+function saveLocalOnboarding(data: { completed_tours: string[]; onboarding_completed: boolean }) {
+  try { localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
+}
+
 export interface TourStep {
   id: string;
   targetElement: string; // CSS selector or data-onboarding attribute
@@ -34,10 +48,12 @@ interface UseOnboardingEngineReturn {
   endTour: () => void;
   scanElements: () => void;
   isTourActive: boolean;
+  isLoaded: boolean;
   completedTours: string[];
   markTourComplete: (tourId: string) => void;
   isTourComplete: (tourId: string) => boolean;
   onboardingCompleted: boolean;
+  welcomeDone: boolean;
   completeOnboarding: () => void;
   isOnboardingComplete: () => boolean;
   resetTours: () => void;
@@ -50,21 +66,36 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   const [targetElements, setTargetElements] = useState<TargetElementInfo[]>([]);
   const [completedTours, setCompletedTours] = useState<string[]>([]);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const [welcomeDone, setWelcomeDone] = useState<boolean>(false);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-  // Load completed tours from the DB (per device)
+  // Load completed tours from the DB (per device) with localStorage fallback
   useEffect(() => {
     let cancelled = false;
+
+    // Immediately load from localStorage so tours don't flash on refresh
+    const local = loadLocalOnboarding();
+    if (local.completed_tours.length > 0) {
+      setCompletedTours(local.completed_tours);
+    }
+    if (local.onboarding_completed) {
+      setOnboardingCompleted(true);
+    }
+
+    // Then sync from backend (may override with more recent data)
     loadOnboardingPrefs().then((prefs) => {
       if (cancelled) return;
-      if (Array.isArray(prefs.completed_tours)) {
-        setCompletedTours(prefs.completed_tours as string[]);
-      }
-      if (prefs.onboarding_completed) {
-        setOnboardingCompleted(true);
-      }
+      const tours = Array.isArray(prefs.completed_tours) ? (prefs.completed_tours as string[]) : local.completed_tours;
+      const completed = prefs.onboarding_completed === true || local.onboarding_completed;
+      setCompletedTours(tours);
+      setOnboardingCompleted(completed);
+      if (prefs.welcome_done === true) setWelcomeDone(true);
+      saveLocalOnboarding({ completed_tours: tours, onboarding_completed: completed });
+      setIsLoaded(true);
     }).catch((error) => {
       console.error('Failed to load onboarding state:', error);
+      setIsLoaded(true);
     });
     return () => { cancelled = true; };
   }, []);
@@ -175,6 +206,7 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     setCompletedTours(prev => {
       if (!prev.includes(tourId)) {
         const updated = [...prev, tourId];
+        saveLocalOnboarding({ completed_tours: updated, onboarding_completed: false });
         saveOnboardingPrefs({ completed_tours: updated }).catch((error) => {
           console.error('Failed to save onboarding state:', error);
         });
@@ -192,22 +224,26 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   // Flag the whole onboarding as completed once (persists across visits)
   const completeOnboarding = useCallback(() => {
     setOnboardingCompleted(true);
+    setWelcomeDone(true);
     const allTours = ['home', 'trades', 'markets', 'signals', 'settings'];
     setCompletedTours(allTours);
+    saveLocalOnboarding({ completed_tours: allTours, onboarding_completed: true });
     saveOnboardingPrefs({ onboarding_completed: true, welcome_done: true, completed_tours: allTours }).catch((error) => {
       console.error('Failed to save onboarding state:', error);
     });
   }, []);
 
   const isOnboardingComplete = useCallback(() => {
-    return onboardingCompleted;
-  }, [onboardingCompleted]);
+    return onboardingCompleted || welcomeDone;
+  }, [onboardingCompleted, welcomeDone]);
 
   // Reset all tour progress (also clears the DB via the settings endpoint)
   const resetTours = useCallback(() => {
     setCompletedTours([]);
     setOnboardingCompleted(false);
-    saveOnboardingPrefs({ onboarding_completed: false, completed_tours: [] }).catch((error) => {
+    setWelcomeDone(false);
+    saveLocalOnboarding({ completed_tours: [], onboarding_completed: false });
+    saveOnboardingPrefs({ onboarding_completed: false, welcome_done: false, completed_tours: [] }).catch((error) => {
       console.error('Failed to reset onboarding state:', error);
     });
     import('@/lib/preferences').then(({ resetOnboarding }) => {
@@ -226,10 +262,12 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     endTour,
     scanElements,
     isTourActive: currentStepIndex >= 0 && currentStepIndex < tourSteps.length,
+    isLoaded,
     completedTours,
     markTourComplete,
     isTourComplete,
     onboardingCompleted,
+    welcomeDone,
     completeOnboarding,
     isOnboardingComplete,
     resetTours,

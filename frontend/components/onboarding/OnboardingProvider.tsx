@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useOnboardingEngine, TourStep } from './useOnboardingEngine';
-import { loadOnboardingPrefs } from '@/lib/preferences';
 
 interface OnboardingContextType {
   currentStepIndex: number;
@@ -20,10 +19,12 @@ interface OnboardingContextType {
   endTour: () => void;
   scanElements: () => void;
   isTourActive: boolean;
+  isLoaded: boolean;
   completedTours: string[];
   markTourComplete: (tourId: string) => void;
   isTourComplete: (tourId: string) => boolean;
   onboardingCompleted: boolean;
+  welcomeDone: boolean;
   completeOnboarding: () => void;
   isOnboardingComplete: () => boolean;
   showWelcome: boolean;
@@ -37,21 +38,14 @@ const OnboardingContext = createContext<OnboardingContextType | undefined>(undef
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const engine = useOnboardingEngine();
 
-  // Initial hidden if the welcome was already dismissed or onboarding completed once
+  // Derive showWelcome from engine state — avoid a duplicate DB load
   const [showWelcome, setShowWelcome] = React.useState(false);
 
   React.useEffect(() => {
-    let cancelled = false;
-    loadOnboardingPrefs().then((prefs) => {
-      if (cancelled) return;
-      const completed = prefs.onboarding_completed === true;
-      const dismissed = prefs.welcome_done === true;
-      setShowWelcome(!completed && !dismissed);
-    }).catch(() => {
-      setShowWelcome(true);
-    });
-    return () => { cancelled = true; };
-  }, []);
+    if (!engine.isLoaded) return;
+    // Show welcome only if welcome hasn't been dismissed yet
+    setShowWelcome(!engine.welcomeDone);
+  }, [engine.isLoaded, engine.welcomeDone]);
 
   const value = {
     ...engine,
