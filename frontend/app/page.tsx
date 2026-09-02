@@ -129,11 +129,12 @@ const fetchBackendData = useCallback(async () => {
           currentPrice: h.current_price || h.avg_price || 0, pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0,
         })));
       }
-      const tRes = await apiRequest<any[]>(`/api/v1/portfolio/${pid}/trades?limit=30`);
+      const tRes = await apiRequest<any>(`/api/v1/trading/history?limit=30`);
       if (tRes.data) {
-        setTradeHistory(tRes.data.map((t: any) => ({
+        const trades = tRes.data.trades || tRes.data || [];
+        setTradeHistory(trades.map((t: any) => ({
           id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          type: t.type, symbol: t.symbol, side: (t.type === 'SELL' ? 'Short' : 'Long') as 'Long' | 'Short', shares: t.shares, price: t.price, total: t.total, agent: t.agent_name || 'System',
+          type: (t.side || t.type || '').toUpperCase(), symbol: t.symbol, side: (t.side === 'buy' ? 'Long' : 'Short') as 'Long' | 'Short', shares: t.quantity || t.shares || 0, price: t.price || 0, total: t.pnl || t.total || 0, agent: t.agent_name || 'System',
         })));
       }
     }
@@ -163,13 +164,16 @@ const fetchBackendData = useCallback(async () => {
         }));
         setHoldings(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
       }
-      const tRes = await apiRequest<any[]>(`/api/v1/portfolio/${pid}/trades?limit=10`);
-      if (tRes.data && tRes.data.length) {
-        const next = tRes.data.slice(0, 10).map((t: any) => ({
-          id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          type: t.type, symbol: t.symbol, side: (t.type === 'SELL' ? 'Short' : 'Long') as 'Long' | 'Short', shares: t.shares, price: t.price, total: t.total, agent: t.agent_name || 'System',
-        }));
-        setTradeHistory(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
+      const tRes = await apiRequest<any>(`/api/v1/trading/history?limit=30`);
+      if (tRes.data) {
+        const trades = (tRes.data.trades || tRes.data) || [];
+        if (trades.length) {
+          const next = trades.slice(0, 30).map((t: any) => ({
+            id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            type: (t.side || t.type || '').toUpperCase(), symbol: t.symbol, side: (t.side === 'buy' ? 'Long' : 'Short') as 'Long' | 'Short', shares: t.quantity || t.shares || 0, price: t.price || 0, total: t.pnl || t.total || 0, agent: t.agent_name || 'System',
+          }));
+          setTradeHistory(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
+        }
       }
       const statusResult = await apiRequest<any>('/api/v1/status');
       setBackendConnected(!!statusResult.data);

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { TrendingUp, Compass, Microscope, Star, Sparkles, Search, X, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { Card } from '@/components/ui';
-import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { getOrCreateDeviceId, deviceHeaders } from '@/lib/deviceFingerprint';
 import { DEFAULT_DEVICE_ID } from '@/lib/constants';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 
@@ -19,22 +19,12 @@ interface MarketItem {
   inWatchlist?: boolean;
 }
 
-function deviceHeaders(): Record<string, string> {
-  let deviceId: string;
-  try {
-    deviceId = getOrCreateDeviceId();
-  } catch {
-    deviceId = DEFAULT_DEVICE_ID;
-  }
-  return { 'X-Device-ID': deviceId };
-}
-
 function normalizeCrypto(items: any[]): MarketItem[] {
   return (items || [])
     .map((c: any) => ({
       symbol: (c.symbol || c.base_symbol || c.ticker || '').toUpperCase(),
       name: c.name || c.base_name || c.symbol || '',
-      change: Number(c.change || c.price_change_24h || c.change_24h || c.market_cap_change_24h || 0),
+      change: Number(c.change ?? c.price_change_24h ?? c.change_24h ?? c.market_cap_change_24h ?? 0),
       price_usd: c.price_usd ?? null,
       source: c.source || undefined,
       asset_class: 'crypto' as const,
@@ -56,7 +46,7 @@ function normalizeStocks(items: any[]): MarketItem[] {
         price_usd: s.price ?? s.price_usd ?? null,
         source: s.exchange || s.source || undefined,
         asset_class,
-        change: undefined,
+        change: s.change_percent ?? s.change_24h ?? s.price_change_24h ?? undefined,
       };
     })
     .filter((i: MarketItem) => i.symbol);
@@ -118,16 +108,23 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
         return;
       }
       try {
+        let res;
         if (current) {
-          await fetch(`${API_URL}/api/v1/watchlist/${symbol}`, { method: 'DELETE', headers: deviceHeaders() });
+          res = await fetch(`${API_URL}/api/v1/watchlist/${symbol}`, { method: 'DELETE', headers: deviceHeaders() });
         } else {
-          await fetch(`${API_URL}/api/v1/watchlist`, {
+          res = await fetch(`${API_URL}/api/v1/watchlist`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...deviceHeaders() },
             body: JSON.stringify({ symbol, name: item.name, asset_class: item.asset_class, source: item.source }),
           });
         }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          triggerToast?.('error', 'Watchlist error', err.detail || 'Failed to update watchlist');
+          return;
+        }
       } catch {
+        triggerToast?.('error', 'Watchlist error', 'Network error updating watchlist');
         return;
       }
       await refreshWatchlist();
@@ -210,17 +207,23 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
         const cgItems = cgRes?.ok
           ? normalizeCrypto((await cgRes.json()).results || [])
           : [];
+        const cryptoRaw = cryptoRes?.ok ? await cryptoRes.json() : null;
         const cryptoItems = cryptoRes?.ok
-          ? normalizeCrypto((await cryptoRes.json()).results || (await cryptoRes.json()).coins || [])
+          ? normalizeCrypto(cryptoRaw?.results || cryptoRaw?.coins || [])
           : [];
+        const stockRaw = stockRes?.ok ? await stockRes.json() : null;
         const stockItems = stockRes?.ok
-          ? normalizeStocks((await stockRes.json()).symbols || (await stockRes.json()).results || [])
+          ? normalizeStocks(stockRaw?.symbols || stockRaw?.results || [])
           : [];
 
         const bySymbol = new Map<string, MarketItem>();
         for (const item of cgItems) bySymbol.set(item.symbol, item);
         for (const item of cryptoItems) {
-          if (!bySymbol.has(item.symbol)) bySymbol.set(item.symbol, item);
+          const existing = bySymbol.get(item.symbol);
+          // Prefer entry with non-null price
+          if (!existing || (existing.price_usd == null && item.price_usd != null)) {
+            bySymbol.set(item.symbol, item);
+          }
         }
         for (const item of stockItems) {
           if (!bySymbol.has(item.symbol)) bySymbol.set(item.symbol, item);

@@ -298,8 +298,9 @@ class PortfolioService:
             logger.warning(f"No position to reduce for {symbol}")
             return {"error": "No position found", "realized_pnl": 0}
 
-        # Calculate realized PnL
-        if position.side if hasattr(position, 'side') else "long":
+        # Calculate realized PnL (default to long if side attribute missing)
+        side = getattr(position, 'side', 'long') or 'long'
+        if side == "long":
             realized_pnl = (price - position.avg_price) * quantity
         else:
             realized_pnl = (position.avg_price - price) * quantity
@@ -466,12 +467,13 @@ class PortfolioService:
         Returns:
             Dict with realized, unrealized, and total PnL
         """
-        # Realized PnL from trades
+        # Realized PnL from trades (scoped to this portfolio)
         query = select(
             func.sum(Trade.pnl).label('total_pnl'),
             func.count(Trade.id).label('trade_count'),
         ).where(
             Trade.status == 'filled',
+            Trade.portfolio_id == portfolio_id,
         )
 
         if start_date:

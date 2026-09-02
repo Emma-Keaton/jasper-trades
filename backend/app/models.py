@@ -20,6 +20,9 @@ class Trade(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # Portfolio link
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=True)
+    
     # Broker info
     broker = Column(String)  # binance, solana, cTrader
     broker_order_id = Column(String)

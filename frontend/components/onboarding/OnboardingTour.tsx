@@ -44,10 +44,12 @@ export default function OnboardingTour({ activePage, enabled = true }: Onboardin
   const {
     startTour, endTour, isTourActive, currentStep, targetElement,
     markTourComplete, isTourComplete, showWelcome, isOnboardingComplete, isLoaded,
+    onboardingCompleted, welcomeDone,
   } = useOnboarding();
 
   const tourKey = activePage.toLowerCase();
   const hasTours = Object.prototype.hasOwnProperty.call(TOUR_MAP, tourKey);
+  const onboardingDone = onboardingCompleted || welcomeDone;
 
   // ESC to stop the current tour
   useEffect(() => {
@@ -62,11 +64,11 @@ export default function OnboardingTour({ activePage, enabled = true }: Onboardin
   useEffect(() => {
     if (!enabled || !hasTours || showWelcome) return;
     if (!isLoaded) return;
-    if (isOnboardingComplete()) return;
+    if (onboardingDone) return;
     if (isTourActive || isTourComplete(tourKey)) return;
     const t = setTimeout(() => startTour(TOUR_MAP[tourKey]), 350);
     return () => clearTimeout(t);
-  }, [activePage, enabled, hasTours, showWelcome, isLoaded, isOnboardingComplete, isTourActive, isTourComplete, startTour, tourKey]);
+  }, [activePage, enabled, hasTours, showWelcome, isLoaded, onboardingDone, isTourActive, isTourComplete, startTour, tourKey]);
 
   if (isTourActive) {
     return (

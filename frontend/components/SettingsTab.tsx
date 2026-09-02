@@ -164,33 +164,36 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
       if (!res.ok) throw new Error(`Failed to load settings`);
 
       const data = await res.json();
+      const s = data.settings || data;
       
       // Always load form data (even if not configured)
       setFormData({
-        nvidia_api_key: data.nvidia_api_key || '',
-        binance_api_key: data.binance_api_key || '',
-        binance_api_secret: data.binance_api_secret || '',
-        trove_api_key: data.trove_api_key || '',
-        akshare_token: data.akshare_token || '',
+        nvidia_api_key: s.nvidia_api_key || '',
+        binance_api_key: s.binance_api_key || '',
+        binance_api_secret: s.binance_api_secret || '',
+        trove_api_key: s.trove_api_key || '',
+        akshare_token: s.akshare_token || '',
       });
       
       setDeviceInfo(`Device ID: ${deviceId}`);
 
       // Get portfolio ID for trading caps
-      const portfolioRes = await apiFetch(`${API_URL}/api/v1/portfolio`);
+      const portfolioRes = await apiFetch(`${API_URL}/api/v1/portfolio`, {
+        headers: { 'X-Device-ID': deviceId },
+      });
       const portfolioData = await portfolioRes.json();
       if (portfolioData && portfolioData.id) {
         setPortfolioId(portfolioData.id);
       }
 
       // Load notification settings from unified settings endpoint
-      if (data.telegram_config) {
+      if (s.telegram_config) {
         setTelegram({ 
-          chat_id: data.telegram_config.chat_id || '',
-          bot_token: data.telegram_config.bot_token || '',
-          enabled: data.telegram_config.enabled || false,
-          chat_enabled: data.telegram_config.chat_enabled || true,
-          configured: !!data.telegram_config.chat_id 
+          chat_id: s.telegram_config.chat_id || '',
+          bot_token: s.telegram_config.bot_token || '',
+          enabled: s.telegram_config.enabled || false,
+          chat_enabled: s.telegram_config.chat_enabled || true,
+          configured: !!s.telegram_config.chat_id 
         });
       }
 

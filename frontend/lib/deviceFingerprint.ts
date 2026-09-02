@@ -137,7 +137,7 @@ export function exportDeviceData(): string {
     deviceInfo: deviceInfo ? JSON.parse(deviceInfo) : null,
     // Include any other persisted data
     settings: localStorage.getItem('jasper_settings'),
-    onboarding: localStorage.getItem('jasper_onboarding'),
+    onboarding: localStorage.getItem('jasper_onboarding_state'),
   };
   
   return JSON.stringify(exportData, null, 2);
@@ -164,7 +164,7 @@ export function importDeviceData(jsonData: string): boolean {
     }
     
     if (data.onboarding) {
-      localStorage.setItem('jasper_onboarding', data.onboarding);
+      localStorage.setItem('jasper_onboarding_state', data.onboarding);
     }
     
     console.log('Device data imported successfully');

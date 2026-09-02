@@ -76,6 +76,7 @@ async def search_crypto(
     # --- CCXT search (Binance / Bybit / OKX) ---
     try:
         import ccxt
+        import asyncio
 
         for ex_id in ("binance", "bybit", "okx"):
             try:
@@ -83,7 +84,8 @@ async def search_crypto(
                 if not exchange_cls:
                     continue
                 ex = exchange_cls({"enableRateLimit": True, "timeout": 6000})
-                markets = ex.load_markets()
+                loop = asyncio.get_event_loop()
+                markets = await loop.run_in_executor(None, ex.load_markets)
                 query_upper = q.upper()
                 query_lower = q.lower()
                 matches = 0

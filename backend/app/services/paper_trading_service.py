@@ -191,6 +191,8 @@ class UniversalPaperTradingService:
                     broker="paper",
                     status="filled",
                     agent_name=agent_name,
+                    pnl=realized if side == "sell" else None,
+                    pnl_percent=((realized / (pos["avg_price"] * qty)) * 100 if side == "sell" and pos and pos.get("avg_price") and qty else None),
                     created_at=_now().replace(tzinfo=None),
                 )
                 db.add(t)

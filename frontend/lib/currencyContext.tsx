@@ -282,10 +282,11 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     const curr = currency || state.currency;
     const symbol = currencySymbols[curr];
 
-    // Handle very large NGN amounts (use commas)
+    // Adaptive decimals: show more precision for very small amounts (memecoins)
+    const maxDecimals = Math.abs(amount) < 0.01 ? 8 : Math.abs(amount) < 1 ? 4 : 2;
     const formatted = amount.toLocaleString(localeMap[curr], {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: maxDecimals,
     });
 
     return `${symbol}${formatted}`;
@@ -327,6 +328,7 @@ export function useCurrencyFormatter() {
   const { convertAmount, formatCurrency, currency } = useCurrency();
 
   const formatMoney = useCallback((amount: number, sourceCurrency: Currency = 'USD'): string => {
+    if (amount == null || isNaN(amount)) return '-';
     const converted = convertAmount(amount, sourceCurrency, currency);
     return formatCurrency(converted, currency);
   }, [convertAmount, formatCurrency, currency]);

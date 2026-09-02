@@ -43,7 +43,7 @@ export function usePortfolioHistory(options: UsePortfolioHistoryOptions = {}) {
     try {
       // Fetch real equity curve from backend snapshots
       const equityRes = await apiFetch(
-        `/api/v1/portfolio/equity-curve?portfolio_id=${portfolioId}&period=${period}`
+        `/api/v1/portfolio/${portfolioId}/equity-curve?period=${period}`
       );
 
       if (equityRes.ok) {
@@ -57,7 +57,7 @@ export function usePortfolioHistory(options: UsePortfolioHistoryOptions = {}) {
 
         // Fetch portfolio summary for PnL
         const portfolioRes = await apiFetch(
-          `/api/v1/portfolio?portfolio_id=${portfolioId}`
+          `/api/v1/portfolio/${portfolioId}`
         );
         const portfolio = portfolioRes.ok ? await portfolioRes.json() : {};
         const performanceRes = await apiFetch(
@@ -82,7 +82,7 @@ export function usePortfolioHistory(options: UsePortfolioHistoryOptions = {}) {
 
       // Fallback: construct from portfolio summary if equity-curve endpoint fails
       const portfolioRes = await apiFetch(
-        `/api/v1/portfolio?portfolio_id=${portfolioId}`
+        `/api/v1/portfolio/${portfolioId}`
       );
       if (!portfolioRes.ok) throw new Error('Failed to fetch portfolio data');
       const portfolio = await portfolioRes.json();

@@ -1,17 +1,19 @@
+'use client';
+
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { loadOnboardingPrefs, saveOnboardingPrefs } from '@/lib/preferences';
+import { loadOnboardingPrefs, saveOnboardingPrefs, resetOnboarding } from '@/lib/preferences';
 
 const ONBOARDING_STORAGE_KEY = 'jasper_onboarding_state';
 
-function loadLocalOnboarding(): { completed_tours: string[]; onboarding_completed: boolean } {
+function loadLocalOnboarding(): { completed_tours: string[]; onboarding_completed: boolean; welcome_done: boolean } {
   try {
     const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch { /* ignore */ }
-  return { completed_tours: [], onboarding_completed: false };
+  return { completed_tours: [], onboarding_completed: false, welcome_done: false };
 }
 
-function saveLocalOnboarding(data: { completed_tours: string[]; onboarding_completed: boolean }) {
+function saveLocalOnboarding(data: { completed_tours: string[]; onboarding_completed: boolean; welcome_done: boolean }) {
   try { localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
 }
 
@@ -82,16 +84,20 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     if (local.onboarding_completed) {
       setOnboardingCompleted(true);
     }
+    if (local.welcome_done) {
+      setWelcomeDone(true);
+    }
 
     // Then sync from backend (may override with more recent data)
     loadOnboardingPrefs().then((prefs) => {
       if (cancelled) return;
       const tours = Array.isArray(prefs.completed_tours) ? (prefs.completed_tours as string[]) : local.completed_tours;
       const completed = prefs.onboarding_completed === true || local.onboarding_completed;
+      const welcomeDone = prefs.welcome_done === true || local.welcome_done;
       setCompletedTours(tours);
       setOnboardingCompleted(completed);
-      if (prefs.welcome_done === true) setWelcomeDone(true);
-      saveLocalOnboarding({ completed_tours: tours, onboarding_completed: completed });
+      setWelcomeDone(welcomeDone);
+      saveLocalOnboarding({ completed_tours: tours, onboarding_completed: completed, welcome_done: welcomeDone });
       setIsLoaded(true);
     }).catch((error) => {
       console.error('Failed to load onboarding state:', error);
@@ -127,13 +133,29 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   }, [tourSteps]);
 
   // Set up ResizeObserver to track element position changes
+  // Decouple rect updates from element list to avoid infinite re-subscribe loop
+  const [targetRects, setTargetRects] = useState<Record<string, DOMRect | null>>({});
+  const targetElementsRef = useRef(targetElements);
+  targetElementsRef.current = targetElements;
+
+  const updateRects = useCallback(() => {
+    const rects: Record<string, DOMRect | null> = {};
+    for (const t of targetElementsRef.current) {
+      rects[t.id] = t.element?.getBoundingClientRect() || null;
+    }
+    setTargetRects(rects);
+  }, []);
+
+  const updateRectsRef = useRef(updateRects);
+  updateRectsRef.current = updateRects;
+
   useEffect(() => {
     if (resizeObserverRef.current) {
       resizeObserverRef.current.disconnect();
     }
 
     resizeObserverRef.current = new ResizeObserver(() => {
-      scanElements();
+      updateRectsRef.current();
     });
 
     targetElements.forEach((target) => {
@@ -143,32 +165,42 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     });
 
     // Initial scan
-    scanElements();
+    updateRectsRef.current();
 
     return () => {
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
       }
     };
-  }, [scanElements, targetElements]);
+  }, [targetElements]);
 
   // Get current step
   const currentStep = currentStepIndex >= 0 && currentStepIndex < tourSteps.length
     ? tourSteps[currentStepIndex]
     : null;
 
-  // Get current target element info
+  // Get current target element info (merges live rect from ResizeObserver)
   const currentTargetElement = currentStep
-    ? targetElements.find((t) => t.id === currentStep.id) || null
+    ? (() => {
+        const base = targetElements.find((t) => t.id === currentStep.id);
+        if (!base) return null;
+        return { ...base, rect: targetRects[base.id] ?? base.rect };
+      })()
     : null;
 
   // Start tour
   const startTour = useCallback((steps: TourStep[]) => {
     setTourSteps(steps);
     setCurrentStepIndex(0);
-    // Wait for DOM to update, then scan elements
-    setTimeout(() => scanElements(), 100);
-  }, [scanElements]);
+  }, []);
+
+  // Scan elements whenever tourSteps change (replaces stale setTimeout)
+  useEffect(() => {
+    if (tourSteps.length > 0) {
+      const t = setTimeout(() => scanElements(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [tourSteps, scanElements]);
 
   // Go to specific step
   const goToStep = useCallback((index: number) => {
@@ -206,7 +238,8 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     setCompletedTours(prev => {
       if (!prev.includes(tourId)) {
         const updated = [...prev, tourId];
-        saveLocalOnboarding({ completed_tours: updated, onboarding_completed: false });
+        const local = loadLocalOnboarding();
+        saveLocalOnboarding({ completed_tours: updated, onboarding_completed: local.onboarding_completed, welcome_done: local.welcome_done });
         saveOnboardingPrefs({ completed_tours: updated }).catch((error) => {
           console.error('Failed to save onboarding state:', error);
         });
@@ -225,11 +258,12 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   const completeOnboarding = useCallback(() => {
     setOnboardingCompleted(true);
     setWelcomeDone(true);
-    const allTours = ['home', 'trades', 'markets', 'signals', 'settings'];
-    setCompletedTours(allTours);
-    saveLocalOnboarding({ completed_tours: allTours, onboarding_completed: true });
-    saveOnboardingPrefs({ onboarding_completed: true, welcome_done: true, completed_tours: allTours }).catch((error) => {
-      console.error('Failed to save onboarding state:', error);
+    setCompletedTours((prev) => {
+      saveLocalOnboarding({ completed_tours: prev, onboarding_completed: true, welcome_done: true });
+      saveOnboardingPrefs({ onboarding_completed: true, welcome_done: true, completed_tours: prev }).catch((error) => {
+        console.error('Failed to save onboarding state:', error);
+      });
+      return prev;
     });
   }, []);
 
@@ -242,13 +276,11 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
     setCompletedTours([]);
     setOnboardingCompleted(false);
     setWelcomeDone(false);
-    saveLocalOnboarding({ completed_tours: [], onboarding_completed: false });
+    saveLocalOnboarding({ completed_tours: [], onboarding_completed: false, welcome_done: false });
     saveOnboardingPrefs({ onboarding_completed: false, welcome_done: false, completed_tours: [] }).catch((error) => {
       console.error('Failed to reset onboarding state:', error);
     });
-    import('@/lib/preferences').then(({ resetOnboarding }) => {
-      resetOnboarding().catch(() => undefined);
-    });
+    resetOnboarding().catch(() => undefined);
   }, []);
 
   return {

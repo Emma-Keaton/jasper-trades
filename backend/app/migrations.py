@@ -68,6 +68,7 @@ async def migrate():
         await _migrate_device_settings()
         await _migrate_portfolios()
         await _migrate_signal_tips()
+        await _migrate_trades()
 
         logger.info("[OK] Database migration completed successfully")
 
@@ -199,3 +200,17 @@ async def _migrate_whatsapp_users():
 
     for col, sqlite_ddl, pg_ddl in expected_columns:
         await add_column_if_missing("whatsapp_users", col, sqlite_ddl, pg_ddl)
+
+
+async def _migrate_trades():
+    """Add missing columns to trades table."""
+    expected_columns = [
+        ("portfolio_id", "INTEGER", "INTEGER"),
+        ("entry_price", "REAL", "FLOAT"),
+        ("exit_price", "REAL", "FLOAT"),
+        ("pnl", "REAL", "FLOAT"),
+        ("pnl_percent", "REAL", "FLOAT"),
+    ]
+
+    for col, sqlite_ddl, pg_ddl in expected_columns:
+        await add_column_if_missing("trades", col, sqlite_ddl, pg_ddl)

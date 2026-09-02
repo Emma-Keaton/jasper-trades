@@ -7,7 +7,7 @@
  * light/dark theme intentionally stay client-side.
  */
 import { API_URL, DEFAULT_DEVICE_ID } from '@/lib/constants';
-import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { getOrCreateDeviceId, deviceHeaders } from '@/lib/deviceFingerprint';
 
 export interface OnboardingPrefs {
   welcome_done?: boolean;
@@ -20,16 +20,6 @@ export interface Preferences {
   agent_configs?: Record<string, AgentConfigMap>;
   collapsible_sections?: Record<string, boolean>;
   onboarding?: OnboardingPrefs;
-}
-
-function deviceHeaders(): Record<string, string> {
-  let deviceId: string;
-  try {
-    deviceId = getOrCreateDeviceId();
-  } catch {
-    deviceId = DEFAULT_DEVICE_ID;
-  }
-  return { 'X-Device-ID': deviceId };
 }
 
 // ---------------------------------------------------------------------------

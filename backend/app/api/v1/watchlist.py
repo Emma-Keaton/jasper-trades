@@ -141,48 +141,69 @@ async def _enrich(items: Any) -> Any:
     if not items:
         return items
 
-    # --- Crypto: CoinGecko /simple/price with include_24hr_change ---
+    # --- Crypto: use MarketDataRouter for price + CoinGecko search for change ---
     crypto_items = [i for i in items if i.get("asset_class") in ("crypto", None)]
     if crypto_items:
         try:
-            import httpx
+            from app.services.market_data_router import get_market_data_router
 
-            symbols = [i["symbol"].lower() for i in crypto_items]
-            # CoinGecko needs coin IDs, not tickers. Use /simple/price with IDs=...
-            # Fallback: try the symbol as both id and ticker
-            ids_param = ",".join(symbols)
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                resp = await client.get(
-                    "https://api.coingecko.com/api/v3/simple/price",
-                    params={
-                        "ids": ids_param,
-                        "vs_currencies": "usd",
-                        "include_24hr_change": "true",
-                    },
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for item in crypto_items:
-                        sym = item["symbol"].lower()
-                        coin_data = data.get(sym, {})
-                        if coin_data.get("usd") is not None:
-                            item["price_usd"] = coin_data["usd"]
-                        change = coin_data.get("usd_24h_change")
-                        if change is not None:
-                            item["price_change_24h"] = round(change, 2)
+            router = get_market_data_router()
+            for item in crypto_items:
+                symbol = item["symbol"]
+                # Get price from the router chain (CoinGecko -> CCXT -> CMC -> CoinLore)
+                res = await router.get_price(symbol)
+                if res and res.get("price"):
+                    item["price_usd"] = res["price"]
         except Exception:  # noqa: BLE001
-            # Fallback to router for price only
-            try:
-                from app.services.market_data_router import get_market_data_router
+            pass
 
-                router = get_market_data_router()
-                for item in crypto_items:
-                    if item.get("price_usd") is None:
-                        res = await router.get_price(item["symbol"])
-                        if res and res.get("price"):
-                            item["price_usd"] = res["price"]
-            except Exception:  # noqa: BLE001
-                pass
+        # Fetch 24h change via CoinGecko search (maps ticker -> coin ID)
+        try:
+            import httpx
+            import asyncio
+
+            symbols = list({i["symbol"].lower() for i in crypto_items if i.get("price_usd") is not None})
+            if symbols:
+                # Batch: search all symbols in parallel, then batch price fetch
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    # Step 1: parallel search to map tickers -> coin IDs
+                    async def search_coin(sym):
+                        try:
+                            resp = await client.get(
+                                "https://api.coingecko.com/api/v3/search",
+                                params={"query": sym},
+                            )
+                            if resp.status_code != 200:
+                                return sym, None
+                            coins = resp.json().get("coins") or []
+                            for c in coins:
+                                if (c.get("symbol") or "").lower() == sym:
+                                    return sym, c.get("id")
+                            return sym, coins[0].get("id") if coins else None
+                        except Exception:
+                            return sym, None
+
+                    results = await asyncio.gather(*[search_coin(s) for s in symbols[:8]])
+                    sym_to_id = {sym: cid for sym, cid in results if cid}
+
+                    # Step 2: single batched price request for all coin IDs
+                    if sym_to_id:
+                        coin_ids = list(sym_to_id.values())
+                        price_resp = await client.get(
+                            "https://api.coingecko.com/api/v3/simple/price",
+                            params={"ids": ",".join(coin_ids), "vs_currencies": "usd", "include_24hr_change": "true"},
+                        )
+                        if price_resp.status_code == 200:
+                            prices_data = price_resp.json()
+                            for sym, cid in sym_to_id.items():
+                                coin_data = prices_data.get(cid, {})
+                                change = coin_data.get("usd_24h_change")
+                                if change is not None:
+                                    for item in crypto_items:
+                                        if item["symbol"].lower() == sym:
+                                            item["price_change_24h"] = round(change, 2)
+        except Exception:  # noqa: BLE001
+            pass
 
     # --- Stocks: Finnhub quote (change_percent) ---
     stock_items = [i for i in items if i.get("asset_class") in ("stocks", "cn")]

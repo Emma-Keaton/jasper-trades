@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Shield, Check, DollarSign, Percent, AlertTriangle } from 'lucide-react';
 import { Toast } from '@/app/types';
 import { API_URL } from '@/lib/constants';
+import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { useCurrencyFormatter } from '@/lib/currencyContext';
 
 interface TradingCaps {
   configured: boolean;
@@ -23,6 +25,7 @@ interface TradingCapsSectionProps {
 }
 
 export default function TradingCapsSection({ portfolioId, triggerToast }: TradingCapsSectionProps) {
+  const { formatMoney } = useCurrencyFormatter();
   const [caps, setCaps] = useState<TradingCaps>({
     configured: false,
     portfolio_id: portfolioId || 1,
@@ -41,7 +44,10 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
   const fetchCaps = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/v1/trading-caps?portfolio_id=${portfolioId || 1}`);
+      const deviceId = getOrCreateDeviceId();
+      const res = await fetch(`${API_URL}/api/v1/trading-caps?portfolio_id=${portfolioId || 1}`, {
+        headers: { 'X-Device-ID': deviceId },
+      });
       const data = await res.json();
 
       if (data.configured) {
@@ -77,9 +83,10 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
 
     setSaving(true);
     try {
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch(`${API_URL}/api/v1/trading-caps`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
         body: JSON.stringify({
           portfolio_id: portfolioId || 1,
           max_position_amount: caps.max_position_amount,
@@ -137,25 +144,25 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
       {caps.configured && caps.enabled && (
         <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
           <div className="grid grid-cols-2 gap-4 text-sm">
-            {caps.max_position_amount && (
+            {caps.max_position_amount != null && (
               <div>
                 <span className="text-gray-400">Max Position:</span>
-                <span className="text-white font-mono ml-2">${caps.max_position_amount.toLocaleString()}</span>
+                <span className="text-white font-mono ml-2">{formatMoney(caps.max_position_amount)}</span>
               </div>
             )}
-            {caps.max_position_percentage && (
+            {caps.max_position_percentage != null && (
               <div>
                 <span className="text-gray-400">Max %:</span>
                 <span className="text-white font-mono ml-2">{caps.max_position_percentage}%</span>
               </div>
             )}
-            {caps.daily_loss_limit && (
+            {caps.daily_loss_limit != null && (
               <div>
                 <span className="text-gray-400">Daily Loss Limit:</span>
-                <span className="text-white font-mono ml-2">${caps.daily_loss_limit.toLocaleString()}</span>
+                <span className="text-white font-mono ml-2">{formatMoney(caps.daily_loss_limit)}</span>
               </div>
             )}
-            {caps.daily_loss_percentage && (
+            {caps.daily_loss_percentage != null && (
               <div>
                 <span className="text-gray-400">Daily Loss %:</span>
                 <span className="text-white font-mono ml-2">{caps.daily_loss_percentage}%</span>
@@ -176,7 +183,7 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
           <div>
             <label htmlFor="max-position-amount" className="block text-sm text-gray-300 mb-2 flex items-center gap-2">
               <DollarSign className="w-4 h-4" />
-              Max Position Amount ($)
+              Max Position Amount
             </label>
             <input
               id="max-position-amount"
@@ -215,7 +222,7 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
         {/* Daily Loss Limits */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label htmlFor="daily-loss-limit" className="block text-sm text-gray-300 mb-2">Daily Loss Limit ($)</label>
+            <label htmlFor="daily-loss-limit" className="block text-sm text-gray-300 mb-2">Daily Loss Limit</label>
             <input
               id="daily-loss-limit"
               type="number"

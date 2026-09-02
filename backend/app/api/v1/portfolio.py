@@ -93,17 +93,16 @@ async def get_performance(
 
     # Calculate time range
     now = datetime.utcnow()
+    end_date = now
 
     if period == "1d":
         start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = now
     elif period == "1w":
-        start_date = now
+        start_date = now - timedelta(weeks=1)
     elif period == "1m":
-        start_date = now
+        start_date = now - timedelta(days=30)
     elif period == "ytd":
         start_date = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-        end_date = now
     else:
         start_date = None
         end_date = None

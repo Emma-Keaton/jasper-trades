@@ -77,7 +77,12 @@ export default function SettingsScreen({ triggerToast, onNavigate, defaultOpen, 
     { id: 'appearance', icon: <Palette className="h-5 w-5" />, title: 'Appearance', desc: `${theme === 'dark' ? 'Dark' : 'Light'} mode · ${currency} currency` },
   ];
 
-  const done = steps.filter(s => !s.optional).length;
+  const done = steps.filter(s => {
+    if (s.id === 'mode') return true;
+    if (s.id === 'ai') return geminiConfigured;
+    if (s.id === 'appearance') return true;
+    return false;
+  }).length;
 
   return (
     <div className="flex flex-col gap-8">

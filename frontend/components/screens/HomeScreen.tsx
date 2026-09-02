@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Bot, Play, Pause, Sparkles, ArrowRight, Activity } from 'lucide-react';
 import { Holding, TradeHistoryItem } from '@/app/types';
 import { EquityDataPoint } from '@/hooks/usePortfolioHistory';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, apiRequest } from '@/lib/api-client';
 import { Card, Stat, Button, Badge, EmptyState, RowLink } from '@/components/ui';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 import { StepId } from '@/components/screens/SettingsScreen';
@@ -45,14 +45,10 @@ export default function HomeScreen({
   React.useEffect(() => {
     isAiRunning().then(setRunning);
     fetchTradingMode().then((m) => setTradingMode(m));
-    const deviceId = getOrCreateDeviceId();
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/watchlist`, {
-      headers: { 'X-Device-ID': deviceId },
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (d?.watchlist) {
-          const syms = d.watchlist.map((w: any) => w.symbol).slice(0, 12);
+    apiRequest<any>('/api/v1/watchlist')
+      .then((res) => {
+        if (res.data?.watchlist) {
+          const syms = res.data.watchlist.map((w: any) => w.symbol).slice(0, 12);
           setWatchlist(syms);
         }
       })
@@ -76,9 +72,13 @@ export default function HomeScreen({
   const watchlistFull = watchlist.length >= 12;
 
   const todayPnl = useMemo(() => {
-    if (equityData.length > 0 && equityData[0].y > 0) {
-      const change = totalValue - equityData[0].y;
-      return { value: change, pct: (change / equityData[0].y) * 100 };
+    if (equityData.length > 0) {
+      // Use the most recent equity snapshot as the baseline for today's change
+      const lastSnapshot = equityData[equityData.length - 1];
+      if (lastSnapshot.y > 0) {
+        const change = totalValue - lastSnapshot.y;
+        return { value: change, pct: (change / lastSnapshot.y) * 100 };
+      }
     }
     return { value: 0, pct: 0 };
   }, [equityData, totalValue]);
