@@ -168,8 +168,9 @@ export default function HomeScreen({
             <div className="flex items-center gap-2">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-600 text-white"><Bot className="h-5 w-5" /></span>
               <span className="font-display text-lg font-bold text-slate-900 dark:text-slate-50">The AI Trader</span>
-              <Badge tone={running ? 'up' : 'neutral'}>
-                <span className={`h-1.5 w-1.5 rounded-full ${running ? 'bg-emerald-500' : 'bg-slate-400'}`} />{running ? 'Trading' : 'Paused'}
+              <Badge tone={running && watchlist.length > 0 ? 'up' : running ? 'warning' : 'neutral'}>
+                <span className={`h-1.5 w-1.5 rounded-full ${running && watchlist.length > 0 ? 'bg-emerald-500' : running ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                {running && watchlist.length > 0 ? 'Trading' : running ? 'Idle' : 'Paused'}
               </Badge>
             </div>
             <p className="mt-4 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
