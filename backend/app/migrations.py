@@ -148,9 +148,6 @@ async def _migrate_device_settings():
         ("trading_mode", "TEXT DEFAULT 'practice'", "TEXT DEFAULT 'practice'"),
         ("preferences", "TEXT", "TEXT"),
 
-        # Colab / Kronos integration
-        ("colab_url", "TEXT", "TEXT"),
-
         # AI model selection
         ("nvidia_model", "TEXT", "TEXT"),
 

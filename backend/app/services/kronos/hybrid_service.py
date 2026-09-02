@@ -4,7 +4,6 @@ Hybrid Kronos Service: Local + Cloud Fallback
 Routes predictions to:
 1. Local Kronos-mini (default, 4GB optimized)
 2. Hugging Face Inference API (free tier fallback)
-3. Google Colab GPU server with 3-model ensemble (unlimited free fallback)
 
 Perfect for 4GB RAM systems that need cloud burst capability.
 """
@@ -32,21 +31,10 @@ class HybridKronosService:
     """
 
     def __init__(self):
-        self.colab_url: Optional[str] = None
         self.hf_model_id: str = "NeoQuasar/Kronos-mini"  # Placeholder
         self._local_predictions = 0
         self._cloud_predictions = 0
         self._errors = 0
-
-    def configure_colab(self, url: str):
-        """
-        Configure Google Colab fallback URL.
-
-        Args:
-            url: ngrok URL from Colab notebook (e.g., "https://abc123.ngrok.io")
-        """
-        self.colab_url = url
-        logger.info(f"Configured Colab fallback: {url}")
 
     async def predict(
         self,
@@ -134,29 +122,6 @@ class HybridKronosService:
                 logger.warning(f"Hugging Face API failed for {symbol}: {e}")
 
         # Try Colab GPU
-        if self.colab_url and use_cloud_if_busy:
-            logger.info(f"Trying Colab GPU for {symbol}")
-            try:
-                result = await self._colab_predict(symbol, ohlcv_data, forecast_horizon)
-                if result.get("status") == "success":
-                    self._cloud_predictions += 1
-
-                    prediction_store.save_prediction(
-                        symbol=symbol,
-                        predictions=result["predictions"],
-                        model_name=f"kronos-colab-{settings.KRONOS_COLAB_STRATEGY}",
-                        forecast_horizon=forecast_horizon,
-                        current_price=ohlcv_data[-1][3] if ohlcv_data else 0,
-                        predicted_return=result.get("predicted_return"),
-                    )
-
-                    result["source"] = "colab"
-                    result["symbol"] = symbol
-                    return result
-
-            except Exception as e:
-                logger.warning(f"Colab GPU failed for {symbol}: {e}")
-
         # All methods failed
         self._errors += 1
         logger.warning(f"All prediction methods failed for {symbol}")
@@ -190,83 +155,6 @@ class HybridKronosService:
                 return {"status": "error", "error": f"HF API: {response.status_code}"}
 
             return response.json()
-
-    async def _colab_predict(
-        self,
-        symbol: str,
-        ohlcv_data: List[List[float]],
-        forecast_horizon: int,
-    ) -> Dict[str, Any]:
-        """
-        Call Google Colab GPU server with 3-model support.
-        
-        The Colab notebook supports 3 strategies:
-        - cascade: Fast filtering (mini → small → base)
-        - ensemble: Weighted average of all 3 models
-        - context: Auto-select by data length
-        
-        Converts OHLCV to returns format and parses the multi-model response.
-        """
-        if not self.colab_url:
-            return {"status": "error", "error": "Colab URL not configured"}
-
-        # Convert OHLCV to returns (Kronos format)
-        # ohlcv_data: [seq_len, 6] where index 3 = close price
-        if len(ohlcv_data) < 2:
-            return {"status": "error", "error": "Insufficient data for returns calculation"}
-        
-        close_prices = [bar[3] for bar in ohlcv_data]
-        returns = [(close_prices[i] - close_prices[i-1]) / close_prices[i-1] 
-                   for i in range(1, len(close_prices))]
-
-        async with httpx.AsyncClient() as client:
-            # Call new 3-model API format
-            response = await client.post(
-                f"{self.colab_url}/predict/batch",
-                json={
-                    "symbols": [symbol],
-                    "strategy": settings.KRONOS_COLAB_STRATEGY,
-                    "returns": returns,
-                    "forecast_horizon": forecast_horizon,
-                },
-                timeout=60.0,
-            )
-
-            if response.status_code != 200:
-                return {"status": "error", "error": f"Colab: {response.status_code}"}
-            
-            result = response.json()
-            
-            # Extract prediction for the symbol from batch response
-            if symbol in result:
-                symbol_result = result[symbol]
-                # Convert Colab response to backend format
-                if symbol_result.get("direction") == "UP":
-                    predicted_return = abs(symbol_result.get("predicted_change", 0))
-                elif symbol_result.get("direction") == "DOWN":
-                    predicted_return = -abs(symbol_result.get("predicted_change", 0))
-                else:
-                    predicted_return = 0
-                
-                # Generate price predictions from returns
-                last_close = ohlcv_data[-1][3]
-                predictions = [last_close * (1 + predicted_return * (i + 1) / forecast_horizon) 
-                              for i in range(forecast_horizon)]
-                
-                return {
-                    "status": "success",
-                    "predictions": predictions,
-                    "predicted_return": predicted_return,
-                    "forecast_horizon": forecast_horizon,
-                    "confidence_lower": [p * 0.98 for p in predictions],
-                    "confidence_upper": [p * 1.02 for p in predictions],
-                    "strategy": symbol_result.get("strategy", settings.KRONOS_COLAB_STRATEGY),
-                    "source": "colab",
-                    "symbol": symbol,
-                    "inference_time_ms": symbol_result.get("inference_time_ms", 0),
-                }
-            
-            return {"status": "error", "error": "Symbol not in response"}
 
     async def predict_batch(
         self,
@@ -314,8 +202,6 @@ class HybridKronosService:
             "cloud_predictions": self._cloud_predictions,
             "errors": self._errors,
             "total_predictions": self._local_predictions + self._cloud_predictions,
-            "colab_configured": self.colab_url is not None,
-            "colab_strategy": settings.KRONOS_COLAB_STRATEGY,
             "hf_token_configured": settings.HUGGINGFACE_API_TOKEN is not None,
             "current_memory_mb": memory["rss_mb"],
             "system_memory_percent": memory["system_percent"],
@@ -364,8 +250,3 @@ async def predict_batch_with_fallback(
 ) -> Dict[str, Any]:
     """Quick batch prediction with cloud fallback."""
     return await hybrid_kronos_service.predict_batch(symbols_data, forecast_horizon)
-
-
-def configure_colab_fallback(url: str):
-    """Configure Colab GPU fallback URL."""
-    hybrid_kronos_service.configure_colab(url)

@@ -1,13 +1,18 @@
 ---
 name: kronos-colab-3model-integration
-description: Integrate Google Colab GPU hosting for Kronos 3-model ensemble predictions with cascade/ensemble/context strategies
+description: DEPRECATED - Google Colab GPU hosting for Kronos removed from codebase (2026-09)
 source: auto-skill
 extracted_at: '2026-06-08T21:36:37.142Z'
 ---
 
-# Kronos Colab 3-Model Integration
+# Kronos Colab 3-Model Integration — DEPRECATED
 
-## Overview
+> **Status:** This integration was removed from the codebase in September 2026.
+> The `colab_url` column, `KRONOS_COLAB_STRATEGY` config, `configure_colab_fallback()`,
+> and `_colab_predict()` method have all been deleted.
+> Kronos now runs locally via `kronos_service_4gb` with HF Inference API as the only cloud fallback.
+
+## Overview (historical)
 
 Integrate Google Colab's free GPU to run three Kronos models (mini/small/base) concurrently for enhanced time-series forecasting. This approach provides:
 

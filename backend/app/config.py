@@ -136,10 +136,6 @@ class Settings(BaseSettings):
     KRONOS_MEMORY_THRESHOLD: float = 85.0  # Pause inference if RAM > 85%
     KRONOS_USE_CLOUD: bool = False  # Use HuggingFace/remote fallback (Colab removed)
     HUGGINGFACE_API_TOKEN: Optional[str] = None
-    # DEPRECATED: legacy key referenced by kronos/hybrid_service.py for a Colab
-    # code path that is never invoked (KRONOS_USE_CLOUD=false, no Colab URL set).
-    # Kept only so the module imports cleanly; remove when hybrid_service is stripped.
-    KRONOS_COLAB_STRATEGY: str = "cascade"
 
     # Kronos Remote Service (Render Deployment)
     KRONOS_SERVICE_URL: Optional[str] = None  # Remote Kronos service URL (Render)

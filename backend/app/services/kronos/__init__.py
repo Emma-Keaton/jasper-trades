@@ -45,7 +45,6 @@ try:
         hybrid_kronos_service,
         predict_with_fallback,
         predict_batch_with_fallback,
-        configure_colab_fallback,
     )
 
     from .symbol_priority import (
@@ -77,7 +76,6 @@ try:
         "hybrid_kronos_service",
         "predict_with_fallback",
         "predict_batch_with_fallback",
-        "configure_colab_fallback",
         # Symbol priority
         "SymbolPriorityQueue",
         "symbol_priority_queue",
@@ -130,10 +128,6 @@ except (ImportError, OSError, RuntimeError) as e:
     def predict_batch_with_fallback(*args, **kwargs):
         return predict_batch(*args, **kwargs)
     
-    def configure_colab_fallback(*args, **kwargs):
-        logger.info("Colab fallback configured (local Kronos unavailable)")
-        pass
-    
     def wait_for_memory(*args, **kwargs):
         pass
     
@@ -161,7 +155,6 @@ except (ImportError, OSError, RuntimeError) as e:
         "hybrid_kronos_service",
         "predict_with_fallback",
         "predict_batch_with_fallback",
-        "configure_colab_fallback",
         "SymbolPriorityQueue",
         "symbol_priority_queue",
         "get_memory_usage",

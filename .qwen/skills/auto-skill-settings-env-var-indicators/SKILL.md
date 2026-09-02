@@ -177,7 +177,7 @@ Common variables for this project:
 - `TELEGRAM_BOT_TOKEN` - Notifications
 - `TROVE_API_KEY` - Nigerian/US stocks broker
 - `CTRADER_CLIENT_ID` / `CTRADER_CLIENT_SECRET` - Copy trading OAuth
-- `KRONOS_COLAB_URL` - AI predictions endpoint
+- `KRONOS_SERVICE_URL` - AI predictions endpoint (Render)
 
 ## Render Deployment Instructions for Users
 

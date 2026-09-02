@@ -193,7 +193,6 @@ CREATE TABLE device_settings (
     binance_secret                         VARCHAR(500),
     solana_rpc_url                         VARCHAR(500),
     jupiter_enabled                        BOOLEAN DEFAULT false,
-    colab_url                              VARCHAR(500),
     ctrader_sandbox                        BOOLEAN DEFAULT true,
     discord_config                         TEXT,
     slack_config                           TEXT,

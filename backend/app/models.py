@@ -176,8 +176,6 @@ class DeviceSettings(Base):
     solana_rpc_url = Column(String, nullable=True)
     jupiter_enabled = Column(Boolean, default=False)
 
-    colab_url = Column(String, nullable=True)  # Kronos Colab URL
-
     # cTrader sandbox/live mode
     ctrader_sandbox = Column(Boolean, default=True)  # True = Sandbox/Paper, False = Live production
 

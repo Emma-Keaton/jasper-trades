@@ -113,8 +113,6 @@ CORS_ORIGINS="http://localhost:3000,https://your-domain.com"
 ```env
 BINANCE_API_KEY=
 BINANCE_API_SECRET=
-KRONOS_COLAB_URL=
-KRONOS_COLAB_STRATEGY="cascade"
 ```
 
 ## Critical Dependencies

@@ -132,16 +132,13 @@ After Kronos service deploys:
 - **Free tier** = unlimited uptime (unlike Colab's 12-hour sessions)
 - **Separate deployment** = independent scaling and updates
 
-## Migration from Colab
+## Kronos Service URL
 
-Replace `KRONOS_COLAB_URL` with `KRONOS_SERVICE_URL`:
+Use `KRONOS_SERVICE_URL` to point to the remote Kronos deployment:
 
-| Old (Colab) | New (Render) |
-|-------------|--------------|
-| `KRONOS_COLAB_URL` | `KRONOS_SERVICE_URL` |
-| Session-based uptime | 24/7 uptime |
-| GPU inference | CPU inference |
-| Manual notebook | Auto-deploy on push |
+| Config | Description |
+|--------|-------------|
+| `KRONOS_SERVICE_URL` | Remote Kronos service URL (Render) |
 
 ## Prediction Strategies
 
