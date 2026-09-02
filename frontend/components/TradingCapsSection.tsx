@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Shield, Check, DollarSign, Percent, AlertTriangle } from 'lucide-react';
 import { Toast } from '@/app/types';
 import { API_URL } from '@/lib/constants';
-import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
+import { apiFetch } from '@/lib/api-client';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 
 interface TradingCaps {
@@ -44,10 +44,7 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
   const fetchCaps = useCallback(async () => {
     setLoading(true);
     try {
-      const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/trading-caps?portfolio_id=${portfolioId || 1}`, {
-        headers: { 'X-Device-ID': deviceId },
-      });
+      const res = await apiFetch(`/api/v1/trading-caps?portfolio_id=${portfolioId || 1}`);
       const data = await res.json();
 
       if (data.configured) {
@@ -83,10 +80,8 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
 
     setSaving(true);
     try {
-      const deviceId = getOrCreateDeviceId();
-      const res = await fetch(`${API_URL}/api/v1/trading-caps`, {
+      const res = await apiFetch(`/api/v1/trading-caps`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
         body: JSON.stringify({
           portfolio_id: portfolioId || 1,
           max_position_amount: caps.max_position_amount,

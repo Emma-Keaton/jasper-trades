@@ -26,7 +26,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import async_session
-from app.models import DeviceSettings, Trade
+from app.models import DeviceSettings, Trade, Portfolio
 
 logger = structlog.get_logger(__name__)
 
@@ -183,6 +183,12 @@ class UniversalPaperTradingService:
 
         try:
             async with async_session() as db:
+                # Resolve portfolio_id from device_id
+                port_result = await db.execute(
+                    select(Portfolio).where(Portfolio.device_id == device_id).limit(1)
+                )
+                portfolio = port_result.scalar_one_or_none()
+
                 t = Trade(
                     symbol=symbol,
                     side=side,  # buy/sell
@@ -191,6 +197,7 @@ class UniversalPaperTradingService:
                     broker="paper",
                     status="filled",
                     agent_name=agent_name,
+                    portfolio_id=portfolio.id if portfolio else None,
                     pnl=realized if side == "sell" else None,
                     pnl_percent=((realized / (pos["avg_price"] * qty)) * 100 if side == "sell" and pos and pos.get("avg_price") and qty else None),
                     created_at=_now().replace(tzinfo=None),

@@ -3,8 +3,7 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { TrendingUp, Compass, Microscope, Star, Sparkles, Search, X, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { Card } from '@/components/ui';
-import { getOrCreateDeviceId, deviceHeaders } from '@/lib/deviceFingerprint';
-import { DEFAULT_DEVICE_ID } from '@/lib/constants';
+import { deviceHeaders } from '@/lib/deviceFingerprint';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';

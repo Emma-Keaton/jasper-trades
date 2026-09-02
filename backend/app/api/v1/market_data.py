@@ -84,7 +84,7 @@ async def search_crypto(
                 if not exchange_cls:
                     continue
                 ex = exchange_cls({"enableRateLimit": True, "timeout": 6000})
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 markets = await loop.run_in_executor(None, ex.load_markets)
                 query_upper = q.upper()
                 query_lower = q.lower()
