@@ -188,8 +188,10 @@ export default function HomeScreen({
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Watchlist is full (max 12). Remove an asset in Markets to add more.</p>
             )}
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              {running
+              {running && watchlist.length > 0
                 ? 'Jasper is monitoring the markets and placing practice trades for you. Check Trades to see what it is doing.'
+                : running && watchlist.length === 0
+                ? 'Jasper is running but has no assets to watch. Add some in Markets to start trading.'
                 : 'Press START and Jasper will begin watching and trading with practice money.'}
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
