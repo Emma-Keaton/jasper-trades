@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { TrendingUp, Compass, Microscope, Star, Sparkles, Search, X } from 'lucide-react';
+import { TrendingUp, Compass, Microscope, Star, Sparkles, Search, X, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { Card } from '@/components/ui';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { DEFAULT_DEVICE_ID } from '@/lib/constants';
+import { useCurrencyFormatter } from '@/lib/currencyContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -33,7 +34,7 @@ function normalizeCrypto(items: any[]): MarketItem[] {
     .map((c: any) => ({
       symbol: (c.symbol || c.base_symbol || c.ticker || '').toUpperCase(),
       name: c.name || c.base_name || c.symbol || '',
-      change: Number(c.change || c.price_change_24h || c.change_24h || 0),
+      change: Number(c.change || c.price_change_24h || c.change_24h || c.market_cap_change_24h || 0),
       price_usd: c.price_usd ?? null,
       source: c.source || undefined,
       asset_class: 'crypto' as const,
@@ -76,9 +77,11 @@ function assetBadge(ac: MarketItem['asset_class']) {
 }
 
 export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate: (tab: string) => void; triggerToast?: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void }) {
+  const { formatMoney } = useCurrencyFormatter();
   const [newTokens, setNewTokens] = useState<MarketItem[]>([]);
   const [trending, setTrending] = useState<MarketItem[]>([]);
   const [watchlist, setWatchlist] = useState<MarketItem[]>([]);
+  const [topMovers, setTopMovers] = useState<MarketItem[]>([]);
   const [loading, setLoading] = useState(true);
   const mounted = useRef(true);
 
@@ -98,7 +101,7 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
         name: w.name || w.symbol || '',
         price_usd: w.price_usd ?? null,
         asset_class: (w.asset_class === 'stocks' || w.asset_class === 'cn' ? w.asset_class : 'crypto') as MarketItem['asset_class'],
-        change: 0,
+        change: w.price_change_24h ?? 0,
       }));
       setWatchlist(items);
     } catch {
@@ -135,10 +138,11 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
   useEffect(() => {
     mounted.current = true;
     (async () => {
-      const [disco, trend, watchRes] = await Promise.all([
+      const [disco, trend, watchRes, moversRes] = await Promise.all([
         fetch(`${API_URL}/api/v1/memecoin/discover?limit=8`).catch(() => null),
         fetch(`${API_URL}/api/v1/memecoin/trending?limit=8`).catch(() => null),
         fetch(`${API_URL}/api/v1/watchlist`, { headers: deviceHeaders() }).catch(() => null),
+        fetch(`${API_URL}/api/v1/market-data/gainers-losers?limit=10`).catch(() => null),
       ]);
       if (mounted.current) {
         if (disco && disco.ok) {
@@ -156,9 +160,19 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
             name: w.name || w.symbol || '',
             price_usd: w.price_usd ?? null,
             asset_class: (w.asset_class === 'stocks' || w.asset_class === 'cn' ? w.asset_class : 'crypto') as MarketItem['asset_class'],
-            change: 0,
+            change: w.price_change_24h ?? 0,
           }));
           setWatchlist(items);
+        }
+        if (moversRes && moversRes.ok) {
+          const data = await moversRes.json();
+          const gainers = normalizeCrypto(data.top_gainers || []);
+          const losers = normalizeCrypto(data.top_losers || []);
+          // Mix gainers and losers, sorted by absolute change (biggest movers first)
+          const mixed = [...gainers, ...losers].sort(
+            (a, b) => Math.abs(b.change || 0) - Math.abs(a.change || 0)
+          );
+          setTopMovers(mixed);
         }
         setLoading(false);
       }
@@ -268,13 +282,14 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
           <Star className="h-4 w-4 fill-current" />
         </span>
       </div>
-      {typeof item.change === 'number' && item.asset_class === 'crypto' && (
-        <p className={`tnum mt-1 text-sm font-semibold ${item.change >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-          {item.change >= 0 ? '+' : ''}{item.change}%
+      {typeof item.change === 'number' && item.change !== 0 && (
+        <p className={`tnum mt-1 flex items-center gap-1 text-sm font-semibold ${item.change >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+          {item.change >= 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
+          {item.change >= 0 ? '+' : ''}{item.change.toFixed(2)}%
         </p>
       )}
       {typeof item.price_usd === 'number' && item.price_usd > 0 && (
-        <p className="tnum mt-1 text-xs text-slate-400 dark:text-slate-500">${Number(item.price_usd).toLocaleString(undefined, { maximumFractionDigits: 8 })}</p>
+        <p className="tnum mt-1 text-xs text-slate-400 dark:text-slate-500">{formatMoney(item.price_usd)}</p>
       )}
     </Card>
   );
@@ -389,6 +404,20 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
               </div>
             )}
           </section>
+
+          {/* Top Movers (gainers + losers mixed) */}
+          {topMovers.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-brand-500" />
+                <h2 className="text-lg font-display font-bold text-slate-900 dark:text-slate-50">Top Movers</h2>
+              </div>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Biggest 24h price changes across crypto</p>
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {topMovers.map(renderCard)}
+              </div>
+            </section>
+          )}
 
           {/* Trending right now */}
           <section>

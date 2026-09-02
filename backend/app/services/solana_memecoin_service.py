@@ -1,20 +1,22 @@
 """
-Solana Memecoin Market Data - DexScreener discovery + Jupiter pricing.
+Solana Memecoin Market Data - GeckoTerminal + DexScreener + Jupiter pricing.
 
 The base Solana broker (app/brokers/solana_service.py) only knows ~7 hardcoded
 mints. This service adds dynamic memecoin discovery + market polling for ANY
-SPL token on Solana using the public DexScreener API (Nigeria-accessible,
-no auth, 60 req/min). Execution stays on Jupiter (via solana_service.py), but
-this service resolves an arbitrary ticker -> mint address, then polls live
-price/liquidity/volume so the AI can trade real memecoins.
+SPL token on Solana. GeckoTerminal is the primary source for trending pools
+(free, 30 req/min, returns price_change_percentage). DexScreener is the
+fallback for search and newly launched tokens.
 
-Endpoints used (verified):
+Primary endpoints (GeckoTerminal):
+  GET https://api.geckoterminal.com/api/v2/networks/trending_pools
+  GET https://api.geckoterminal.com/api/v2/networks/{network}/new_pools
+
+Fallback endpoints (DexScreener):
   GET https://api.dexscreener.com/latest/dex/search?q=<query>
   GET https://api.dexscreener.com/token-pairs/v1/solana/<mint>
-  GET https://api.dexscreener.com/tokens/v1/solana/<mint(s)>
   GET https://api.dexscreener.com/metas/trending/v1
-  GET https://api.dexscreener.com/token-profiles/latest/v1   (newly launched tokens)
-  GET https://api-v3.raydium.io/pools/info/mint?mint1=<mint> (Raydium pool data)
+  GET https://api.dexscreener.com/token-profiles/latest/v1
+  GET https://api-v3.raydium.io/pools/info/mint?mint1=<mint>
 """
 from __future__ import annotations
 
@@ -30,14 +32,16 @@ logger = structlog.get_logger(__name__)
 
 SOLANA_CHAIN_ID = "solana"
 RAYDIUM_API = "https://api-v3.raydium.io"
+GECKOTERMINAL_API = "https://api.geckoterminal.com/api/v2"
 
 
 class SolanaMemecoinDataService:
-    """DexScreener-based Solana memecoin discovery + market data."""
+    """GeckoTerminal-primary, DexScreener-fallback Solana memecoin discovery."""
 
     def __init__(self, base_url: Optional[str] = None) -> None:
         self.base_url = base_url or settings.DEXSCREENER_API
         self.raydium_base = RAYDIUM_API
+        self.gecko_base = GECKOTERMINAL_API
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._cache_ttl: float = 30.0
 
@@ -182,11 +186,125 @@ class SolanaMemecoinDataService:
         return out
 
     # ------------------------------------------------------------------
+    # GeckoTerminal (primary source for trending pools, free 30 req/min)
+    # ------------------------------------------------------------------
+
+    async def _gecko_trending_pools(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Trending Solana pools from GeckoTerminal with price_change_percentage."""
+        url = f"{self.gecko_base}/networks/trending_pools"
+        params = {"include": "base_token,quote_token,dex", "duration": "24h"}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("GeckoTerminal trending pools failed", error=str(e))
+            return []
+
+        pools = data.get("data") or []
+        # Build included lookup for base_token info
+        included = data.get("included") or []
+        token_map: Dict[str, Dict[str, Any]] = {}
+        for inc in included:
+            if inc.get("type") == "token":
+                attrs = inc.get("attributes") or {}
+                token_map[inc["id"]] = {
+                    "symbol": attrs.get("symbol"),
+                    "name": attrs.get("name"),
+                    "address": attrs.get("address"),
+                }
+
+        out: List[Dict[str, Any]] = []
+        for pool in pools[:limit]:
+            attrs = pool.get("attributes") or {}
+            relationships = pool.get("relationships") or {}
+            base_token_rel = (relationships.get("base_token") or {}).get("data") or {}
+            base_token_id = base_token_rel.get("id", "")
+            base_token = token_map.get(base_token_id, {})
+
+            # GeckoTerminal returns price_change_percentage under attributes
+            price_changes = attrs.get("price_change_percentage") or {}
+            change_24h = price_changes.get("h24") or 0
+
+            volume = attrs.get("volume_usd") or {}
+            liquidity = attrs.get("reserve_in_usd") or {}
+
+            out.append({
+                "base_symbol": (base_token.get("symbol") or "").upper(),
+                "base_name": base_token.get("name") or "",
+                "base_mint": base_token.get("address") or "",
+                "price_usd": float(attrs.get("base_token_price_usd") or 0),
+                "price_change_24h": float(change_24h) if change_24h else 0,
+                "volume_24h": float(volume.get("h24") or 0),
+                "liquidity_usd": float(liquidity or 0),
+                "source": "geckoterminal",
+            })
+        return out
+
+    async def _gecko_new_pools(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Newly launched Solana pools from GeckoTerminal."""
+        url = f"{self.gecko_base}/networks/{SOLANA_CHAIN_ID}/new_pools"
+        params = {"include": "base_token,quote_token,dex"}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("GeckoTerminal new pools failed", error=str(e))
+            return []
+
+        pools = data.get("data") or []
+        included = data.get("included") or []
+        token_map: Dict[str, Dict[str, Any]] = {}
+        for inc in included:
+            if inc.get("type") == "token":
+                attrs = inc.get("attributes") or {}
+                token_map[inc["id"]] = {
+                    "symbol": attrs.get("symbol"),
+                    "name": attrs.get("name"),
+                    "address": attrs.get("address"),
+                }
+
+        out: List[Dict[str, Any]] = []
+        for pool in pools[:limit]:
+            attrs = pool.get("attributes") or {}
+            relationships = pool.get("relationships") or {}
+            base_token_rel = (relationships.get("base_token") or {}).get("data") or {}
+            base_token_id = base_token_rel.get("id", "")
+            base_token = token_map.get(base_token_id, {})
+
+            price_changes = attrs.get("price_change_percentage") or {}
+            change_24h = price_changes.get("h24") or 0
+            volume = attrs.get("volume_usd") or {}
+            liquidity = attrs.get("reserve_in_usd") or {}
+
+            out.append({
+                "base_symbol": (base_token.get("symbol") or "").upper(),
+                "base_name": base_token.get("name") or "",
+                "base_mint": base_token.get("address") or "",
+                "price_usd": float(attrs.get("base_token_price_usd") or 0),
+                "price_change_24h": float(change_24h) if change_24h else 0,
+                "volume_24h": float(volume.get("h24") or 0),
+                "liquidity_usd": float(liquidity or 0),
+                "created_at": attrs.get("pool_created_at"),
+                "source": "geckoterminal",
+            })
+        return out
+
+    # ------------------------------------------------------------------
     # Discover (newly launched tokens) vs trending (high 24h volume)
     # ------------------------------------------------------------------
 
     async def discover(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Newly launched/promoted Solana tokens (newest first, low cap)."""
+        """Newly launched Solana tokens — GeckoTerminal primary, DexScreener fallback."""
+        # 1. Try GeckoTerminal new pools first
+        gecko_new = await self._gecko_new_pools(limit)
+        if gecko_new:
+            return gecko_new
+
+        # 2. Fallback to DexScreener token profiles
         url = f"{self.base_url}/token-profiles/latest/v1"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -195,7 +313,7 @@ class SolanaMemecoinDataService:
                 profiles = resp.json() or []
         except Exception as e:  # noqa: BLE001
             logger.debug("DexScreener token-profiles fetch failed", error=str(e))
-            profiles = []
+            return []
         out: List[Dict[str, Any]] = []
         seen: set[str] = set()
         for p in profiles[:max(limit * 2, 20)]:
@@ -224,20 +342,33 @@ class SolanaMemecoinDataService:
         return out
 
     async def trending_v2(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Merged trending feed: high 24h volume Raydium pools + DexScreener metas.
+        """Merged trending feed: GeckoTerminal (primary) + Raydium + DexScreener.
 
-        Dedupes by mint and prefers the higher-liquidity entry.
+        Dedupes by symbol and prefers the higher-liquidity entry.
         """
         merged: Dict[str, Dict[str, Any]] = {}
+
+        # 1. GeckoTerminal trending pools (primary — has price_change_percentage)
+        for item in await self._gecko_trending_pools(limit):
+            sym = item.get("base_symbol", "")
+            if sym:
+                merged[sym] = item
+
+        # 2. Raydium top pools (supplement)
         for item in await self._raydium_top_pools(limit):
-            mint = item.get("base_mint")
-            if mint:
-                merged[mint] = item
+            sym = item.get("base_symbol") or ""
+            if sym and sym not in merged:
+                merged[sym] = item
+
+        # 3. DexScreener metas (fallback — may lack price_change_24h)
         try:
             for item in await self.trending(limit):
-                merged.setdefault(item.get("base_mint") or item.get("slug") or "", item)
+                sym = (item.get("base_symbol") or item.get("slug") or "").upper()
+                if sym and sym not in merged:
+                    merged[sym] = item
         except Exception:  # noqa: BLE001
             pass
+
         ranked = sorted(
             merged.values(),
             key=lambda x: float(x.get("volume_24h") or 0) * 1.0

@@ -115,6 +115,13 @@ export default function HomeScreen({
       return;
     }
 
+    // Guard: must have watched assets before starting.
+    if (watchlist.length === 0) {
+      triggerToast('info', 'Add assets first', 'Star some assets in Markets for Jasper to watch and trade.');
+      onNavigate('markets');
+      return;
+    }
+
     // Live-mode guard: confirm before trading with real money.
     if (mode === 'live') {
       const ok = window.confirm(

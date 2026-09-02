@@ -137,19 +137,68 @@ def row_to_dict(row: WatchlistItem) -> Dict[str, Any]:
 
 
 async def _enrich(items: Any) -> Any:
-    """Best-effort live price enrichment (never fails the listing)."""
-    crypto_symbols = [i["symbol"] for i in items if i.get("asset_class") in ("crypto", None)]
-    if not crypto_symbols:
+    """Best-effort live price + 24h change enrichment (never fails the listing)."""
+    if not items:
         return items
-    try:
-        from app.services.market_data_router import get_market_data_router
 
-        router = get_market_data_router()
-        for item in items:
-            if item.get("asset_class") in ("crypto", None):
-                res = await router.get_price(item["symbol"])
-                if res and res.get("price"):
-                    item["price_usd"] = res["price"]
-    except Exception:  # noqa: BLE001
-        pass
+    # --- Crypto: CoinGecko /simple/price with include_24hr_change ---
+    crypto_items = [i for i in items if i.get("asset_class") in ("crypto", None)]
+    if crypto_items:
+        try:
+            import httpx
+
+            symbols = [i["symbol"].lower() for i in crypto_items]
+            # CoinGecko needs coin IDs, not tickers. Use /simple/price with IDs=...
+            # Fallback: try the symbol as both id and ticker
+            ids_param = ",".join(symbols)
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(
+                    "https://api.coingecko.com/api/v3/simple/price",
+                    params={
+                        "ids": ids_param,
+                        "vs_currencies": "usd",
+                        "include_24hr_change": "true",
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for item in crypto_items:
+                        sym = item["symbol"].lower()
+                        coin_data = data.get(sym, {})
+                        if coin_data.get("usd") is not None:
+                            item["price_usd"] = coin_data["usd"]
+                        change = coin_data.get("usd_24h_change")
+                        if change is not None:
+                            item["price_change_24h"] = round(change, 2)
+        except Exception:  # noqa: BLE001
+            # Fallback to router for price only
+            try:
+                from app.services.market_data_router import get_market_data_router
+
+                router = get_market_data_router()
+                for item in crypto_items:
+                    if item.get("price_usd") is None:
+                        res = await router.get_price(item["symbol"])
+                        if res and res.get("price"):
+                            item["price_usd"] = res["price"]
+            except Exception:  # noqa: BLE001
+                pass
+
+    # --- Stocks: Finnhub quote (change_percent) ---
+    stock_items = [i for i in items if i.get("asset_class") in ("stocks", "cn")]
+    if stock_items:
+        try:
+            from app.services.market_data_providers import get_market_data_service
+
+            svc = get_market_data_service()
+            if svc.config.get("finnhub_key"):
+                for item in stock_items:
+                    res = await svc.get_stock_price_finnhub(item["symbol"])
+                    if res.get("success"):
+                        d = res["data"]
+                        item["price_usd"] = d.get("price")
+                        item["price_change_24h"] = d.get("change_percent")
+        except Exception:  # noqa: BLE001
+            pass
+
     return items
