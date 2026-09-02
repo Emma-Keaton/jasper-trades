@@ -14,6 +14,7 @@ interface CurrencyState {
   lastUpdated: Date | null;
   isLoading: boolean;
   error: string | null;
+  currency_conversion_enabled: boolean;
 }
 
 interface CurrencyContextType extends CurrencyState {
@@ -37,6 +38,7 @@ const initialState: CurrencyState = {
   lastUpdated: null,
   isLoading: false,
   error: null,
+  currency_conversion_enabled: true,
 };
 
 // Create context
@@ -176,7 +178,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
       ];
 
       const results = await Promise.all(promises);
-      const newRates: Record<string, number> = { ...state.exchangeRates };
+      const newRates: Record<string, number> = {};
 
       if (results[0].ok) {
         const data = await results[0].json();
@@ -198,7 +200,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
       setState(prev => ({
         ...prev,
         exchangeRate: newRates['NGN/USD'] || prev.exchangeRate,
-        exchangeRates: newRates,
+        exchangeRates: { ...prev.exchangeRates, ...newRates },
         lastUpdated: new Date(),
         isLoading: false,
       }));
@@ -209,7 +211,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
         error: e instanceof Error ? e.message : 'Failed to fetch rate',
       }));
     }
-  }, [state.exchangeRates]);
+  }, []);
 
   // Public refreshRate that can be called from components
   const refreshRate = useCallback(async () => {

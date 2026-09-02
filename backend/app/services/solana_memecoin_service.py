@@ -82,9 +82,11 @@ class SolanaMemecoinDataService:
             metas = resp.json() or []
         out: List[Dict[str, Any]] = []
         for m in metas[:limit]:
+            slug = m.get("slug") or ""
             out.append(
                 {
-                    "slug": m.get("slug"),
+                    "symbol": slug.upper().split("-")[0] if slug else "",
+                    "slug": slug,
                     "name": m.get("name"),
                     "description": m.get("description"),
                     "market_cap": m.get("marketCap"),

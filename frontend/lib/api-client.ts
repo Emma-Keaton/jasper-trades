@@ -404,7 +404,7 @@ export const settingsAPI = {
   getSettings: () => apiRequest<any>('/api/v1/settings'),
   updateSettings: (settings: Record<string, any>) =>
     apiRequest<any>('/api/v1/settings', {
-      method: 'PUT',
+      method: 'POST',
       body: JSON.stringify(settings),
     }),
   validateApiKey: (key: string, service: string) =>

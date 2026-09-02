@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useId } from 'react';
 import { useOnboarding } from './OnboardingProvider';
 
 interface TourOverlayProps {
@@ -9,6 +9,7 @@ interface TourOverlayProps {
 
 export default function TourOverlay({ children }: TourOverlayProps) {
   const { targetElement, isTourActive } = useOnboarding();
+  const maskId = useId();
 
   if (!isTourActive || !targetElement?.rect) {
     return <>{children}</>;
@@ -32,7 +33,7 @@ export default function TourOverlay({ children }: TourOverlayProps) {
         {/* Dark mask with spotlight cutout */}
         <svg className="absolute inset-0 w-full h-full">
           <defs>
-            <mask id="spotlight-mask">
+            <mask id={maskId}>
               <rect width="100%" height="100%" fill="white" />
               <rect
                 x={rect.left - padding}
@@ -49,7 +50,7 @@ export default function TourOverlay({ children }: TourOverlayProps) {
             width="100%"
             height="100%"
             fill="rgba(0, 0, 0, 0.7)"
-            mask="url(#spotlight-mask)"
+            mask={`url(#${maskId})`}
           />
         </svg>
 

@@ -113,7 +113,7 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
         } else {
           res = await fetch(`${API_URL}/api/v1/watchlist`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...deviceHeaders() },
+            headers: deviceHeaders(),
             body: JSON.stringify({ symbol, name: item.name, asset_class: item.asset_class, source: item.source }),
           });
         }
@@ -196,7 +196,7 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
         const [cgRes, cryptoRes, stockRes] = await Promise.all([
           fetch(`${API_URL}/api/v1/market-data/search?q=${encodeURIComponent(q)}&limit=15`).catch(() => null),
           fetch(`${API_URL}/api/v1/memecoin/search?q=${encodeURIComponent(q)}&limit=15`).catch(() => null),
-          fetch(`${API_URL}/api/v1/symbols?search=${encodeURIComponent(q)}`).catch(() => null),
+          fetch(`${API_URL}/api/v1/symbols?search=${encodeURIComponent(q)}`, { headers: deviceHeaders() }).catch(() => null),
         ]);
 
         if (cgRes?.ok) anyOk = true;

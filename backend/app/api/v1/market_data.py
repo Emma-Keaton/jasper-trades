@@ -101,7 +101,7 @@ async def search_crypto(
                                 "symbol": clean_sym,
                                 "name": mkt.get("base") or clean_sym,
                                 "source": ex_id,
-                                "price_usd": mkt.get("base") == clean_sym and None,
+                                "price_usd": None,
                                 "quote": quote,
                             }
                             matches += 1
@@ -121,7 +121,7 @@ async def search_crypto(
 async def get_gainers_losers(limit: int = Query(10, ge=1, le=50)) -> Dict[str, Any]:
     """Top 24h gainers and losers (CoinGecko markets, CMC when keyed)."""
     svc = get_market_data_service()
-    result = await svc.get_top_gainers_losers_coingecko()
+    result = await svc.get_top_gainers_losers_coingecko(limit=limit)
     if result.get("success"):
         return result["data"]
     try:

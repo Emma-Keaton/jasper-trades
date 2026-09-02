@@ -159,7 +159,7 @@ class MarketDataService:
             logger.error(f"CoinGecko trending error: {e}")
             return {'success': False, 'error': str(e), 'provider': 'coingecko'}
 
-    async def get_top_gainers_losers_coingecko(self) -> Dict[str, Any]:
+    async def get_top_gainers_losers_coingecko(self, limit: int = 10) -> Dict[str, Any]:
         """Get top gainers and losers (24h)."""
         try:
             url = f"{self.COINGECKO_API}/coins/markets"
@@ -175,10 +175,10 @@ class MarketDataService:
                 response.raise_for_status()
                 data = response.json()
 
-            # Top 10 gainers (first in sorted list)
-            gainers = data[:10]
-            # Top 10 losers (last in sorted list, reversed)
-            losers = list(reversed(data[-10:]))
+            # Top N gainers (first in sorted list)
+            gainers = data[:limit]
+            # Top N losers (last in sorted list, reversed)
+            losers = list(reversed(data[-limit:]))
 
             def format_coin(coin):
                 return {

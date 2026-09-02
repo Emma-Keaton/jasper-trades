@@ -147,6 +147,16 @@ async def _migrate_device_settings():
         # Frontend trading mode + UI preferences
         ("trading_mode", "TEXT DEFAULT 'practice'", "TEXT DEFAULT 'practice'"),
         ("preferences", "TEXT", "TEXT"),
+
+        # Colab / Kronos integration
+        ("colab_url", "TEXT", "TEXT"),
+
+        # AI model selection
+        ("nvidia_model", "TEXT", "TEXT"),
+
+        # Multi-broker routing
+        ("default_brokers", "TEXT", "TEXT"),
+        ("routing_mode", "TEXT", "TEXT"),
     ]
 
     for col, sqlite_ddl, pg_ddl in expected_columns:
@@ -180,26 +190,6 @@ async def _migrate_signal_tips():
 
     for col, sqlite_ddl, pg_ddl in expected_columns:
         await add_column_if_missing("signal_tips", col, sqlite_ddl, pg_ddl)
-
-
-async def _migrate_whatsapp_users():
-    """Add missing columns to whatsapp_users table if needed."""
-    expected_columns = [
-        ("device_id", "TEXT NOT NULL", "VARCHAR(255) NOT NULL"),
-        ("phone_number", "TEXT NOT NULL", "VARCHAR(64) NOT NULL"),
-        ("trade_notifications_enabled", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
-        ("daily_summary_enabled", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
-        ("summary_time_wat", "TEXT DEFAULT '20:00'", "VARCHAR(8) DEFAULT '20:00'"),
-        ("chat_enabled", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
-        ("ai_explanations_enabled", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
-        ("is_verified", "BOOLEAN DEFAULT 0", "BOOLEAN DEFAULT false"),
-        ("verification_code", "TEXT", "TEXT"),
-        ("verification_expires_at", "TIMESTAMP", "TIMESTAMP"),
-        ("last_active_at", "TIMESTAMP", "TIMESTAMP"),
-    ]
-
-    for col, sqlite_ddl, pg_ddl in expected_columns:
-        await add_column_if_missing("whatsapp_users", col, sqlite_ddl, pg_ddl)
 
 
 async def _migrate_trades():

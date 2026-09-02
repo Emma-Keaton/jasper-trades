@@ -533,7 +533,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
       const res = await apiFetch(`${API_URL}/api/v1/withdrawal/payout/validate-wallet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: payoutSettings.crypto_wallet, network: 'ethereum' }),
+        body: JSON.stringify({ address: payoutSettings.crypto_wallet, network: payoutSettings.crypto_chain || 'ethereum' }),
       });
       const data = await res.json();
       if (data.valid) {

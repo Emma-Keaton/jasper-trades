@@ -131,10 +131,17 @@ export function exportDeviceData(): string {
   const deviceId = localStorage.getItem(DEVICE_KEY);
   const deviceInfo = localStorage.getItem(DEVICE_INFO_KEY);
   
+  let parsedInfo = null;
+  try {
+    parsedInfo = deviceInfo ? JSON.parse(deviceInfo) : null;
+  } catch {
+    parsedInfo = null;
+  }
+
   const exportData = {
     exportedAt: new Date().toISOString(),
     deviceId,
-    deviceInfo: deviceInfo ? JSON.parse(deviceInfo) : null,
+    deviceInfo: parsedInfo,
     // Include any other persisted data
     settings: localStorage.getItem('jasper_settings'),
     onboarding: localStorage.getItem('jasper_onboarding_state'),

@@ -212,11 +212,14 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
 
   // Next step
   const nextStep = useCallback(() => {
-    if (currentStepIndex < tourSteps.length - 1) {
-      setCurrentStepIndex(prev => prev + 1);
-      setTimeout(() => scanElements(), 50);
-    }
-  }, [currentStepIndex, tourSteps.length, scanElements]);
+    setCurrentStepIndex(prev => {
+      if (prev < tourSteps.length - 1) {
+        setTimeout(() => scanElements(), 50);
+        return prev + 1;
+      }
+      return prev;
+    });
+  }, [tourSteps.length, scanElements]);
 
   // Previous step
   const prevStep = useCallback(() => {
