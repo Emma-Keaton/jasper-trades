@@ -29,7 +29,7 @@ const TOUR_MAP: Record<string, TourStep[]> = {
     T('trades-holdings', 'What you own', 'Everything Jasper has bought, with its current value and a plain-English trend line.', 'bottom', 'Holdings update in real time.'),
   ],
   markets: [
-    T('markets-recs', 'AI recommendations', 'Plain-English ideas from the AI, each marked Buy, Hold or Sell.', 'bottom', 'Confidence tells you how sure the AI is.'),
+    T('markets-recs', 'Trending right now', 'What is hot in crypto right now — tap a star to add it to your watchlist.', 'bottom', 'Add symbols for the AI to trade.'),
   ],
   signals: [
     T('signals-sources', 'Signal sources', 'Plug in feeds, Reddit, StockTwits or Telegram so Jasper has places to look for ideas.', 'bottom', 'Results are ranked for you.'),

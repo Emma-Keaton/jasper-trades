@@ -40,6 +40,7 @@ export class WebSocketClient {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private handlers: Map<WebSocketRoom, Set<WebSocketHandler>> = new Map();
+  private subscribedSymbols: Map<WebSocketRoom, string[]> = new Map();
   private shouldReconnect = true;
 
   constructor(baseUrl?: string) {
@@ -82,6 +83,7 @@ export class WebSocketClient {
 
     if (!this.handlers.get(room)?.size) {
       this.handlers.delete(room);
+      this.subscribedSymbols.delete(room);
     }
 
     if (this.handlers.size === 0) {
@@ -94,6 +96,7 @@ export class WebSocketClient {
    * Subscribe to symbols in a room (for prices)
    */
   subscribe(room: WebSocketRoom, symbols: string[]): void {
+    this.subscribedSymbols.set(room, symbols);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({
         action: 'subscribe',
@@ -122,6 +125,7 @@ export class WebSocketClient {
   destroy(): void {
     this.shouldReconnect = false;
     this.handlers.clear();
+    this.subscribedSymbols.clear();
     this.ws?.close();
     this.ws = null;
   }
@@ -141,6 +145,11 @@ export class WebSocketClient {
       logger.info(`[WebSocket] Connected to ${room}`);
       this.status = 'connected';
       this.reconnectAttempts = 0;
+
+      const symbols = this.subscribedSymbols.get(room);
+      if (symbols && symbols.length > 0) {
+        this.ws!.send(JSON.stringify({ action: 'subscribe', symbols }));
+      }
     };
 
     this.ws.onclose = () => {

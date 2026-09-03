@@ -37,8 +37,6 @@ function makeConfig(projectId?: string) {
   });
 }
 
-const queryClient = new QueryClient();
-
 // Solana config (mainnet only)
 const network = WalletAdapterNetwork.Mainnet;
 const endpoint = clusterApiUrl(network);
@@ -46,6 +44,7 @@ const wallets = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
 
 export function Providers({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState(() => makeConfig());
+  const [queryClient] = useState(() => new QueryClient());
 
   useEffect(() => {
     let cancelled = false;

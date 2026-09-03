@@ -59,7 +59,21 @@ const res = await apiFetch(`/api/v1/chat`, {
   };
 
   const formatTime = (ts: string) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const formatMessage = (text: string) => text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+  const formatMessage = (text: string): React.ReactNode[] => {
+    const parts: React.ReactNode[] = [];
+    const regex = /(\*\*(.*?)\*\*|\*(.*?)\*)/g;
+    let lastIndex = 0;
+    let match;
+    let key = 0;
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+      if (match[2]) parts.push(<strong key={key++}>{match[2]}</strong>);
+      else if (match[3]) parts.push(<em key={key++}>{match[3]}</em>);
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+    return parts;
+  };
 
   if (!isOpen) {
     return (
@@ -104,7 +118,7 @@ const res = await apiFetch(`/api/v1/chat`, {
                   ? 'rounded-br-sm bg-brand-600 text-white'
                   : 'rounded-bl-sm bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'
               }`}>
-                <div className="text-xs" dangerouslySetInnerHTML={{ __html: formatMessage(m.message) }} />
+                <div className="text-xs">{formatMessage(m.message)}</div>
                 <div className="mt-1 text-[10px] opacity-70">{formatTime(m.timestamp)}</div>
               </div>
             </div>
