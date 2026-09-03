@@ -8,6 +8,11 @@ export function QuantLibPanel() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [activeTool, setActiveTool] = useState<string>('black-scholes');
+  const [spot, setSpot] = useState(100);
+  const [strike, setStrike] = useState(100);
+  const [time, setTime] = useState(1);
+  const [volatility, setVolatility] = useState(20);
+  const [rate, setRate] = useState(5);
 
   const handleCalculate = async (tool: string, data: any) => {
     setLoading(true);
@@ -108,51 +113,48 @@ export function QuantLibPanel() {
           type="number"
           placeholder="Spot Price (S)"
           className="bg-[#0F172A] border border-[#475569] rounded-lg px-3 py-2 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#3B82F6]"
-          id="spot"
-          defaultValue={100}
+          value={spot}
+          onChange={(e) => setSpot(Number(e.target.value))}
         />
         <input
           type="number"
           placeholder="Strike (K)"
           className="bg-[#0F172A] border border-[#475569] rounded-lg px-3 py-2 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#3B82F6]"
-          id="strike"
-          defaultValue={100}
+          value={strike}
+          onChange={(e) => setStrike(Number(e.target.value))}
         />
         <input
           type="number"
           placeholder="Time (years)"
           className="bg-[#0F172A] border border-[#475569] rounded-lg px-3 py-2 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#3B82F6]"
-          id="time"
-          defaultValue={1}
+          value={time}
+          onChange={(e) => setTime(Number(e.target.value))}
           step={0.01}
         />
         <input
           type="number"
           placeholder="Volatility (%)"
           className="bg-[#0F172A] border border-[#475569] rounded-lg px-3 py-2 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#3B82F6]"
-          id="volatility"
-          defaultValue={20}
+          value={volatility}
+          onChange={(e) => setVolatility(Number(e.target.value))}
         />
         <input
           type="number"
           placeholder="Risk-free Rate (%)"
           className="bg-[#0F172A] border border-[#475569] rounded-lg px-3 py-2 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#3B82F6]"
-          id="rate"
-          defaultValue={5}
+          value={rate}
+          onChange={(e) => setRate(Number(e.target.value))}
         />
       </div>
 
       {/* Calculate Button */}
       <button
         onClick={() => {
-          const data = {
-            spot: Number((document.getElementById('spot') as HTMLInputElement).value),
-            strike: Number((document.getElementById('strike') as HTMLInputElement).value),
-            time: Number((document.getElementById('time') as HTMLInputElement).value),
-            volatility: Number((document.getElementById('volatility') as HTMLInputElement).value) / 100,
-            rate: Number((document.getElementById('rate') as HTMLInputElement).value) / 100,
-          };
-          handleCalculate(activeTool, data);
+          handleCalculate(activeTool, {
+            spot, strike, time,
+            volatility: volatility / 100,
+            rate: rate / 100,
+          });
         }}
         disabled={loading}
         className="w-full bg-[#3B82F6] hover:bg-[#2563EB] text-white font-bold py-2.5 rounded-lg text-sm transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 h-11"

@@ -5,8 +5,7 @@ import { TrendingUp, Compass, Microscope, Star, Sparkles, Search, X, ArrowUpRigh
 import { Card } from '@/components/ui';
 import { deviceHeaders } from '@/lib/deviceFingerprint';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { API_URL } from '@/lib/constants';
 
 interface MarketItem {
   symbol: string;

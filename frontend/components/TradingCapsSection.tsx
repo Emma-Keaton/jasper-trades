@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, Check, DollarSign, Percent, AlertTriangle } from 'lucide-react';
+import { Shield, Check, DollarSign, Percent, Loader2 } from 'lucide-react';
 import { Toast } from '@/app/types';
 import { API_URL } from '@/lib/constants';
 import { apiFetch } from '@/lib/api-client';
@@ -300,7 +300,7 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
         >
           {saving ? (
             <>
-              <AlertTriangle className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
               Saving...
             </>
           ) : (

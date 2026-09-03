@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Newspaper, TrendingUp, Search, RefreshCw } from 'lucide-react';
+import { API_URL } from '@/lib/constants';
 
 interface NewsItem {
   id: string;
@@ -56,7 +57,7 @@ export default function MarketIntelligence() {
 
   const fetchNews = async () => {
     try {
-      const response = await fetch('/api/v1/market-intelligence/news?limit=20');
+      const response = await fetch(`${API_URL}/api/v1/market-intelligence/news?limit=20`);
       const data = await response.json();
 
       if (data.success) {
@@ -89,7 +90,7 @@ export default function MarketIntelligence() {
 
   const fetchTrending = async () => {
     try {
-      const response = await fetch('/api/v1/market-intelligence/trending?limit=10');
+      const response = await fetch(`${API_URL}/api/v1/market-intelligence/trending?limit=10`);
       const data = await response.json();
 
       if (data.success) {
@@ -103,7 +104,7 @@ export default function MarketIntelligence() {
   const refreshAll = async () => {
     setIsRefreshing(true);
     try {
-      await fetch('/api/v1/market-intelligence/refresh', { method: 'POST' });
+      await fetch(`${API_URL}/api/v1/market-intelligence/refresh`, { method: 'POST' });
       await Promise.all([fetchNews(), fetchTrending()]);
     } catch (error) {
       console.error('Failed to refresh:', error);

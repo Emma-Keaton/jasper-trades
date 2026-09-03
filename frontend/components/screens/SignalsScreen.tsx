@@ -7,8 +7,6 @@ import { Switch } from '@/components/ui/segmented';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { signalsAPI } from '@/lib/api-client';
 
-import { API_URL } from '@/lib/constants';
-
 interface Source { id: number; source_type: string; display_name: string; config?: Record<string, unknown>; is_active: boolean; last_fetched_at: string | null; }
 interface Tip { id: number; slug: string; symbol: string; side: string; timeframe: string | null; confidence: number; rationale: string | null; source_type: string; text: string | null; url: string | null; created_at: string; executed: boolean; execution_status?: string; execution_detail?: string | null; }
 interface Channel { id: number; username: string | null; title: string | null; type: string; }
@@ -28,7 +26,6 @@ interface SignalsScreenProps {
 
 export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
   const deviceId = getOrCreateDeviceId();
-  const headers = { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' };
 
   const [sources, setSources] = useState<Source[]>([]);
   const [tips, setTips] = useState<Tip[]>([]);
@@ -62,18 +59,18 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sRes, tRes, aRes, stRes, setRes] = await Promise.all([
-        fetch(`${API_URL}/api/v1/signals/sources`, { headers }),
-        fetch(`${API_URL}/api/v1/signals/tips`, { headers }),
-        fetch(`${API_URL}/api/v1/signals/telegram/account`, { headers }),
-        fetch(`${API_URL}/api/v1/signals/status`, { headers }),
-        fetch(`${API_URL}/api/v1/signals/settings`, { headers }),
+      const [sourcesRes, tipsRes, accountRes, statusRes, settingsRes] = await Promise.all([
+        signalsAPI.getSources(deviceId),
+        signalsAPI.getTips(deviceId),
+        signalsAPI.telegramAccount(deviceId),
+        signalsAPI.getSignalsStatus(deviceId),
+        signalsAPI.getSignalSettings(deviceId),
       ]);
-      if (sRes.ok) setSources(await sRes.json());
-      if (tRes.ok) setTips(await tRes.json());
-      if (aRes.ok) { const a = await aRes.json(); setTgConnected(!!a.connected); }
-      if (stRes.ok) setStatus(await stRes.json());
-      if (setRes.ok) setSettings(await setRes.json());
+      if (sourcesRes.data) setSources(sourcesRes.data);
+      if (tipsRes.data) setTips(tipsRes.data);
+      if (accountRes.data) setTgConnected(!!accountRes.data.connected);
+      if (statusRes.data) setStatus(statusRes.data);
+      if (settingsRes.data) setSettings(settingsRes.data);
     } catch {
       /* ignore */
     } finally { setLoading(false); }
@@ -110,10 +107,9 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
       if (!syms.length) { triggerToast('error', 'Symbols required', 'Enter at least one StockTwits symbol.'); setAdding(false); return; }
       cfg = { symbols: syms };
     }
-    const r = await fetch(`${API_URL}/api/v1/signals/sources`, { method: 'POST', headers, body: JSON.stringify({ source_type: newType, display_name: newName || newType, config: cfg }) });
-    if (r.ok) {
-      const created = await r.json();
-      await fetch(`${API_URL}/api/v1/signals/follow`, { method: 'POST', headers, body: JSON.stringify({ source_id: created.id }) });
+    const r = await signalsAPI.createSource(deviceId, { source_type: newType, display_name: newName || newType, config: cfg });
+    if (r.data) {
+      await signalsAPI.followSource(deviceId, r.data.id);
       triggerToast('success', 'Source added', 'The AI can now look here for ideas.');
       setShowForm(false); setNewName(''); setRssUrls(''); setRedditSubs(''); setRedditFilter(''); setStSymbols(''); load();
     } else triggerToast('error', 'Could not add', 'Please check the details and try again.');
@@ -151,8 +147,8 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
   const fetchNow = async () => {
     triggerToast('info', 'Fetching ideas', 'Scanning your sources for tradeable tips...');
     try {
-      const r = await fetch(`${API_URL}/api/v1/signals/fetch`, { method: 'POST', headers });
-      if (r.ok) { triggerToast('success', 'Done', 'New tips are ready.'); load(); }
+      const r = await signalsAPI.fetchSignals(deviceId);
+      if (!r.error) { triggerToast('success', 'Done', 'New tips are ready.'); load(); }
     } catch {
       /* ignore */
     }
@@ -160,7 +156,7 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
 
   const resolveTip = async (id: number, hit: boolean) => {
     try {
-      await fetch(`${API_URL}/api/v1/signals/tips/${id}/resolve`, { method: 'POST', headers, body: JSON.stringify({ hit }) });
+      await signalsAPI.resolveTip(deviceId, id, { hit });
       triggerToast(hit ? 'success' : 'info', hit ? 'Marked as a hit' : 'Marked as a miss', 'Thanks for the feedback.');
       load();
     } catch {
