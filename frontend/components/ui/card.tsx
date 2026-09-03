@@ -13,8 +13,8 @@ export function Card({
     <div
       onClick={onClick}
       onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
-      role="button"
-      tabIndex={0}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
       className={`card ${hover ? 'card-hover cursor-pointer' : ''} ${className}`}
       {...rest}
     >

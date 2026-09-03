@@ -556,8 +556,8 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
     return (
       <div className="flex flex-col gap-6 w-full">
         <div>
-          <div className="h-8 w-48 bg-gray-700 rounded animate-pulse mb-2" />
-          <div className="h-4 w-80 bg-gray-700 rounded animate-pulse" />
+          <div className="h-8 w-48 bg-slate-200 dark:bg-gray-700 rounded animate-pulse mb-2" />
+          <div className="h-4 w-80 bg-slate-200 dark:bg-gray-700 rounded animate-pulse" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (<SkeletonCard key={i} />))}

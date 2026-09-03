@@ -48,9 +48,9 @@ export default function DataTable<T extends object>({
   };
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-700">
-      <table className="min-w-full divide-y divide-gray-700 text-sm text-gray-300">
-        <thead className="bg-gray-800">
+    <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-700">
+      <table className="min-w-full divide-y divide-slate-200 dark:divide-gray-700 text-sm text-slate-600 dark:text-gray-300">
+        <thead className="bg-slate-50 dark:bg-gray-800">
           <tr>
             {columns.map((col) => (
               <th
@@ -67,9 +67,9 @@ export default function DataTable<T extends object>({
             <th className="px-3 py-2 text-left">Actions</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-800">
+        <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
           {sorted.map((row, i) => (
-            <tr key={i} className="hover:bg-gray-800/30">
+            <tr key={i} className="hover:bg-slate-50 dark:hover:bg-gray-800/30">
               {columns.map((col) => (
                 <td key={String(col.accessor)} className="px-3 py-2">
                   {String(row[col.accessor] ?? '-')}

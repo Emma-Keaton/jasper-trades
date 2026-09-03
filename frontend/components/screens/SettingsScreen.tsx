@@ -6,6 +6,7 @@ import { Card, Button, Badge, Modal, Segmented } from '@/components/ui';
 import { useTheme } from '@/lib/theme';
 import { useCurrency } from '@/lib/currencyContext';
 import { API_URL } from '@/lib/constants';
+import { deviceHeaders } from '@/lib/deviceFingerprint';
 import { fetchTradingMode, saveTradingMode } from '@/lib/preferences';
 import SettingsTab from '@/components/SettingsTab';
 import ConnectionsPanel from '@/components/settings/ConnectionsPanel';
@@ -49,7 +50,7 @@ export default function SettingsScreen({ triggerToast, onNavigate, defaultOpen, 
 
   useEffect(() => {
     let mounted = true;
-    fetch(`${API_URL}/api/v1/settings/env-status`)
+    fetch(`${API_URL}/api/v1/settings/env-status`, { headers: deviceHeaders() })
       .then((r) => r.json())
       .then((d) => { if (mounted) setEnvStatus(d); })
       .catch(() => console.error('Failed to load env status'));
