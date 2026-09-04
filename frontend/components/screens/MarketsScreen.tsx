@@ -78,6 +78,7 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
   const [searchState, setSearchState] = useState<'idle' | 'loading' | 'found' | 'empty' | 'error'>('idle');
   const [filter, setFilter] = useState<Filter>('all');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const togglingRef = useRef(false);
 
   const refreshWatchlist = useCallback(async () => {
     try {
@@ -99,15 +100,33 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
 
   const toggleWatch = useCallback(
     async (item: MarketItem) => {
+      if (togglingRef.current) return;
+      togglingRef.current = true;
+      setTimeout(() => { togglingRef.current = false; }, 400);
+
       const symbol = item.symbol;
-      const current = watchlist.some((w) => w.symbol === symbol);
-      if (!current && watchlist.length >= 12) {
+      const isCurrentlyWatched = watchlist.some((w) => w.symbol === symbol);
+      if (!isCurrentlyWatched && watchlist.length >= 12) {
         triggerToast?.('warning', 'Watchlist full', 'Watchlist full (max 12). Remove one first.');
         return;
       }
+
+      // Optimistic update: immediately toggle the star
+      if (isCurrentlyWatched) {
+        setWatchlist((prev) => prev.filter((w) => w.symbol !== symbol));
+      } else {
+        setWatchlist((prev) => [...prev, {
+          symbol,
+          name: item.name || symbol,
+          price_usd: item.price_usd ?? null,
+          asset_class: item.asset_class,
+          change: item.change,
+        }]);
+      }
+
       try {
         let res;
-        if (current) {
+        if (isCurrentlyWatched) {
           res = await fetch(`${API_URL}/api/v1/watchlist/${symbol}`, { method: 'DELETE', headers: deviceHeaders() });
         } else {
           res = await fetch(`${API_URL}/api/v1/watchlist`, {
@@ -117,17 +136,26 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
           });
         }
         if (!res.ok) {
+          // Revert optimistic update on failure
+          if (isCurrentlyWatched) {
+            setWatchlist((prev) => [...prev, item]);
+          } else {
+            setWatchlist((prev) => prev.filter((w) => w.symbol !== symbol));
+          }
           const err = await res.json().catch(() => ({}));
           triggerToast?.('error', 'Watchlist error', err.detail || 'Failed to update watchlist');
-          return;
         }
       } catch {
+        // Revert optimistic update on network error
+        if (isCurrentlyWatched) {
+          setWatchlist((prev) => [...prev, item]);
+        } else {
+          setWatchlist((prev) => prev.filter((w) => w.symbol !== symbol));
+        }
         triggerToast?.('error', 'Watchlist error', 'Network error updating watchlist');
-        return;
       }
-      await refreshWatchlist();
     },
-    [watchlist, refreshWatchlist, triggerToast],
+    [watchlist, triggerToast],
   );
 
   useEffect(() => {
