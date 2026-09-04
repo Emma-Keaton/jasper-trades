@@ -86,59 +86,68 @@ const [, setWsStatus] = useState<string>('disconnected');
   }, [activeTab, settingsDefaultOpen]);
 
   const fetchFactorData = useCallback(async () => {
-    const [signalsRes, statsRes] = await Promise.all([
-      apiRequest<any>('/api/v1/factor-trading/signals'),
-      apiRequest<any>('/api/v1/factor-trading/stats'),
-    ]);
-    if (signalsRes.data?.watching) setWatched(signalsRes.data.watching as WatchedEntry[]);
-    if (statsRes.data) {
-      setFactorStats({
-        traded: statsRes.data.trades_taken ?? 0,
-        watching: statsRes.data.watching ?? watched.length,
-      });
+    try {
+      const [signalsRes, statsRes] = await Promise.all([
+        apiRequest<any>('/api/v1/factor-trading/signals'),
+        apiRequest<any>('/api/v1/factor-trading/stats'),
+      ]);
+      if (signalsRes.data?.watching) setWatched(signalsRes.data.watching as WatchedEntry[]);
+      if (statsRes.data) {
+        setFactorStats({
+          traded: statsRes.data.trades_taken ?? 0,
+          watching: statsRes.data.watching ?? watched.length,
+        });
+      }
+    } catch {
+      // Silently ignore — non-critical data
     }
   }, [watched.length]);
 
 const fetchBackendData = useCallback(async () => {
     setLoading(true);
-    // Try status endpoint first, fall back to health if it fails
-    const statusResult = await apiRequest<any>('/api/v1/status');
-    if (!statusResult.data) {
-      const healthResult = await apiRequest<any>('/api/v1/health');
-      setBackendConnected(!!healthResult.data);
-    } else {
-      setBackendConnected(true);
-    }
-
-    // Backend returns a single portfolio summary object (not an array).
-    const portfolioResult = await apiRequest<any>('/api/v1/portfolio');
-    if (portfolioResult.data && portfolioResult.data.id) {
-      const pid = portfolioResult.data.id;
-      setPortfolioId(pid);
-      setCash(portfolioResult.data.cash || 0);
-
-      const initRes = await apiRequest<any>(`/api/v1/portfolio/${pid}/initialization-status`);
-      if (initRes.data) setPortfolioInitialized(!!initRes.data.is_initialized);
-
-      const hRes = await apiRequest<any>(`/api/v1/portfolio/${pid}/holdings`);
-      if (hRes.data) {
-        const arr = Array.isArray(hRes.data) ? hRes.data : (hRes.data.holdings || []);
-        setHoldings(arr.map((h: any) => ({
-          symbol: h.symbol, name: h.name || h.symbol, type: h.type || 'Stock',
-          shares: h.shares || h.quantity || 0, avgPrice: h.avg_price || 0,
-          currentPrice: h.current_price || h.avg_price || 0, pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0,
-        })));
+    try {
+      // Try status endpoint first, fall back to health if it fails
+      const statusResult = await apiRequest<any>('/api/v1/status');
+      if (!statusResult.data) {
+        const healthResult = await apiRequest<any>('/api/v1/health');
+        setBackendConnected(!!healthResult.data);
+      } else {
+        setBackendConnected(true);
       }
-      const tRes = await apiRequest<any>(`/api/v1/trading/history?limit=30`);
-      if (tRes.data) {
-        const trades = tRes.data.trades || tRes.data || [];
-        setTradeHistory(trades.map((t: any) => ({
-          id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          type: (t.side || t.type || '').toUpperCase(), symbol: t.symbol, side: (t.side === 'buy' ? 'Long' : 'Short') as 'Long' | 'Short', shares: t.quantity || t.shares || 0, price: t.price || 0, total: t.pnl || t.total || 0, agent: t.agent_name || 'System',
-        })));
+
+      // Backend returns a single portfolio summary object (not an array).
+      const portfolioResult = await apiRequest<any>('/api/v1/portfolio');
+      if (portfolioResult.data && portfolioResult.data.id) {
+        const pid = portfolioResult.data.id;
+        setPortfolioId(pid);
+        setCash(portfolioResult.data.cash || 0);
+
+        const initRes = await apiRequest<any>(`/api/v1/portfolio/${pid}/initialization-status`);
+        if (initRes.data) setPortfolioInitialized(!!initRes.data.is_initialized);
+
+        const hRes = await apiRequest<any>(`/api/v1/portfolio/${pid}/holdings`);
+        if (hRes.data) {
+          const arr = Array.isArray(hRes.data) ? hRes.data : (hRes.data.holdings || []);
+          setHoldings(arr.map((h: any) => ({
+            symbol: h.symbol, name: h.name || h.symbol, type: h.type || 'Stock',
+            shares: h.shares || h.quantity || 0, avgPrice: h.avg_price || 0,
+            currentPrice: h.current_price || h.avg_price || 0, pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0,
+          })));
+        }
+        const tRes = await apiRequest<any>(`/api/v1/trading/history?limit=30`);
+        if (tRes.data) {
+          const trades = tRes.data.trades || tRes.data || [];
+          setTradeHistory(trades.map((t: any) => ({
+            id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            type: (t.side || t.type || '').toUpperCase(), symbol: t.symbol, side: (t.side === 'buy' ? 'Long' : 'Short') as 'Long' | 'Short', shares: t.quantity || t.shares || 0, price: t.price || 0, total: t.pnl || t.total || 0, agent: t.agent_name || 'System',
+          })));
+        }
       }
+    } catch {
+      setBackendConnected(false);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const refreshBackendData = useCallback(async () => {

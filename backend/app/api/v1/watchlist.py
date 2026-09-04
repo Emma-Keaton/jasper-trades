@@ -23,7 +23,13 @@ router = APIRouter(prefix="/watchlist", tags=["watchlist"])
 
 
 def _device_id(x_device_id: Optional[str] = Header(None)) -> str:
-    return (x_device_id or "").strip() or "default-device"
+    device_id = (x_device_id or "").strip()
+    if not device_id or device_id == "default-device":
+        raise HTTPException(
+            status_code=400,
+            detail="X-Device-ID header required. Use a real device fingerprint.",
+        )
+    return device_id
 
 
 class WatchlistAdd(BaseModel):
@@ -58,11 +64,7 @@ async def get_watchlist(
     db: AsyncSession = Depends(get_db),
 ):
     """List the device's watchlist (with live prices when available)."""
-    per_device = device_id != "default-device"
-    if per_device:
-        rows = (await db.execute(select(WatchlistItem).where(WatchlistItem.device_id == device_id))).scalars().all()
-    else:
-        rows = (await db.execute(select(WatchlistItem))).scalars().all()
+    rows = (await db.execute(select(WatchlistItem).where(WatchlistItem.device_id == device_id))).scalars().all()
 
     items = [row_to_dict(r) for r in rows]
     items = await _enrich(items)

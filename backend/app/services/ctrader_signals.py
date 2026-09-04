@@ -98,7 +98,7 @@ class CTraderSignalIngestionService:
                 strength=webhook_payload.get("metadata", {}).get("confidence", 0.5),
                 agent_name=f"ctrader_leader_{leader_account_id}",
                 reasoning=f"cTrader signal from leader {leader_account_id}",
-                signal_data=webhook_payload,
+                metadata=webhook_payload,
                 is_public=True,
             )
             

@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useEffect } from "react";
 import { X, Plus, Trash2, Wallet } from "lucide-react";
 import { useConnect, useSignMessage } from "wagmi";

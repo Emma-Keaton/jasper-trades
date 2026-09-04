@@ -90,7 +90,7 @@ CREATE TABLE signals (
     reasoning   TEXT,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
     expires_at  DATETIME,
-    signal_data JSON,
+    metadata    JSON,
     is_public   BOOLEAN DEFAULT 1,
     copied_by   INTEGER DEFAULT 0
 );

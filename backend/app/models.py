@@ -51,8 +51,8 @@ class Signal(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime)
 
-    # Signal metadata (using signal_data to avoid SQLAlchemy conflict)
-    signal_data = Column(JSON)
+    # Signal metadata
+    metadata = Column(JSON)
 
     # Copy trading
     is_public = Column(Boolean, default=True)

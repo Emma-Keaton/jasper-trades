@@ -69,6 +69,7 @@ async def migrate():
         await _migrate_portfolios()
         await _migrate_signal_tips()
         await _migrate_trades()
+        await _migrate_signal_metadata()
 
         logger.info("[OK] Database migration completed successfully")
 
@@ -201,3 +202,20 @@ async def _migrate_trades():
 
     for col, sqlite_ddl, pg_ddl in expected_columns:
         await add_column_if_missing("trades", col, sqlite_ddl, pg_ddl)
+
+
+async def _migrate_signal_metadata():
+    """Rename signal_data -> metadata on signals table if needed."""
+    existing = await get_existing_columns("signals")
+    if "signal_data" in existing and "metadata" not in existing:
+        try:
+            async with engine.begin() as conn:
+                if settings.using_postgres:
+                    await conn.execute(text("ALTER TABLE signals RENAME COLUMN signal_data TO metadata"))
+                else:
+                    await conn.execute(text("ALTER TABLE signals RENAME COLUMN signal_data TO metadata"))
+            logger.info("[OK] Renamed signal_data -> metadata on signals table")
+        except Exception as e:
+            logger.warning(f"Could not rename signal_data column: {e}")
+    elif "metadata" not in existing:
+        await add_column_if_missing("signals", "metadata", "JSON", "JSONB")

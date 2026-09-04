@@ -257,6 +257,7 @@ async def execute_trade(
         if trade.status == "submitted":
             # Update portfolio position
             portfolio = await portfolio_service.get_portfolio(portfolio_id)
+            result = {}
 
             if side.lower() == "buy":
                 # Add position

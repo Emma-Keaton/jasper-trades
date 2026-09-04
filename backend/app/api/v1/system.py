@@ -34,9 +34,6 @@ def get_memory_usage_fallback() -> Dict[str, Any]:
     }
 
 
-router = APIRouter()
-
-
 @router.get("/memory")
 async def memory_status() -> Dict[str, Any]:
     """

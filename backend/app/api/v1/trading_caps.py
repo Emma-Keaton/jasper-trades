@@ -213,7 +213,17 @@ async def validate_trade_against_caps(
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
     
-    portfolio_value = portfolio.cash  # Or include positions for total value
+    # Calculate portfolio value = cash + sum(position.quantity * position.current_price)
+    portfolio_value = portfolio.cash
+    try:
+        from app.services.portfolio_service import PortfolioService
+        svc = PortfolioService()
+        positions = await svc.get_positions(db, portfolio_id)
+        for pos in positions:
+            current_price = getattr(pos, 'current_price', None) or getattr(pos, 'avg_entry_price', 0) or 0
+            portfolio_value += pos.quantity * current_price
+    except Exception:
+        pass  # Fall back to cash-only if positions unavailable
     
     # Check max position amount
     if caps.max_position_amount and position_amount > caps.max_position_amount:

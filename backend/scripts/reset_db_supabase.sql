@@ -81,7 +81,7 @@ CREATE TABLE signals (
     reasoning   TEXT,
     created_at  TIMESTAMPTZ DEFAULT NOW(),
     expires_at  TIMESTAMPTZ,
-    signal_data JSONB,
+    metadata    JSONB,
     is_public   BOOLEAN DEFAULT true,
     copied_by   INTEGER DEFAULT 0
 );
