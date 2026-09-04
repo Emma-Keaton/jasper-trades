@@ -139,7 +139,7 @@ const fetchBackendData = useCallback(async () => {
           const trades = tRes.data.trades || tRes.data || [];
           setTradeHistory(trades.map((t: any) => ({
             id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-            type: (t.side || t.type || '').toUpperCase(), symbol: t.symbol, side: (t.side === 'buy' ? 'Long' : 'Short') as 'Long' | 'Short', shares: t.quantity || t.shares || 0, price: t.price || 0, total: t.pnl || t.total || 0, agent: t.agent_name || 'System',
+            type: (t.side || t.type || '').toUpperCase(), symbol: t.symbol, side: (t.side === 'buy' ? 'Long' : 'Short') as 'Long' | 'Short', shares: t.quantity || t.shares || 0, price: t.price || 0, total: t.pnl != null ? t.pnl : ((t.quantity || 0) * (t.price || 0)), agent: t.agent_name || 'System',
           })));
         }
       }

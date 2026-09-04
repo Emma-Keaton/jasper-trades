@@ -14,11 +14,11 @@ const STEPS = [
 ] as const;
 
 export default function WelcomeWizard() {
-  const { showWelcome, setShowWelcome, completeOnboarding } = useOnboarding();
+  const { showWelcome, setShowWelcome, completeOnboarding, completedTours } = useOnboarding();
   const [step, setStep] = useState(0);
 
   const close = () => {
-    saveOnboardingPrefs({ welcome_done: true, onboarding_completed: false });
+    saveOnboardingPrefs({ welcome_done: true, onboarding_completed: false, completed_tours: completedTours });
     setShowWelcome(false);
   };
 

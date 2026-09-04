@@ -217,8 +217,8 @@ async def validate_trade_against_caps(
     portfolio_value = portfolio.cash
     try:
         from app.services.portfolio_service import PortfolioService
-        svc = PortfolioService()
-        positions = await svc.get_positions(db, portfolio_id)
+        svc = PortfolioService(db)
+        positions = await svc.get_all_positions(portfolio_id)
         for pos in positions:
             current_price = getattr(pos, 'current_price', None) or getattr(pos, 'avg_entry_price', 0) or 0
             portfolio_value += pos.quantity * current_price
@@ -237,7 +237,7 @@ async def validate_trade_against_caps(
         }
     
     # Check max position percentage
-    if caps.max_position_percentage:
+    if caps.max_position_percentage and portfolio_value > 0:
         position_percentage = (position_amount / portfolio_value) * 100
         if position_percentage > caps.max_position_percentage:
             return {
