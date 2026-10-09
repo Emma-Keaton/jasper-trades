@@ -11,6 +11,23 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
+def _as_float(value: Any, default: float = 0.0) -> float:
+    """Parse a numeric field, falling back to `default`.
+
+    Factor output comes from a service and from the database, so a string or
+    None must not raise out of signal generation.
+    """
+    if value is None:
+        return default
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return default
+    if result != result or result in (float("inf"), float("-inf")):
+        return default
+    return result
+
+
 class QuantAgent(BaseAgent):
     """
     Quantitative Analysis Agent.
@@ -18,7 +35,7 @@ class QuantAgent(BaseAgent):
     Responsibilities:
     - Aggregate factor consensus into a directional signal
     - Surface dominant factor theme and confidence
-    - Provide volatility / regime context for Risk sizing
+    - Provide factor-consensus strength for Risk sizing
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -30,39 +47,52 @@ class QuantAgent(BaseAgent):
 
     async def analyze(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """Run quantitative analysis on the factor consensus output."""
-        advise = market_data.get("advise") or {}
+        advise = (market_data.get("advise") or {}) if market_data else {}
         strategy = advise.get("strategy") or {}
         factors = advise.get("factors") or []
 
-        # Build a compact factor breakdown
+        # Build a compact factor breakdown.
+        # Entries come from a stored analysis and can be malformed, so each one
+        # is probed individually: a single None or stray string previously raised
+        # AttributeError and took down signal generation for the whole symbol.
         factor_details = []
-        for f in factors:
+        for entry in factors:
+            if not isinstance(entry, dict):
+                factor_details.append({"name": "unknown", "theme": "unknown"})
+                continue
+            factor = entry.get("factor")
+            if not isinstance(factor, dict):
+                factor = {}
             factor_details.append({
-                "name": f.get("factor", {}).get("name", "unknown"),
-                "theme": f.get("factor", {}).get("theme", "unknown"),
-                "direction": f.get("direction"),
-                "magnitude": f.get("magnitude"),
-                "weight": f.get("factor", {}).get("weight", 0),
+                "name": factor.get("name", "unknown"),
+                "theme": factor.get("theme", "unknown"),
+                "direction": entry.get("direction"),
+                "magnitude": entry.get("magnitude"),
+                "weight": factor.get("weight", 0),
             })
 
         direction = advise.get("recommended_direction", "neutral")
-        confidence = float(strategy.get("confidence") or 0.0)
+        confidence = _as_float(strategy.get("confidence"))
 
-        # Estimate volatility category from net_signal magnitude
-        net = float(strategy.get("net_signal") or 0)
-        abs_net = abs(net)
-        if abs_net > 0.5:
-            volatility = "high"
-        elif abs_net > 0.2:
-            volatility = "moderate"
+        # `net_signal` is the strength of factor consensus, NOT volatility. It
+        # was previously reported as "volatility", which is a different quantity:
+        # a strong consensus and a volatile market are unrelated, and downstream
+        # Risk sizing treated this label as risk. It is now named for what it
+        # measures. Real volatility, when it is available, belongs to the market
+        # data path rather than to the factor consensus.
+        net = _as_float(strategy.get("net_signal"))
+        if abs(net) > 0.5:
+            consensus_strength = "strong"
+        elif abs(net) > 0.2:
+            consensus_strength = "moderate"
         else:
-            volatility = "low"
+            consensus_strength = "weak"
 
         return {
             "direction": direction,
             "confidence": confidence,
             "net_signal": net,
-            "volatility": volatility,
+            "consensus_strength": consensus_strength,
             "dominant_theme": strategy.get("theme", "mixed"),
             "factors": factor_details,
             "factor_count": len(factors),
@@ -86,7 +116,7 @@ class QuantAgent(BaseAgent):
             "strength": min(confidence, 1.0),
             "reasoning": (
                 f"Quant: {analysis.get('dominant_theme', 'mixed')} dominant, "
-                f"vol={analysis.get('volatility', 'unknown')}, "
+                f"consensus={analysis.get('consensus_strength', 'unknown')}, "
                 f"factors={analysis.get('factor_count', 0)}"
             ),
         }

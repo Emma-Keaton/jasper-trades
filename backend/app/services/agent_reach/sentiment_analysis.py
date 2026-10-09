@@ -1,5 +1,5 @@
 """
-Sentiment Analysis Service using NVIDIA NIM Models
+Sentiment Analysis Service using Groq models
 
 Analyzes news and social media content for:
 - Sentiment score (positive/negative/neutral)
@@ -18,11 +18,11 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from app.nvidia_nim import nvidia_client
+from app.services.llm_service import groq_client
 
 
 class SentimentAnalysisService:
-    """AI-powered sentiment analysis using NVIDIA NIM models."""
+    """AI-powered sentiment analysis using Groq models."""
     
     def __init__(self):
         self.fast_model = "meta/llama-3.2-3b-instruct"
@@ -85,7 +85,7 @@ Output as STRICT JSON only, no markdown, no explanations:
                 {"role": "user", "content": prompt}
             ]
             
-            response = await nvidia_client.chat_completion(
+            response = await groq_client.chat_completion(
                 messages,
                 task_type='analysis',
                 model_override=model,
@@ -196,7 +196,7 @@ Output as STRICT JSON:
                 {"role": "user", "content": prompt}
             ]
             
-            response = await nvidia_client.chat_completion(
+            response = await groq_client.chat_completion(
                 messages,
                 task_type='analysis',
                 model_override=self.smart_model,

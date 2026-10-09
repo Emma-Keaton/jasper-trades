@@ -41,6 +41,14 @@ class SchedulerService:
             "cleanup": 86400,  # 24 hours
             "daily_summary": 86400,  # 24 hours - runs at 8 PM WAT (7 PM UTC)
             "poll_signal_sources": 120,  # every 2 minutes
+            # Kronos predicts but never learns. Scoring recorded predictions
+            # against realised prices is the feedback loop that makes
+            # `confidence` trustworthy enough to gate trades.
+            "score_kronos": 900,  # every 15 minutes
+            # Refitting on every scoring pass would rewrite the parameter history
+            # constantly for barely any movement in the gates. Hourly keeps the
+            # workspace-global thresholds current without churn.
+            "refit_learned": 3600,  # hourly
         }
         self._daily_summary_time = "19:00"  # 7 PM UTC = 8 PM WAT
 
@@ -76,6 +84,17 @@ class SchedulerService:
 
         self._tasks["poll_signal_sources"] = asyncio.create_task(
             self._run_periodic("poll_signal_sources", self._poll_signal_sources)
+        )
+
+        self._tasks["score_kronos"] = asyncio.create_task(
+            self._run_periodic("score_kronos", self._score_kronos_forecasts)
+        )
+
+        # Refitting on every scoring pass would rewrite the parameter history
+        # constantly for barely any movement in the gates; hourly keeps the global
+        # thresholds current without churn.
+        self._tasks["refit_learned"] = asyncio.create_task(
+            self._run_periodic("refit_learned", self._refit_learned_parameters)
         )
 
         self._tasks["cleanup"] = asyncio.create_task(
@@ -214,6 +233,48 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Error generating signals: {e}", exc_info=True)
+
+    async def _score_kronos_forecasts(self):
+        """Score recorded Kronos predictions against realised prices.
+
+        Kronos is a forecaster, not a learner. Until something measures its output
+        against what actually happened, `confidence` is an unverified number that
+        gates trades.
+        """
+        try:
+            from app.services.kronos_remote import kronos_client
+            scored = await kronos_client.score_pending()
+            if scored:
+                logger.info("Scored %d Kronos forecasts", len(scored))
+            summary = await kronos_client.calibration_summary()
+            if summary.get("scored"):
+                logger.info("Kronos calibration: %s", summary)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Kronos scoring pass failed: %s", e)
+
+    async def _refit_learned_parameters(self):
+        """Refit global thresholds and promote a model on accumulated evidence.
+
+        Learned parameters and the active model are workspace-global, so this runs
+        once for the whole workspace rather than per device: every device's scored
+        trades count toward the same estimate. Promotion is still gated on a
+        statistically significant record, so an early run cannot install a model on
+        noise.
+        """
+        try:
+            from app.services.kronos_remote import kronos_client
+
+            outcome = await kronos_client.refit()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Learned-parameter refit failed: %s", e)
+            return
+        logger.info(
+            "Refit: %s samples, validated=%s, promoted=%s (%s)",
+            outcome.get("sample_size"),
+            outcome.get("validated"),
+            outcome.get("promoted_model") if outcome.get("promoted") else None,
+            outcome.get("reason"),
+        )
 
     async def _poll_signal_sources(self):
         """Poll all active signal sources for every device and ingest tips."""

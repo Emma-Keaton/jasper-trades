@@ -145,10 +145,9 @@ async def validate_api_key(request: ValidateKeyRequest):
         return {"valid": False, "message": "Key too short"}
 
     # Basic format validation
-    if request.service == "nvidia":
-        # NVIDIA keys can be various formats
-        valid = request.key.startswith("nvapi-") or len(request.key) >= 20
-        message = "Valid format" if valid else "Invalid NVIDIA key format"
+    if request.service == "groq":
+        valid = request.key.startswith("gsk_") or len(request.key) >= 20
+        message = "Valid format" if valid else "Invalid Groq key format"
         return {"valid": valid, "message": message}
 
     return {"valid": True, "message": "Key format looks valid"}
@@ -163,18 +162,12 @@ async def get_env_status():
     environment variables during deployment.
     """
     env_status = {
-        "gemini_api_key": {
-            "configured": settings.gemini_configured,
-            "env_var": "GEMINI_API_KEY",
-            "key_count": len(settings.gemini_keys),
-            "description": "Google Gemini 2.5 API keys (primary LLM). Comma-separated, ~3 keys for rotation",
+        "groq_api_key": {
+            "configured": settings.groq_configured,
+            "env_var": "GROQ_API_KEY",
+            "key_count": len(settings.groq_keys),
+            "description": "Groq API keys (primary LLM). Comma-separated for rotation",
             "required_for": "AI chat, trade analysis, explanation, tip extraction"
-        },
-        "nvidia_api_key": {
-            "configured": bool(settings.NVIDIA_API_KEY and settings.NVIDIA_API_KEY != "" and settings.NVIDIA_API_KEY != "CHANGE_THIS_BEFORE_PRODUCTION"),
-            "env_var": "NVIDIA_API_KEY",
-            "description": "NVIDIA NIM API key for AI model inference (DEPRECATED - fallback only)",
-            "required_for": "AI chat, trade analysis, Kronos predictions"
         },
         "binance_api_key": {
             "configured": bool(os.getenv("BINANCE_API_KEY") and os.getenv("BINANCE_API_KEY") != "" and os.getenv("BINANCE_API_KEY") != "CHANGE_THIS_BEFORE_PRODUCTION"),

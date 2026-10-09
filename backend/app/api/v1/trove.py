@@ -24,6 +24,8 @@ TROVE_API_KEY = os.getenv("TROVE_API_KEY")
 TROVE_ENABLED = os.getenv("TROVE_ENABLED", "false").lower() == "true"
 
 
+from app.device_auth import require_device_id
+
 class TroveSymbol(BaseModel):
     """Trove stock symbol info"""
     symbol: str
@@ -156,8 +158,7 @@ async def place_trove_order(
     from app.services import trade_gate
     from app.services.paper_trading_service import get_paper_trading_service
 
-    device_id = (x_device_id or "").strip() or "default-device"
-
+    device_id = require_device_id(x_device_id)
     # Validate limit order
     if order.order_type == "limit" and order.price is None:
         raise HTTPException(status_code=400, detail="Price required for limit orders")

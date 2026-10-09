@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 import structlog
 
+from app.device_identity import DeviceIdentityError, normalise_device_id
 from app.services.paper_trading_service import get_paper_trading_service
 
 logger = structlog.get_logger(__name__)
@@ -11,7 +12,18 @@ router = APIRouter(prefix="/paper", tags=["paper-trading"])
 
 
 def _device_id(x_device_id: Optional[str] = Header(None)) -> str:
-    return x_device_id or "default-device"
+    """Resolve the device credential from the header.
+
+    The device UUID is this application's authentication token, so it is
+    validated rather than defaulted. The previous `x_device_id or
+    "default-device"` meant every caller who omitted the header became the same
+    shared device - reading and writing its settings, portfolio and ledger
+    alongside the real one.
+    """
+    try:
+        return normalise_device_id(x_device_id)
+    except DeviceIdentityError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 class PaperTradeRequest(BaseModel):

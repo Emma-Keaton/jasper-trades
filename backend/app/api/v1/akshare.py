@@ -19,6 +19,8 @@ logger = structlog.get_logger(__name__)
 # Simple in-memory cache for symbols (avoids slow AKShare API calls)
 _symbols_cache: Dict[str, dict] = {}
 
+from app.device_auth import require_device_id
+
 class SimpleCache:
     """Simple in-memory cache with expiration"""
     
@@ -213,7 +215,7 @@ async def submit_order(
     """
     from app.services import trade_gate
 
-    device_id = (x_device_id or "").strip() or "default-device"
+    device_id = require_device_id(x_device_id)
     mode = await trade_gate.resolve_mode(db, device_id)
 
     # AKShare is a paper-only broker. If the device is configured for live,

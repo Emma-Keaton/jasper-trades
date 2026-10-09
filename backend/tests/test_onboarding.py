@@ -1,9 +1,10 @@
 """Onboarding state endpoints backed by DeviceSettings.preferences."""
+from conftest import TEST_DEVICE_ID, TEST_DEVICE_ID_2
 import json
 
 
 async def test_onboarding_get_empty(app_client):
-    resp = await app_client.get("/api/v1/settings/onboarding", headers={"X-Device-ID": "dev-1"})
+    resp = await app_client.get("/api/v1/settings/onboarding", headers={"X-Device-ID": TEST_DEVICE_ID})
     assert resp.status_code == 200
     assert resp.json() == {"onboarding": {}}
 
@@ -19,11 +20,11 @@ async def test_onboarding_save_and_read(app_client):
     save = await app_client.post(
         "/api/v1/settings/onboarding",
         json={"onboarding": patch},
-        headers={"X-Device-ID": "dev-1"},
+        headers={"X-Device-ID": TEST_DEVICE_ID},
     )
     assert save.status_code == 200
 
-    get = await app_client.get("/api/v1/settings/onboarding", headers={"X-Device-ID": "dev-1"})
+    get = await app_client.get("/api/v1/settings/onboarding", headers={"X-Device-ID": TEST_DEVICE_ID})
     assert get.status_code == 200
     assert get.json()["onboarding"] == patch
 
@@ -32,14 +33,14 @@ async def test_onboarding_shallow_merge_per_key(app_client):
     await app_client.post(
         "/api/v1/settings/onboarding",
         json={"onboarding": {"step_1": True}},
-        headers={"X-Device-ID": "dev-1"},
+        headers={"X-Device-ID": TEST_DEVICE_ID},
     )
     await app_client.post(
         "/api/v1/settings/onboarding",
         json={"onboarding": {"step_2": True}},
-        headers={"X-Device-ID": "dev-1"},
+        headers={"X-Device-ID": TEST_DEVICE_ID},
     )
-    get = await app_client.get("/api/v1/settings/onboarding", headers={"X-Device-ID": "dev-1"})
+    get = await app_client.get("/api/v1/settings/onboarding", headers={"X-Device-ID": TEST_DEVICE_ID})
     assert get.json()["onboarding"] == {"step_1": True, "step_2": True}
 
 
@@ -52,7 +53,7 @@ async def test_onboarding_persists_in_preferences(app_client, session_factory):
     await app_client.post(
         "/api/v1/settings/onboarding",
         json={"onboarding": {"done": True}},
-        headers={"X-Device-ID": "dev-1"},
+        headers={"X-Device-ID": TEST_DEVICE_ID},
     )
     async with session_factory() as session:
         from sqlalchemy import select

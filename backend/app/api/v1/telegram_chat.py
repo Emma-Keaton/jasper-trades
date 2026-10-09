@@ -262,7 +262,7 @@ async def handle_market_intel_intent(message: str, device_id: str) -> str:
 
 async def handle_general_chat(message: str, device_id: str) -> str:
     """Handle general AI chat"""
-    # TODO: Integrate with NVIDIA NIM for AI responses
+    # TODO: Integrate with Groq for AI responses
     
     # Simple keyword-based responses for now
     if "hello" in message.lower() or "hi" in message.lower():

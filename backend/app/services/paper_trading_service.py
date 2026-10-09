@@ -26,7 +26,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import async_session
-from app.models import DeviceSettings, Trade, Portfolio
+from app.models import DeviceSettings, Position, Trade, Portfolio
 
 logger = structlog.get_logger(__name__)
 
@@ -76,8 +76,17 @@ class UniversalPaperTradingService:
                     ds = result.scalar_one_or_none()
                     if ds and ds.universal_paper_trading_config:
                         cfg = json.loads(ds.universal_paper_trading_config)
-                        if cfg.get("current_balance") is not None:
-                            state.update({k: cfg.get(k, state[k]) for k in state})
+                        # Merge per key, unconditionally.
+                        #
+                        # This used to be gated on `cfg.get("current_balance")
+                        # is not None`, which meant a config that only set
+                        # `enabled` was discarded wholesale: toggling paper
+                        # trading off in Settings did nothing at all, silently,
+                        # because the flag was never read.
+                        if isinstance(cfg, dict):
+                            for key in state:
+                                if key in cfg:
+                                    state[key] = cfg[key]
             except Exception as e:  # noqa: BLE001
                 logger.debug("Paper state load failed", error=str(e))
         self._mem[device_id] = state
@@ -115,6 +124,102 @@ class UniversalPaperTradingService:
         else:
             notional = qty * price
         return notional, notional * commission_rate
+
+    async def _sync_portfolio(
+        self,
+        db: AsyncSession,
+        *,
+        portfolio: Optional[Portfolio],
+        symbol: str,
+        side: str,
+        qty: float,
+        price: float,
+        notional: float,
+        commission: float,
+        asset_class: str,
+        pos_snapshot: Optional[Dict[str, Any]],
+    ) -> None:
+        """Apply one paper fill to `Portfolio.cash` and the `Position` table.
+
+        The live path does this in `api/v1/trading.py`; paper had no equivalent,
+        which is why a paper portfolio reported a flat $10,000 no matter how many
+        trades it made.
+
+        Weighted-average cost basis is carried in `Position.avg_price`, matching
+        the JSON ledger, so the two never disagree on what a position cost.
+
+        `pos_snapshot` is the position *after* the fill, used so the caller does
+        not have to re-read the ledger. It is `None` once a position is fully
+        closed and removed.
+        """
+        if portfolio is None:
+            logger.warning(
+                "No portfolio for this device; paper fill not mirrored",
+                device_id=getattr(portfolio, "device_id", None),
+            )
+            return
+
+        if side == "buy":
+            # Debit cash including commission.
+            portfolio.cash = float(portfolio.cash or 0.0) - (notional + commission)
+
+            existing = (
+                await db.execute(
+                    select(Position).where(
+                        Position.portfolio_id == portfolio.id,
+                        Position.symbol == symbol,
+                    )
+                )
+            ).scalar_one_or_none()
+
+            if existing is None:
+                db.add(
+                    Position(
+                        portfolio_id=portfolio.id,
+                        symbol=symbol,
+                        quantity=qty,
+                        avg_price=price,
+                        current_price=price,
+                        market_value=qty * price,
+                    )
+                )
+            else:
+                prior_qty = float(existing.quantity or 0.0)
+                total_qty = prior_qty + qty
+                if total_qty > 0:
+                    # Weighted-average cost basis, matching the JSON ledger so the
+                    # two never disagree on what a position cost.
+                    existing.avg_price = (
+                        float(existing.avg_price or 0.0) * prior_qty + price * qty
+                    ) / total_qty
+                existing.quantity = total_qty
+                existing.current_price = price
+                existing.market_value = total_qty * price
+        else:
+            # Credit cash net of commission.
+            portfolio.cash = float(portfolio.cash or 0.0) + (notional - commission)
+
+            existing = (
+                await db.execute(
+                    select(Position).where(
+                        Position.portfolio_id == portfolio.id,
+                        Position.symbol == symbol,
+                    )
+                )
+            ).scalar_one_or_none()
+
+            if existing is not None:
+                remaining = float(existing.quantity or 0.0) - qty
+                if remaining <= 1e-9:
+                    # Fully closed. Removed rather than left at zero quantity,
+                    # matching the JSON ledger which pops the position: an
+                    # open-position listing full of 0-quantity rows is noise, and
+                    # the closed trade is already recorded as a Trade row.
+                    await db.delete(existing)
+                else:
+                    existing.quantity = remaining
+                    existing.current_price = price
+                    existing.market_value = remaining * price
 
     async def place_trade(
         self,
@@ -189,6 +294,43 @@ class UniversalPaperTradingService:
                 )
                 portfolio = port_result.scalar_one_or_none()
 
+                # Mirror the fill into the authoritative tables.
+                #
+                # The JSON ledger above is the paper engine's own bookkeeping, but
+                # everything a user or a downstream decision reads comes from
+                # `Portfolio` and `Position`: /trading/positions, the portfolio
+                # total, the mark-to-market job, the daily equity snapshot, and
+                # the auto-payout source. Writing only the JSON meant a successful
+                # $1,000 buy left Portfolio.cash at 10,000 with zero Position
+                # rows, so paper trading produced no evidence at all - which is
+                # the entire reason to run it.
+                #
+                # A failure here must not lose the fill: the trade is already
+                # recorded in the JSON ledger, so it is logged and the fill stands
+                # rather than being rolled back into an inconsistent state.
+                try:
+                    await self._sync_portfolio(
+                        db,
+                        portfolio=portfolio,
+                        symbol=symbol,
+                        side=side,
+                        qty=qty,
+                        price=price,
+                        notional=notional,
+                        commission=commission,
+                        asset_class=asset_class,
+                        pos_snapshot=dict(pos) if pos else None,
+                    )
+                    await db.commit()
+                except Exception as exc:  # noqa: BLE001
+                    await db.rollback()
+                    logger.error(
+                        "Paper fill not mirrored into portfolio/positions",
+                        error=str(exc),
+                        symbol=symbol,
+                        side=side,
+                    )
+
                 t = Trade(
                     symbol=symbol,
                     side=side,  # buy/sell
@@ -204,6 +346,36 @@ class UniversalPaperTradingService:
                 )
                 db.add(t)
                 await db.commit()
+                try:
+                    await db.refresh(t)
+                except Exception:  # noqa: BLE001
+                    pass
+
+                # Train the pattern model on this trade's outcome (paper trading
+                # is the primary source of closed-trade experiences).
+                if side == "sell" and realized is not None:
+                    try:
+                        from types import SimpleNamespace
+
+                        from app.services.trade_monitor import trade_monitor
+
+                        now_iso = _now().isoformat()
+                        ns = SimpleNamespace(
+                            id=t.id if t.id is not None else 0,
+                            symbol=symbol,
+                            type="SELL",
+                            entry_price=float(pos["avg_price"]) if pos and pos.get("avg_price") else 0.0,
+                            exit_price=price,
+                            shares=qty,
+                            pnl=realized,
+                            created_at=now_iso,
+                            filled_at=now_iso,
+                            agent_name=agent_name,
+                            metadata={},
+                        )
+                        await trade_monitor.on_trade_closed(ns)
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning("Trade learning hook failed (non-fatal)", error=str(e)[:200])
         except Exception as e:  # noqa: BLE001
             logger.error("Failed to store paper trade row", error=str(e))
 
@@ -315,6 +487,18 @@ class UniversalPaperTradingService:
             if not wallet:
                 return
 
+            # The payout network the user selected. Without it the on-chain
+            # transfer cannot be signed, so this trade's payout would be skipped
+            # and only logged as an error.
+            payout_chain = payout_cfg.get("payout_chain")
+            if not payout_chain:
+                logger.warning(
+                    "End-of-trade payout skipped for device %s: no payout_chain "
+                    "configured. Set the payout network in Settings.",
+                    device_id,
+                )
+                return
+
             percentage = payout_cfg.get("payout_percentage", 50.0)
             payout_amount = round(realized_pnl * percentage / 100, 2)
             if payout_amount <= 0:
@@ -338,6 +522,7 @@ class UniversalPaperTradingService:
                     destination_address=wallet,
                     daily_pnl=realized_pnl,
                     payout_percentage=percentage,
+                    destination_chain=payout_chain,
                 )
                 await ws.process_withdrawal(w.id)
                 logger.info(

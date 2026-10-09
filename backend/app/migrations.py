@@ -69,6 +69,7 @@ async def migrate():
         await _migrate_portfolios()
         await _migrate_signal_tips()
         await _migrate_trades()
+        await _migrate_withdrawals()
         await _migrate_signal_metadata()
 
         logger.info("[OK] Database migration completed successfully")
@@ -101,8 +102,13 @@ async def _migrate_device_settings():
         # Discord Bot
         ("discord_bot_config", "TEXT", "TEXT"),
 
-        # Tatum for payouts
-        ("tatum_api_key", "TEXT", "TEXT"),
+        # Payout config (crypto wallet / naira bank auto-payout)
+        ("payout_config", "TEXT", "TEXT"),
+        # Payout hot-wallet signing keys (encrypted JSON). Replaces tatum_api_key,
+        # which cannot be used: the old Tatum transfer path posted
+        # `fromAddress: None` and Tatum holds no custody wallet for that endpoint.
+        # See app/services/payout_rail.py.
+        ("payout_wallet_keys", "TEXT", "TEXT"),
 
         # Trove API (Nigerian/US stocks)
         ("trove_api_key", "TEXT", "TEXT"),
@@ -144,13 +150,19 @@ async def _migrate_device_settings():
 
         # Payout config (crypto wallet / naira bank auto-payout)
         ("payout_config", "TEXT", "TEXT"),
+        # Payout hot-wallet signing keys (encrypted JSON). Replaces tatum_api_key,
+        # which cannot be used: the old Tatum transfer path posted
+        # `fromAddress: None` and Tatum holds no custody wallet for that endpoint.
+        # See app/services/payout_rail.py.
+        ("payout_wallet_keys", "TEXT", "TEXT"),
 
         # Frontend trading mode + UI preferences
         ("trading_mode", "TEXT DEFAULT 'practice'", "TEXT DEFAULT 'practice'"),
         ("preferences", "TEXT", "TEXT"),
 
-        # AI model selection
-        ("nvidia_model", "TEXT", "TEXT"),
+        # AI model selection + LLM key
+        ("groq_model", "TEXT", "TEXT"),
+        ("groq_key", "TEXT", "TEXT"),
 
         # Multi-broker routing
         ("default_brokers", "TEXT", "TEXT"),
@@ -178,6 +190,27 @@ async def _migrate_portfolios():
         await add_column_if_missing("portfolios", col, sqlite_ddl, pg_ddl)
 
 
+async def _migrate_withdrawals():
+    """Add missing columns to the withdrawals table.
+
+    `destination_chain` is required for any crypto payout. It previously did not
+    exist: the network was guessed from the address shape, which cannot tell BSC
+    from Ethereum because both are 0x plus 40 hex characters. A payout could
+    therefore be sent on a network the user did not choose.
+    """
+    expected_columns = [
+        # Tron, BSC, Polygon, Ethereum, or Solana.
+        ("destination_chain", "TEXT", "VARCHAR(32)"),
+        ("daily_pnl", "REAL", "FLOAT"),
+        ("payout_percentage", "REAL DEFAULT 50.0", "FLOAT DEFAULT 50.0"),
+        ("fee", "REAL DEFAULT 0.0", "FLOAT DEFAULT 0.0"),
+        ("net_amount", "REAL", "FLOAT"),
+    ]
+
+    for col, sqlite_ddl, pg_ddl in expected_columns:
+        await add_column_if_missing("withdrawals", col, sqlite_ddl, pg_ddl)
+
+
 async def _migrate_signal_tips():
     """Add hands-free execution columns to the signal_tips table."""
     expected_columns = [
@@ -198,6 +231,9 @@ async def _migrate_trades():
         ("exit_price", "REAL", "FLOAT"),
         ("pnl", "REAL", "FLOAT"),
         ("pnl_percent", "REAL", "FLOAT"),
+        # Why a rejected/errored order failed. Without it, a venue outage and a
+        # bad symbol are indistinguishable in the audit trail.
+        ("error_detail", "TEXT", "TEXT"),
     ]
 
     for col, sqlite_ddl, pg_ddl in expected_columns:

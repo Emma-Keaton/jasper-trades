@@ -1,7 +1,22 @@
 # Database Models
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, Text, ForeignKey
+from sqlalchemy import Column, Index, Integer, String, Float, DateTime, Boolean, JSON, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
+
+# Workspace-global sentinel for learned parameters and model assignments.
+#
+# Learning is a property of the forecaster, not of a user: Kronos is the same
+# frozen model for every device, so evidence from one device's trades improves
+# the estimate for all of them. Keying per-device would fragment the evidence
+# until each device had hundreds of scored forecasts of its own, which on a
+# paper-trading tier may never happen, leaving every device permanently on the
+# configured defaults.
+#
+# A fixed sentinel rather than a nullable column: NULL would defeat the unique
+# constraints, and this keeps the same shape a real per-device override would
+# have if one is ever added.
+GLOBAL_KEY = "00000000-0000-0000-0000-000000000000"
+
 
 Base = declarative_base()
 
@@ -36,6 +51,11 @@ class Trade(Base):
     exit_price = Column(Float)
     pnl = Column(Float)
     pnl_percent = Column(Float)
+
+    # Why an order did not execute. Without this a rejected or errored order is
+    # indistinguishable from one that was never attempted, so a venue outage and
+    # a bad symbol look the same in the audit trail.
+    error_detail = Column(Text)
 
 
 class Signal(Base):
@@ -102,7 +122,7 @@ class Agent(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, unique=True)
     type = Column(String)  # director, quant, risk, execution, specialist
-    model = Column(String)  # NVIDIA NIM model to use
+    model = Column(String)  # Groq model to use
     is_active = Column(Boolean, default=False)
     config = Column(JSON)  # Agent-specific configuration
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -168,7 +188,7 @@ class DeviceSettings(Base):
     device_id = Column(String, primary_key=True)  # SHA256 fingerprint
 
     # Broker API keys (encrypted)
-    nvidia_key = Column(String, nullable=True)  # Encrypted
+    groq_key = Column(String, nullable=True)  # Encrypted
     binance_key = Column(String, nullable=True)  # Encrypted
     binance_secret = Column(String, nullable=True)  # Encrypted
 
@@ -223,7 +243,7 @@ class DeviceSettings(Base):
     environment_mode = Column(String(20), default="sandbox")  # "sandbox" or "live"
 
     # LLM settings
-    nvidia_model = Column(String, nullable=True, default="nvidia/nemotron-mini-4b-instruct")
+    groq_model = Column(String, nullable=True, default="openai/gpt-oss-120b")
 
     # Trading preferences
     default_brokers = Column(String, nullable=True)  # Comma-separated list of enabled brokers
@@ -233,16 +253,23 @@ class DeviceSettings(Base):
     # Structure: {
     #   "payout_enabled": true,
     #   "payout_percentage": 50.0,  // Configurable: 0-100
-    #   "payout_schedule_hour": 20,  // 0-23 ET
-    #   "payout_destination": "crypto_wallet",
-    #   "crypto_wallet": "0x...",  // USDT wallet (ERC20 or SOLANA)
-    #   "crypto_chain": "ethereum",  // "ethereum" | "solana" | "bsc"
+    #   "payout_schedule_hour": 20,  // 0-23 WAT (Africa/Lagos)
+    #   "payout_schedule_minute": 0,
+    #   "payout_frequency": "custom_time" | "end_of_trade",
+    #   "crypto_wallet": "T...",     // USDT address on the chosen network
+    #   "payout_chain": "tron",      // tron | bsc | polygon | ethereum | solana
     #   "min_payout_threshold": 10.0  // Minimum profit before payout triggers
     # }
     payout_config = Column(String, nullable=True)  # Encrypted JSON
 
-    # Tatum API key for blockchain transfers (encrypted)
-    tatum_api_key = Column(String, nullable=True)  # Encrypted
+    # Payout hot-wallet signing keys (encrypted JSON). One private key per chain
+    # family, because the families are unrelated keyspaces:
+    #   {"evm": "0x...", "tron": "<hex>", "solana": "<base58>"}
+    # A single `evm` key covers every EVM chain, so Ethereum/BSC/Polygon share
+    # one entry and one address. Replaces the old Tatum key, which could not be
+    # used: Tatum's transfer endpoint signs from a key you supply and holds no
+    # custody wallet. See app/services/payout_rail.py.
+    payout_wallet_keys = Column(String, nullable=True)  # Encrypted JSON
 
     # Trove API (Nigerian/US stocks - encrypted)
     trove_api_key = Column(String, nullable=True)  # Encrypted
@@ -320,6 +347,12 @@ class Withdrawal(Base):
     withdrawal_type = Column(String, nullable=False)  # "auto_payout" or "manual"
     destination_type = Column(String)  # "crypto_wallet" or "broker"
     destination_address = Column(String)  # Wallet address or broker account
+    # Network the payout is sent on: tron | bsc | polygon | ethereum | solana.
+    # Required for a crypto payout. The user selects it; Tron is the practical
+    # default for Nigerian users because Nigerian off-ramps are TRC20. Previously
+    # the chain was guessed from the address shape, which could not tell BSC from
+    # Ethereum (both are 0x-prefixed) and silently paid on the wrong network.
+    destination_chain = Column(String)
 
     # Status
     status = Column(String, default="pending")  # pending, processing, completed, failed
@@ -813,3 +846,145 @@ class PortfolioSnapshot(Base):
     realized_pnl = Column(Float, default=0.0)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ====================================================================
+# Kronos prediction ledger, learned parameters, model assignments
+# ====================================================================
+# Kronos predicts and never learns. These tables are the feedback loop that
+# does the learning: persist every prediction, score it against realised prices
+# once the horizon elapses, and store the parameters derived from those scores.
+#
+# Persistence is mandatory, not bookkeeping: this backend runs on Render's free
+# tier, which discards process memory on spin-down. An in-memory ledger would
+# forget everything between two requests and never accumulate evidence.
+#
+# JSONB is used via `.with_variant` because this app supports both sqlite
+# (local) and Postgres (Supabase), and sqlite has no JSONB type.
+#
+# `rerunnable_schema.sql` is generated from these definitions by
+# scripts/generate_schema.py.
+
+from sqlalchemy.dialects.postgresql import JSONB as _JSONB
+
+_JSON = JSON().with_variant(_JSONB, "postgresql")
+
+
+class KronosForecast(Base):
+    """One prediction from Kronos, later scored against realised prices."""
+
+    __tablename__ = "kronos_forecasts"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, index=True)
+
+    symbol = Column(String(32), nullable=False, index=True)
+    # 'kronos' | 'fallback' | 'placeholder'. Recorded so a replacement forecast
+    # is never mistaken for a real one during calibration.
+    source = Column(String(16), nullable=False, default="kronos")
+    model = Column(String(64))
+
+    horizon = Column(Integer, nullable=False)
+    interval_seconds = Column(Integer, nullable=False)
+    sample_count = Column(Integer, nullable=False, default=1)
+
+    last_close = Column(Float, nullable=False)
+
+    # One path per sampled sample. Separated from the scalars because it is the
+    # largest field and is only read when auditing a specific forecast.
+    mean_path = Column(_JSON)
+    trajectories = Column(_JSON)
+    terminal_low = Column(Float)
+    terminal_high = Column(Float)
+
+    # Uncalibrated model signal: P(up), not a validated probability.
+    probability_up = Column(Float)
+    confidence = Column(Integer)
+
+    scored = Column(Boolean, nullable=False, default=False, index=True)
+    realised = Column(Float)
+    was_up = Column(Boolean)
+    within_band = Column(Boolean)
+    absolute_error = Column(Float)
+
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    scored_at = Column(DateTime)
+
+    __table_args__ = (
+        Index("ix_kronos_forecasts_pending", "created_at", "device_id"),
+    )
+
+
+class LearnedParameter(Base):
+    """A learned scalar plus the evidence that justifies it.
+
+    `validated` is the gate: a value derived from too few observations is stored
+    for inspection but not applied to live trading until it clears
+    `strategy_learner.MIN_SAMPLES` and beats a coin flip statistically.
+    """
+
+    __tablename__ = "learned_parameters"
+
+    id = Column(Integer, primary_key=True)
+    # Always GLOBAL_KEY: learned state is workspace-global, so every device
+    # benefits from every other device's scored trades. See GLOBAL_KEY.
+    device_id = Column(String(255), nullable=False, default=GLOBAL_KEY, index=True)
+    name = Column(String(64), nullable=False)
+    value = Column(Float, nullable=False)
+
+    version = Column(Integer, nullable=False, default=1)
+    sample_size = Column(Integer, nullable=False, default=0)
+    hit_rate = Column(Float)
+    validated = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("device_id", "name", name="ux_learned_parameters_device_name"),
+    )
+
+
+class LearnedParameterHistory(Base):
+    """Append-only audit trail, so a changed threshold is explainable."""
+
+    __tablename__ = "learned_parameter_history"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, default=GLOBAL_KEY, index=True)
+    name = Column(String(64), nullable=False)
+    previous_value = Column(Float)
+    new_value = Column(Float, nullable=False)
+    version = Column(Integer, nullable=False)
+    sample_size = Column(Integer, nullable=False)
+    hit_rate = Column(Float)
+    reason = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ModelAssignment(Base):
+    """Which Kronos variant serves a scope, and how it has performed.
+
+    Model selection is a ranking decision, not a guess: a variant is promoted
+    only after beating the incumbent on observed hit rate with enough samples to
+    matter. `promoted_at` records when, so a rotation is auditable.
+    """
+
+    __tablename__ = "model_assignments"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, default=GLOBAL_KEY, index=True)
+
+    scope = Column(String(16), nullable=False, default="global")
+    symbol = Column(String(32))
+    model = Column(String(64), nullable=False)
+
+    hit_rate = Column(Float)
+    sample_size = Column(Integer, nullable=False, default=0)
+    mean_latency_ms = Column(Float)
+    promoted = Column(Boolean, nullable=False, default=False)
+
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+    promoted_at = Column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint("device_id", "scope", "symbol", name="ux_model_assignments_scope"),
+    )

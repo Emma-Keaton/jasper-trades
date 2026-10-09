@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     2. Environment variables
     3. Default values
 
-    API keys for NVIDIA, brokers, and WhatsApp are configured via Settings page
+    API keys for brokers and WhatsApp are configured via Settings page
     and stored encrypted in the database. Environment variables are fallback.
     """
 
@@ -47,34 +47,22 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: Optional[str] = None
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
 
-    # NVIDIA NIM API (DEPRECATED - use Gemini 2.5 Flash instead via GEMINI_API_KEY)
-    # Kept as a fallback; the LLM service prefers Gemini when GEMINI_API_KEY is set.
-    NVIDIA_API_KEY: Optional[str] = None  # Set via Settings page
-    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+    # Groq - PRIMARY LLM provider (free tier, multi-key rotation)
+    # Comma- or newline-separated keys. Get keys at https://console.groq.com/keys
+    GROQ_API_KEY: Optional[str] = None  # e.g. "key1,key2,key3"
+    GROQ_API_KEYS: Optional[str] = None  # deprecated alias
+    GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 
-    # Google Gemini 2.5 Flash - PRIMARY LLM provider (free tier, multi-key rotation)
-    # IMPORTANT: Gemini rate limits are PER PROJECT, so each key below should come
-    # from a SEPARATE Google account / AI Studio project to keep quotas independent.
-    # Comma- or newline-separated. Use ~3 keys so a single project being rate-limited
-    # never stalls a trade mid-execution. Get keys at https://aistudio.google.com/apikey
-    GEMINI_API_KEY: Optional[str] = None  # e.g. "key1,key2,key3"
-    # DEPRECATED alias - kept so existing deployments keep working. Prefer GEMINI_API_KEY.
-    GEMINI_API_KEYS: Optional[str] = None  # e.g. "key1,key2,key3"
-    # Google Gen AI convention alias; used only when GEMINI_API_KEY/KEYS are unset.
-    GOOGLE_API_KEY: Optional[str] = None
-    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
-
-    # Model Routing - Gemini 2.5 Flash family (FREE tier).
-    # flash-lite: fast/high-RPD (risk checks, execution, simple tasks)
-    # flash: balanced analysis (news, sentiment, quant)
-    # pro: deep reasoning (portfolio), used sparingly (low free-tier RPD)
-    MODEL_FAST: str = "gemini-2.5-flash-lite"        # fast, ~30 RPM / 1500 RPD FREE
-    MODEL_FREE_FAST: str = "gemini-2.5-flash-lite"   # same as fast (FREE verified)
-    MODEL_BALANCED: str = "gemini-2.5-flash"          # ~10 RPM / 250 RPD FREE
-    MODEL_SMART: str = "gemini-2.5-flash"            # analysis model
-    MODEL_SMART_FREE: str = "gemini-2.5-flash"       # analysis (FREE verified)
-    MODEL_DEEP: str = "gemini-2.5-pro"               # ~5 RPM / 25 RPD FREE - use sparingly
-    MODEL_ALTERNATIVE: str = "gemini-2.5-flash"      # ensemble members
+    # Model Routing (Groq free tier).
+    # qwen3.8-27b: fast/small (risk checks, execution, simple tasks)
+    # gpt-oss-120b: analysis/deep reasoning
+    MODEL_FAST: str = "qwen/qwen3.8-27b"
+    MODEL_FREE_FAST: str = "qwen/qwen3.8-27b"
+    MODEL_BALANCED: str = "openai/gpt-oss-120b"
+    MODEL_SMART: str = "openai/gpt-oss-120b"
+    MODEL_SMART_FREE: str = "openai/gpt-oss-120b"
+    MODEL_DEEP: str = "openai/gpt-oss-120b"
+    MODEL_ALTERNATIVE: str = "openai/gpt-oss-20b"
 
     # Binance - Use database settings if available
     BINANCE_API_KEY: Optional[str] = None  # Set via Settings page
@@ -129,16 +117,41 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "json"
 
-    # Kronos Integration (4GB RAM optimized)
-    KRONOS_MODEL: str = "kronos-mini"  # or "kronos-mini-int8" for quantized
-    KRONOS_FORECAST_HORIZON: int = 50  # Number of bars to predict
-    KRONOS_BATCH_SIZE: int = 3  # Micro-batch size for 4GB RAM
-    KRONOS_MEMORY_THRESHOLD: float = 85.0  # Pause inference if RAM > 85%
-    KRONOS_USE_CLOUD: bool = False  # Use HuggingFace/remote fallback (Colab removed)
-    HUGGINGFACE_API_TOKEN: Optional[str] = None
+    # Optional third-party dependencies (app/services/optional_deps.py).
+    #
+    # On by default. The install is deliberately deferred: it runs after the app is
+    # already serving and only once the process is under OPTIONAL_DEPS_MAX_RSS_MB,
+    # so it cannot compete with boot for the 512 MB a Render free-tier instance has.
+    #
+    # Only affects the soft tier (statsmodels, yfinance). pandas is NOT here: it is
+    # imported unguarded by 457 files and is a hard requirement declared in
+    # requirements.txt.
+    OPTIONAL_DEPS_AUTO_INSTALL: bool = True
 
-    # Kronos Remote Service (Render Deployment)
-    KRONOS_SERVICE_URL: Optional[str] = None  # Remote Kronos service URL (Render)
+    # RSS ceiling, in MB, that must be clear before the install starts. Boot peaks
+    # around 190-250 MB on Render free, so 320 leaves room for one pip subprocess
+    # plus its wheel extraction without risking the OOM killer mid-install.
+    OPTIONAL_DEPS_MAX_RSS_MB: float = 320.0
+
+    # Give up waiting for headroom after this long and install anyway. An install
+    # that never starts because the process happens to be busy is worse than one
+    # that runs at slightly higher memory.
+    OPTIONAL_DEPS_MEMORY_TIMEOUT_SECONDS: float = 300.0
+
+    # Quiet period after startup before the first memory check, so the install does
+    # not begin while boot and warm-up are still competing for memory.
+    OPTIONAL_DEPS_SETTLE_SECONDS: float = 20.0
+
+    # Kronos prediction service (modal-kronos).
+    # The model runs remotely; this backend owns market data and calibration.
+    KRONOS_SERVICE_URL: Optional[str] = None  # e.g. https://modal-kronos--web-xxx.modal.run
+    KRONOS_API_KEY: Optional[str] = None  # shared secret, sent as X-API-Key
+    KRONOS_FORECAST_HORIZON: int = 50  # Number of bars to predict
+    KRONOS_SAMPLES: int = 10  # sampled paths; <2 is not a distribution
+    # The memory/RAM knobs below applied to an in-process torch model that this
+    # backend no longer runs. Inference happens on the modal-kronos service.
+    KRONOS_MODEL: str = "NeoQuasar/Kronos-mini"
+    HUGGINGFACE_API_TOKEN: Optional[str] = None
 
     # Replacement forecasting (used when Kronos is unavailable/not configured)
     REDIS_URL: Optional[str] = None  # Optional forecast cache; falls back to in-memory
@@ -201,27 +214,18 @@ class Settings(BaseSettings):
         return bool(self.BINANCE_API_KEY)
 
     @property
-    def gemini_configured(self) -> bool:
-        """True if at least one Gemini API key is configured."""
-        return bool(self.gemini_keys)
+    def groq_configured(self) -> bool:
+        return bool(self.groq_keys)
 
     @property
-    def gemini_keys(self) -> List[str]:
-        """All Gemini API keys, parsed into a list.
-
-        Priority: GEMINI_API_KEY (correct spelling) -> GEMINI_API_KEYS (deprecated
-        alias) -> GOOGLE_API_KEY. Each entry is a separate Google project key so
-        per-project quotas are independent and the rotator can fail over.
-        """
-        raw = self.GEMINI_API_KEY or self.GEMINI_API_KEYS
+    def groq_keys(self) -> List[str]:
+        raw = self.GROQ_API_KEY or self.GROQ_API_KEYS
         keys: List[str] = []
         if raw:
             for part in str(raw).replace("\n", ",").split(","):
                 k = part.strip()
                 if k:
                     keys.append(k)
-        if not keys and self.GOOGLE_API_KEY:
-            keys = [self.GOOGLE_API_KEY]
         return keys
 
     @property
@@ -248,8 +252,8 @@ def get_api_key_from_settings(key_name: str, fallback: Optional[str] = None) -> 
     2. Environment variables
     3. Fallback value
     
-    Usage:
-        nvidia_key = get_api_key_from_settings("nvidia_api_key", settings.NVIDIA_API_KEY)
+        Usage:
+            groq_key = get_api_key_from_settings("groq_api_key", settings.GROQ_API_KEY)
     """
     # Try to load from database first
     try:
@@ -269,8 +273,8 @@ def get_api_key_from_settings(key_name: str, fallback: Optional[str] = None) -> 
                     from app.services.encryption import EncryptionHelper
                     encryption = EncryptionHelper()
                     
-                    if key_name == "nvidia_api_key" and device_settings.nvidia_key:
-                        return encryption.decrypt(device_settings.nvidia_key)
+                    if key_name == "groq_api_key" and device_settings.groq_key:
+                        return encryption.decrypt(device_settings.groq_key)
                     elif key_name == "binance_api_key" and device_settings.binance_key:
                         return encryption.decrypt(device_settings.binance_key)
                     elif key_name == "binance_api_secret" and device_settings.binance_secret:

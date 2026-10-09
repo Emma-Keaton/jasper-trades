@@ -3,12 +3,10 @@ Multi-LLM Ensemble Service
 Aggregates predictions from multiple models for higher accuracy.
 
 Ensemble Models:
-- Llama-3.2-3B-Instruct (fast baseline, ~50ms)
-- Phi-3-Medium (free, fast, ~100ms)
-- Llama-3.1-70B-Instruct-FREE (smart, free, ~200ms)
-- Mistral-Large (free alternative)
-- Llama-3.3-70B-Instruct (premium, ~300ms)
-- Nemotron-3-Super-120B (deep analysis, ~600ms)
+- Qwen3.8-27B (fast baseline)
+- gpt-oss-20b (fast)
+- gpt-oss-120b (smart)
+- llama-prompt-guard (classification)
 
 Features:
 - Weight by historical accuracy per asset class
@@ -74,54 +72,43 @@ class EnsembleService:
     def _initialize_models(self):
         """Initialize ensemble model configurations"""
         # Free tier models (prioritized)
-        self.models["phi-3-medium"] = EnsembleModel(
-            name="Phi-3-Medium",
-            model_id="microsoft/phi-3-medium-128k-instruct",
-            base_url="https://integrate.api.nvidia.com/v1",
+        self.models["qwen3.8-27b"] = EnsembleModel(
+            name="Qwen3.8-27B",
+            model_id="qwen/qwen3.8-27b",
+            base_url="https://api.groq.com/openai/v1",
             is_free=True,
             expected_latency_ms=100,
             cost_per_1m_tokens=0.0,
             specialty="classification",
         )
 
-        self.models["llama-31-70b-free"] = EnsembleModel(
-            name="Llama-3.1-70B-Instruct-FREE",
-            model_id="meta/llama-3.1-70b-instruct",
-            base_url="https://integrate.api.nvidia.com/v1",
+        self.models["gpt-oss-20b"] = EnsembleModel(
+            name="GPT-OSS-20B",
+            model_id="openai/gpt-oss-20b",
+            base_url="https://api.groq.com/openai/v1",
             is_free=True,
             expected_latency_ms=200,
             cost_per_1m_tokens=0.0,
             specialty="general",
         )
 
-        self.models["mistral-large-free"] = EnsembleModel(
-            name="Mistral-Large",
-            model_id="mistralai/mistral-large",
-            base_url="https://integrate.api.nvidia.com/v1",
+        self.models["gpt-oss-120b"] = EnsembleModel(
+            name="GPT-OSS-120B",
+            model_id="openai/gpt-oss-120b",
+            base_url="https://api.groq.com/openai/v1",
             is_free=True,
             expected_latency_ms=250,
             cost_per_1m_tokens=0.0,
             specialty="analysis",
         )
 
-        # Premium models (for complex tasks)
-        self.models["llama-33-70b"] = EnsembleModel(
-            name="Llama-3.3-70B-Instruct",
-            model_id="meta/llama-3.3-70b-instruct",
-            base_url="https://integrate.api.nvidia.com/v1",
-            is_free=False,
-            expected_latency_ms=300,
-            cost_per_1m_tokens=0.65,
-            specialty="general",
-        )
-
-        self.models["nemotron-120b"] = EnsembleModel(
-            name="Nemotron-3-Super-120B",
-            model_id="nvidia/nemotron-3-120b-instruct",
-            base_url="https://integrate.api.nvidia.com/v1",
+        self.models["gpt-oss-120b-deep"] = EnsembleModel(
+            name="GPT-OSS-120B (deep)",
+            model_id="openai/gpt-oss-120b",
+            base_url="https://api.groq.com/openai/v1",
             is_free=False,
             expected_latency_ms=600,
-            cost_per_1m_tokens=2.0,
+            cost_per_1m_tokens=0.0,
             specialty="analysis",
         )
 
@@ -264,13 +251,13 @@ class EnsembleService:
         max_tokens: int,
     ) -> List[Dict[str, Any]]:
         """Run all models in parallel"""
-        from app.nvidia_nim import nvidia_client
+        from app.services.llm_service import groq_client
 
         async def run_single_model(model: EnsembleModel) -> Dict[str, Any]:
             start_time = datetime.utcnow()
             try:
-                # Call NVIDIA NIM API
-                output = await nvidia_client.complete(
+                # Call Groq API
+                output = await groq_client.complete(
                     model=model.model_id,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=temperature,

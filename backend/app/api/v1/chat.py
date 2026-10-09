@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app.database import get_db
 from app.models import ChatMessage, Portfolio, Trade, Position, TelegramUser
-from app.nvidia_nim import nvidia_client
+from app.services.llm_service import groq_client
 
 logger = structlog.get_logger(__name__)
 
@@ -74,7 +74,7 @@ async def chat_message(
         elif intent == "balance":
             response_text = await handle_balance_intent(device_id, db)
         else:
-            # General AI chat using NVIDIA NIM
+            # General AI chat using Groq
             response_text = await handle_general_chat(request.message, device_id, db)
 
         # Store AI response
@@ -150,7 +150,7 @@ async def handle_portfolio_intent(device_id: str, db: AsyncSession) -> str:
     portfolio_service = PortfolioService(db)
     
     # Get user's portfolio
-    portfolios = await portfolio_service.get_portfolios()
+    portfolios = await portfolio_service.get_portfolios(device_id)
     if not portfolios:
         return "📊 *Portfolio Not Found*\n\nYou don't have any portfolios yet. Create one to start trading!"
     
@@ -191,7 +191,7 @@ async def handle_trades_intent(device_id: str, db: AsyncSession) -> str:
     portfolio_service = PortfolioService(db)
     
     # Get user's portfolio
-    portfolios = await portfolio_service.get_portfolios()
+    portfolios = await portfolio_service.get_portfolios(device_id)
     if not portfolios:
         return "📜 *No Trades*\nYou don't have any portfolios yet."
     
@@ -272,7 +272,7 @@ async def handle_balance_intent(device_id: str, db: AsyncSession) -> str:
     
     portfolio_service = PortfolioService(db)
     
-    portfolios = await portfolio_service.get_portfolios()
+    portfolios = await portfolio_service.get_portfolios(device_id)
     if not portfolios:
         return "📊 *No Portfolio*\n\nCreate a portfolio to track your PnL!"
     
@@ -295,9 +295,9 @@ async def handle_balance_intent(device_id: str, db: AsyncSession) -> str:
 
 
 async def handle_general_chat(message: str, device_id: str, db: AsyncSession) -> str:
-    """Handle general chat using NVIDIA NIM AI"""
+    """Handle general chat using Groq AI"""
     
-    # Use NVIDIA NIM for real AI responses
+    # Use Groq for real AI responses
     try:
         # Build context-aware prompt
         context = f"""You are Jasper Trades AI assistant. Help users with trading questions.
@@ -312,8 +312,8 @@ Provide helpful, accurate responses about:
 
 Be concise and friendly. Use emojis where appropriate."""
         
-        response = await nvidia_client.chat(
-            model="meta/llama-3.3-70b-instruct",
+        response = await groq_client.chat(
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": context}],
             temperature=0.7,
             max_tokens=500,
@@ -322,7 +322,7 @@ Be concise and friendly. Use emojis where appropriate."""
         return response.get('choices', [{}])[0].get('message', {}).get('content', str(response))
         
     except Exception as e:
-        logger.error(f"NVIDIA NIM error: {e}")
+        logger.error(f"Groq error: {e}")
         
         # Fallback to simple keyword responses
         if "hello" in message.lower() or "hi" in message.lower():

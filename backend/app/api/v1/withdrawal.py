@@ -26,6 +26,7 @@ router = APIRouter(prefix="/withdrawal", tags=["withdrawal"])
 # are always encrypted at rest with a stable, non-committed key.
 
 from app.services.encryption import EncryptionHelper
+from app.services import payout_rail
 
 encryption = EncryptionHelper()
 
@@ -37,6 +38,32 @@ class WithdrawalRequest(BaseModel):
     amount: float = Field(..., gt=0, description="Amount to withdraw")
     destination_type: str = Field(..., description="crypto_wallet or broker")
     destination_address: Optional[str] = None
+    destination_chain: Optional[str] = Field(
+        default=None,
+        description=(
+            "Network for a crypto withdrawal: tron | bsc | polygon | ethereum | "
+            "solana. Required when destination_type is crypto_wallet."
+        ),
+    )
+
+
+class PayoutWalletKeysRequest(BaseModel):
+    """Payout hot-wallet signing keys, one per chain family.
+
+    `evm` covers Ethereum, BSC and Polygon (one key, one address). Tron and Solana
+    are separate keyspaces and need their own keys. Leave a family out if you
+    will not receive payouts on it.
+    """
+
+    evm: Optional[str] = Field(
+        default=None, description="0x-prefixed EVM private key (32 bytes)"
+    )
+    tron: Optional[str] = Field(
+        default=None, description="Tron private key, 64 hex characters, no 0x"
+    )
+    solana: Optional[str] = Field(
+        default=None, description="Solana secret key, base58"
+    )
 
 
 class PayoutSettingsRequest(BaseModel):
@@ -49,12 +76,20 @@ class PayoutSettingsRequest(BaseModel):
     payout_frequency: str = Field(default="custom_time", pattern="^(custom_time|end_of_trade)$")
     min_payout_threshold: float = Field(default=10.0, ge=0)
     broker_account: Optional[str] = None
+    payout_chain: str = Field(
+        default="tron",
+        description=(
+            "Network the crypto payout is sent on: tron | bsc | polygon | "
+            "ethereum | solana. Tron is the practical default for Nigerian users "
+            "because Nigerian off-ramps are TRC20."
+        ),
+    )
 
 
 class ValidateWalletRequest(BaseModel):
     """Crypto wallet validation request"""
     address: str
-    network: str = "ethereum"
+    network: str = "tron"
 
 
 # ============ Withdrawal Endpoints ============
@@ -72,7 +107,16 @@ async def request_withdrawal(
         
         if request.destination_type == "crypto_wallet" and not request.destination_address:
             raise HTTPException(status_code=400, detail="Crypto wallet address required")
-        
+
+        if request.destination_type == "crypto_wallet":
+            # A crypto withdrawal must name its network. Without this the
+            # transfer could not be signed at all, so fail at request time with
+            # a clear message instead of at send time.
+            try:
+                payout_rail.get_chain(request.destination_chain or "")
+            except payout_rail.PayoutRailError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         withdrawal_service = get_withdrawal_service(db)
         withdrawal = await withdrawal_service.create_withdrawal(
             portfolio_id=portfolio_id,
@@ -80,8 +124,9 @@ async def request_withdrawal(
             withdrawal_type="manual",
             destination_type=request.destination_type,
             destination_address=request.destination_address or "",
+            destination_chain=request.destination_chain,
         )
-        
+
         return {
             "success": True,
             "withdrawal_id": withdrawal.id,
@@ -89,6 +134,7 @@ async def request_withdrawal(
             "fee": withdrawal.fee,
             "net_amount": withdrawal.net_amount,
             "status": withdrawal.status,
+            "destination_chain": withdrawal.destination_chain,
         }
         
     except ValueError as e:
@@ -219,6 +265,9 @@ async def get_payout_settings(
                 "payout_schedule_minute": 0,
                 "payout_frequency": "custom_time",
                 "min_payout_threshold": 10.0,
+                "payout_chain": "tron",
+                "payout_keys_configured": _key_families(settings),
+                "supported_chains": payout_rail.describe_chains(),
             }
 
         encryption = EncryptionHelper()
@@ -233,6 +282,10 @@ async def get_payout_settings(
             "payout_schedule_minute": payout_config.get("payout_schedule_minute", 0),
             "payout_frequency": payout_config.get("payout_frequency", "custom_time"),
             "min_payout_threshold": payout_config.get("min_payout_threshold", 10.0),
+            "payout_chain": payout_config.get("payout_chain", "tron"),
+            # Which key families exist, never the keys themselves.
+            "payout_keys_configured": _key_families(settings),
+            "supported_chains": payout_rail.describe_chains(),
         }
     except Exception as e:
         logger.error(f"Error fetching payout settings: {e}")
@@ -244,7 +297,8 @@ async def get_payout_settings(
             "payout_schedule_minute": 0,
             "payout_frequency": "custom_time",
             "min_payout_threshold": 10.0,
-            "error": "Failed to load settings"
+            "payout_chain": "tron",
+            "error": "Failed to load settings",
         }
 
 
@@ -257,7 +311,16 @@ async def save_payout_settings(
     """Save payout configuration."""
     if not device_id:
         raise HTTPException(status_code=400, detail="X-Device-ID header required")
-    
+
+    # Validate the chain and address together, before saving. Catching a mismatch
+    # here means the operator finds out now, not at 8 PM when the payout fires.
+    if settings_req.crypto_wallet:
+        try:
+            chain = payout_rail.get_chain(settings_req.payout_chain)
+            payout_rail.validate_address(chain.id, settings_req.crypto_wallet)
+        except payout_rail.PayoutRailError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     payout_config = {
         "crypto_wallet": settings_req.crypto_wallet,
         "payout_enabled": settings_req.payout_enabled,
@@ -267,17 +330,18 @@ async def save_payout_settings(
         "payout_frequency": settings_req.payout_frequency,
         "min_payout_threshold": settings_req.min_payout_threshold,
         "broker_account": settings_req.broker_account,
+        "payout_chain": settings_req.payout_chain,
     }
-    
+
     encrypted_config = encryption.encrypt_json(payout_config)
-    
+
     async with db as session:
         from sqlalchemy import select
         result = await session.execute(
             select(DeviceSettings).where(DeviceSettings.device_id == device_id)
         )
         device_settings = result.scalar_one_or_none()
-        
+
         if device_settings:
             device_settings.payout_config = encrypted_config
         else:
@@ -286,11 +350,14 @@ async def save_payout_settings(
                 payout_config=encrypted_config,
             )
             session.add(device_settings)
-        
+
         await session.commit()
-    
-    logger.info(f"Payout settings saved for device {device_id}")
-    
+
+    logger.info(
+        f"Payout settings saved for device {device_id} "
+        f"(chain={settings_req.payout_chain})"
+    )
+
     return {
         "success": True,
         "payout_enabled": settings_req.payout_enabled,
@@ -299,27 +366,144 @@ async def save_payout_settings(
         "payout_schedule_minute": settings_req.payout_schedule_minute,
         "payout_frequency": settings_req.payout_frequency,
         "min_payout_threshold": settings_req.min_payout_threshold,
+        "payout_chain": settings_req.payout_chain,
+        "supported_chains": payout_rail.describe_chains(),
     }
+
+
+@router.get("/payout/chains")
+async def list_payout_chains():
+    """List supported payout networks with their approximate costs.
+
+    Read-only and unauthenticated: it exposes no user data, and the frontend
+    needs it to render the network picker.
+    """
+    return {"chains": payout_rail.describe_chains()}
+
+
+@router.post("/payout/keys")
+async def save_payout_keys(
+    keys_req: PayoutWalletKeysRequest,
+    device_id: str = Header(None, alias="X-Device-ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Store the payout hot-wallet signing keys, encrypted.
+
+    One key per chain family. `evm` covers Ethereum, BSC and Polygon together.
+    Keys are never returned by any endpoint - only which families are configured.
+    """
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-ID header required")
+
+    bundle = {
+        "evm": keys_req.evm,
+        "tron": keys_req.tron,
+        "solana": keys_req.solana,
+    }
+    if not any(bundle.values()):
+        raise HTTPException(
+            status_code=400, detail="At least one chain-family key is required"
+        )
+
+    # Reject malformed keys now. Deferring this to payout time would fail at the
+    # moment money was meant to move.
+    if bundle["evm"]:
+        _guard_key(bundle["evm"], "EVM", lambda k: len(k) == 64 and all(
+            c in "0123456789abcdefABCDEF" for c in k
+        ))
+    if bundle["tron"]:
+        _guard_key(bundle["tron"], "Tron", lambda k: len(k) == 64 and all(
+            c in "0123456789abcdefABCDEF" for c in k
+        ))
+    if bundle["solana"]:
+        # base58, no 0/0/O/I/l
+        base58 = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+        _guard_key(
+            bundle["solana"], "Solana",
+            lambda k: 32 <= len(k) <= 90 and set(k) <= base58,
+        )
+
+    encrypted = encryption.encrypt_json(bundle)
+
+    async with db as session:
+        from sqlalchemy import select
+        result = await session.execute(
+            select(DeviceSettings).where(DeviceSettings.device_id == device_id)
+        )
+        device_settings = result.scalar_one_or_none()
+        if device_settings:
+            device_settings.payout_wallet_keys = encrypted
+        else:
+            session.add(
+                DeviceSettings(device_id=device_id, payout_wallet_keys=encrypted)
+            )
+        await session.commit()
+
+    # Names only. Never log or return key material.
+    logger.info(
+        "Payout keys saved for device %s (families: %s)",
+        device_id,
+        ", ".join(sorted(k for k, v in bundle.items() if v)),
+    )
+    return {
+        "success": True,
+        "payout_keys_configured": sorted(k for k, v in bundle.items() if v),
+    }
+
+
+def _guard_key(key: str, label: str, predicate) -> None:
+    """Raise a 400 if a stored key is malformed, without echoing it back.
+
+    The error deliberately omits the key: it travels to the client in the
+    response and into logs via the request pipeline.
+    """
+    body = key[2:] if label == "EVM" and key.startswith("0x") else key
+    if not predicate(body):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} payout key is malformed; check the format",
+        )
+
+
+def _key_families(settings) -> list:
+    """Which payout key families are configured, without decrypting them.
+
+    Deliberately does not decrypt: this endpoint is read by the settings UI on
+    load, and there is no reason to pull private keys into memory to render a
+    checklist. It reports presence by inspecting the encrypted blob's shape.
+    """
+    if settings is None or not getattr(settings, "payout_wallet_keys", None):
+        return []
+    try:
+        bundle = encryption.decrypt_json(settings.payout_wallet_keys) or {}
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not read payout key bundle for settings page")
+        return []
+    return sorted(k for k, v in bundle.items() if v)
 
 
 @router.post("/payout/validate-wallet")
 async def validate_crypto_wallet(request: ValidateWalletRequest):
-    """Validate crypto wallet address format."""
-    import re
-    address = request.address.strip()
-    network = request.network.lower()
-    
-    if network in ["ethereum", "erc20"]:
-        if not re.match(r'^0x[a-fA-F0-9]{40}$', address):
-            return {"valid": False, "message": "Invalid Ethereum address"}
-    elif network in ["solana", "spl"]:
-        if not re.match(r'^[1-9A-HJ-NP-Za-km-z]{32,44}$', address):
-            return {"valid": False, "message": "Invalid Solana address"}
-    else:
-        return {"valid": False, "message": f"Unsupported network: {network}"}
-    
+    """Validate a payout address against the rules for one network.
+
+    Delegates to `payout_rail` so validation here and validation at send time
+    cannot disagree. The previous inline regexes accepted only Ethereum and
+    Solana, which meant a valid Tron address - the practical default for
+    Nigerian users - was reported as an "unsupported network".
+    """
+    try:
+        chain = payout_rail.get_chain(request.network)
+    except payout_rail.PayoutRailError as exc:
+        return {"valid": False, "message": str(exc)}
+
+    try:
+        address = payout_rail.validate_address(chain.id, request.address)
+    except payout_rail.PayoutRailError as exc:
+        return {"valid": False, "message": str(exc)}
+
     return {
         "valid": True,
-        "network": network,
+        "network": chain.id,
+        "network_label": chain.label,
         "address": address[:10] + "..." + address[-5:],
     }

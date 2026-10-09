@@ -14,13 +14,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.device_auth import require_device_id
 from app.models import SignalSource, SignalTip, WatchlistItem
 
 router = APIRouter(prefix="/factor-trading", tags=["factor-trading"])
 
 
 def _device_id(x_device_id: Optional[str] = Header(None)) -> str:
-    return (x_device_id or "").strip() or "default-device"
+    """Resolve the device credential.
+
+    Was `(x_device_id or "").strip() or "default-device"`, which meant a caller
+    omitting the header read whichever device's factor ledger came first.
+    """
+    return require_device_id(x_device_id)
 
 
 def _tip_to_dict(t: SignalTip) -> Dict[str, Any]:

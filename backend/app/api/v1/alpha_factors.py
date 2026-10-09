@@ -12,6 +12,8 @@ from app.services.valuation_service import ValuationService
 router = APIRouter()
 
 
+from app.device_auth import require_device_id
+
 @router.get("")
 async def list_alpha_factors(
     category: Optional[str] = None,
@@ -245,7 +247,7 @@ async def auto_trade(
     trade through the unified trade gate. ``side`` may be forced; otherwise the
     consensus direction is used.
     """
-    device_id = (x_device_id or "").strip() or "default-device"
+    device_id = require_device_id(x_device_id)
     factor_service = AlphaFactorService(db)
 
     ohlcv = await _fetch_ohlcv(symbol)

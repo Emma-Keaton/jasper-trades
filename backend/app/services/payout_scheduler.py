@@ -5,18 +5,19 @@ Background scheduler for automated profit distribution.
 Runs every hour, checks if portfolios should execute auto-payout.
 
 Payout Destinations:
-1. Crypto Wallet (USDT on ERC20/SOLANA/BSC via Tatum)
-2. Nigerian Bank Account (NGN via Trove API)
+1. Crypto Wallet (USDT sent directly on-chain; see `app/services/payout_rail.py`)
+2. Nigerian Bank Account (NGN via Paystack/Flutterwave + Trove)
 
 Configuration (encrypted JSON in DeviceSettings):
 {
     "payout_enabled": true,
-    "payout_percentage": 50.0,  # Configurable: 0-100
-    "payout_schedule_hour": 20,  # 0-23 ET
-    "payout_destination": "crypto_wallet",  # or "naira_bank"
-    "crypto_wallet": "0x...",  # USDT wallet address
-    "crypto_chain": "ethereum",  # or "solana" | "bsc"
-    "min_payout_threshold": 10.0  # Minimum profit before payout
+    "payout_percentage": 50.0,  // Configurable: 0-100
+    "payout_schedule_hour": 20,  // 0-23 WAT (Africa/Lagos)
+    "payout_schedule_minute": 0,
+    "payout_frequency": "custom_time",  // or "end_of_trade"
+    "payout_chain": "tron",  // tron | bsc | polygon | ethereum | solana
+    "crypto_wallet": "T...",  // USDT address on the selected network
+    "min_payout_threshold": 10.0  // Minimum profit before payout
 }
 
 For Naira bank payouts, also requires:
@@ -47,7 +48,7 @@ class PayoutScheduler:
     Flexible Auto-Payout Scheduler with multiple destination support.
     
     Destination logic:
-    1. crypto_wallet → USDT to external wallet via Tatum
+    1. crypto_wallet -> USDT to an external wallet, signed locally
     """
 
     def __init__(self):
@@ -140,34 +141,48 @@ class PayoutScheduler:
                     if current_hour_wat != scheduled_hour or current_minute_wat != scheduled_minute:
                         continue
 
-                    # Get portfolio (linked via device_id - in production, use proper portfolio mapping)
-                    # For now, get first portfolio
-                    portfolios_query = select(Portfolio).limit(1)
+                    # Get portfolio for this device's settings
+                    #
+                    # This previously did `select(Portfolio).limit(1)`, so every
+                    # device's payout configuration was evaluated against the
+                    # first portfolio in the database. On a multi-device
+                    # deployment that paid the wrong portfolio's profit to the
+                    # wrong wallet. Match on the device instead.
+                    portfolios_query = select(Portfolio).where(
+                        Portfolio.device_id == settings.device_id
+                    )
                     portfolios_result = await session.execute(portfolios_query)
-                    portfolio = portfolios_result.scalar_one_or_none()
-                    
-                    if not portfolio:
+                    portfolios = list(portfolios_result.scalars().all())
+
+                    if not portfolios:
+                        logger.warning(
+                            "No portfolio for device %s; skipping payout",
+                            settings.device_id,
+                        )
                         skipped_count += 1
                         continue
 
-                    # Execute auto-payout with flexible routing
-                    withdrawal_service = WithdrawalService(session)
-                    result = await withdrawal_service.execute_auto_payout(
-                        portfolio.id,
-                        payout_config
-                    )
-
-                    if result:
-                        executed_count += 1
-                        logger.info(
-                            f"Auto-payout executed for portfolio {portfolio.id}",
-                            amount=result.amount,
-                            daily_pnl=result.daily_pnl,
-                            destination=result.destination_type,
-                            payout_type=result.withdrawal_type,
+                    # A device may legitimately hold several portfolios (one per
+                    # broker), and each has its own profit. Payout every one of
+                    # them rather than silently paying only the first.
+                    for portfolio in portfolios:
+                        withdrawal_service = WithdrawalService(session)
+                        result = await withdrawal_service.execute_auto_payout(
+                            portfolio.id,
+                            payout_config,
                         )
-                    else:
-                        skipped_count += 1
+
+                        if result:
+                            executed_count += 1
+                            logger.info(
+                                f"Auto-payout executed for portfolio {portfolio.id}",
+                                amount=result.amount,
+                                daily_pnl=result.daily_pnl,
+                                destination=result.destination_type,
+                                payout_type=result.withdrawal_type,
+                            )
+                        else:
+                            skipped_count += 1
 
                 except Exception as e:
                     logger.error(

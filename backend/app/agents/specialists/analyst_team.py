@@ -4,7 +4,7 @@ Fincept Specialist Agents - Analyst Team
 """
 from typing import Dict, Any, Optional, List
 from app.agents.base import BaseAgent
-from app.nvidia_nim import nvidia_client
+from app.services.llm_service import groq_client
 from app.services.data_connectors import DataConnectorService
 import structlog
 
@@ -28,7 +28,7 @@ class FundamentalsAnalyst(BaseAgent):
     def __init__(self):
         super().__init__(
             name="FundamentalsAnalyst",
-            model="nvidia/nemotron-3-ultra-550b-a55b",
+            model="openai/gpt-oss-120b",
             config={
                 "system_prompt": """You are a fundamental analyst at a top investment bank.
 
@@ -72,7 +72,7 @@ Provide:
 3. Financial health assessment
 4. Buy/hold/sell recommendation with price target"""
         
-        response = await nvidia_client.chat_completion(
+        response = await groq_client.chat_completion(
             [{"role": "system", "content": self.system_prompt},
              {"role": "user", "content": prompt}],
             task_type="portfolio"
@@ -151,7 +151,7 @@ Provide:
 4. Risk/reward ratio
 5. Time horizon"""
         
-        response = await nvidia_client.chat_completion(
+        response = await groq_client.chat_completion(
             [{"role": "system", "content": self.system_prompt},
              {"role": "user", "content": prompt}],
             task_type="execution"
@@ -228,7 +228,7 @@ Provide:
 - Contrarian signal? (yes/no, why)
 - Actionable insight"""
         
-        response = await nvidia_client.chat_completion(
+        response = await groq_client.chat_completion(
             [{"role": "system", "content": self.system_prompt},
              {"role": "user", "content": prompt}],
             task_type="analysis"
@@ -260,7 +260,7 @@ class MacroAnalyst(BaseAgent):
     def __init__(self):
         super().__init__(
             name="MacroAnalyst",
-            model="nvidia/nemotron-3-ultra-550b-a55b",
+            model="openai/gpt-oss-120b",
             config={
                 "system_prompt": """You are a macro strategist at a global investment bank.
 
@@ -313,7 +313,7 @@ Provide:
 4. Tactical asset allocation (overweight/underweight asset classes)
 5. Key risks to monitor"""
         
-        response = await nvidia_client.chat_completion(
+        response = await groq_client.chat_completion(
             [{"role": "system", "content": self.system_prompt},
              {"role": "user", "content": prompt}],
             task_type="portfolio"

@@ -5,8 +5,8 @@ Pipeline (per the redesign spec):
    - If Kronos has enough data (a real UP/DOWN with confidence > 0), use it as
      the base confidence, boosted when Kronos' direction agrees with the tip's
      side, and penalised when it disagrees.
-2. **Gemini fallback**: if Kronos lacks data (NEUTRAL / UNKNOWN / error /
-   timeout) but the extracted signal is clear, fall back to the Gemini
+2. **LLM fallback**: if Kronos lacks data (NEUTRAL / UNKNOWN / error /
+   timeout) but the extracted signal is clear, fall back to the LLM
    extraction confidence.
 3. **Source hit-rate ranking**: scale the result by how many correct calls the
    source has made so far, so high-accuracy sources rank above unproven ones.
@@ -54,13 +54,13 @@ def _kronos_has_data(pred: Dict[str, Any]) -> bool:
 async def compute_confidence(
     symbol: str,
     side: str,
-    gemini_confidence: float,
+    LLM_confidence: float,
     source_id: int,
     db: AsyncSession,
 ) -> Tuple[float, str]:
     """
     Returns (final_confidence in 0..1, basis) where basis is one of:
-    'kronos', 'gemini_fallback', 'gemini'.
+    'kronos', 'LLM_fallback', 'LLM'.
     """
     # 1) Try Kronos
     try:
@@ -80,9 +80,9 @@ async def compute_confidence(
             base = base * 0.60                       # model disagrees -> penalise
         basis = "kronos"
     else:
-        # 2) Gemini fallback when Kronos has no data but the signal is clear
-        base = max(0.0, min(1.0, float(gemini_confidence or 0.0)))
-        basis = "gemini_fallback" if base >= 0.5 else "gemini"
+        # 2) LLM fallback when Kronos has no data but the signal is clear
+        base = max(0.0, min(1.0, float(LLM_confidence or 0.0)))
+        basis = "LLM_fallback" if base >= 0.5 else "LLM"
 
     # 3) Rank by source hit-rate (correct calls so far)
     hit_rate, resolved = await _source_hit_rate(db, source_id)

@@ -1,6 +1,7 @@
 """Tests for the scheduled factor-trading sweep (watchlist -> advisor -> auto-exec)."""
 from datetime import datetime, timedelta
 
+from conftest import TEST_DEVICE_ID, TEST_DEVICE_ID_2
 import numpy as np
 import pandas as pd
 import pytest
@@ -20,44 +21,65 @@ def _ohlcv_bars(n=300, start=60000.0):
     ]
 
 
-async def _add_watchlist(db, device_id="dev-1", symbols=("BTC",)):
+async def _add_watchlist(db, device_id=TEST_DEVICE_ID, symbols=("BTC",)):
     for s in symbols:
         db.add(WatchlistItem(device_id=device_id, symbol=s, asset_class="crypto", source="coingecko"))
     await db.commit()
 
 
+async def _start_agents(db, device_id=TEST_DEVICE_ID):
+    """Mark the device as started, which the sweep requires before trading.
+
+    `run_factor_sweep` skips any device whose `DeviceSettings.preferences` does
+    not carry `agents_started`. This is a real safety gate - the sweep must not
+    trade for a device the operator never pressed Start on - so tests that expect
+    a trade have to satisfy it explicitly.
+    """
+    import json
+
+    from app.models import DeviceSettings
+
+    settings = DeviceSettings(
+        device_id=device_id,
+        preferences=json.dumps({"agents_started": True}),
+    )
+    db.add(settings)
+    await db.commit()
+
+
 @pytest.mark.asyncio
 async def test_ensure_factor_source_is_singleton(db):
-    src = await ft._ensure_factor_source(db, "dev-1")
+    src = await ft._ensure_factor_source(db, TEST_DEVICE_ID)
     assert src.source_type == "factor"
     assert src.display_name == "Alpha Zoo Decider"
 
-    again = await ft._ensure_factor_source(db, "dev-1")
-    rows = (await db.execute(select(SignalSource).where(SignalSource.device_id == "dev-1"))).scalars().all()
+    again = await ft._ensure_factor_source(db, TEST_DEVICE_ID)
+    rows = (await db.execute(select(SignalSource).where(SignalSource.device_id == TEST_DEVICE_ID))).scalars().all()
     assert again.id == src.id
     assert len(rows) == 1
 
 
 @pytest.mark.asyncio
 async def test_already_traded_detects_recent_tip(db):
-    src = await ft._ensure_factor_source(db, "dev-1")
+    src = await ft._ensure_factor_source(db, TEST_DEVICE_ID)
     db.add(
         SignalTip(
-            device_id="dev-1", source_id=src.id, slug="BTC-long", symbol="BTC", side="long",
+            device_id=TEST_DEVICE_ID, source_id=src.id, slug="BTC-long", symbol="BTC", side="long",
             confidence=0.8, execution_status="executed",
             created_at=datetime.utcnow() - timedelta(minutes=10),
         )
     )
     await db.commit()
 
-    assert await ft._already_traded(db, "dev-1", "BTC", "long", src.id) is True
-    assert await ft._already_traded(db, "dev-1", "BTC", "short", src.id) is False
-    assert await ft._already_traded(db, "dev-1", "ETH", "long", src.id) is False
+    assert await ft._already_traded(db, TEST_DEVICE_ID, "BTC", "long", src.id) is True
+    assert await ft._already_traded(db, TEST_DEVICE_ID, "BTC", "short", src.id) is False
+    assert await ft._already_traded(db, TEST_DEVICE_ID, "ETH", "long", src.id) is False
 
 
 @pytest.mark.asyncio
 async def test_sweep_creates_tip_and_auto_executes(db, monkeypatch):
-    await _add_watchlist(db, "dev-1", ("BTC",))
+    await _add_watchlist(db, TEST_DEVICE_ID, ("BTC",))
+    await _start_agents(db, TEST_DEVICE_ID)
 
     async def fake_fetch(symbol):
         return _ohlcv_bars()
@@ -86,12 +108,40 @@ async def test_sweep_creates_tip_and_auto_executes(db, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_sweep_refuses_to_trade_before_agents_started(db, monkeypatch):
+    """The sweep must not trade for a device the operator never started.
+
+    Without this gate a scheduled sweep would place trades on every watchlisted
+    symbol as soon as the backend booted, including for a user who only ever
+    browsed the dashboard.
+    """
+    await _add_watchlist(db, TEST_DEVICE_ID, ("BTC",))
+    # Deliberately NOT calling _start_agents.
+
+    async def fake_fetch(symbol):
+        return _ohlcv_bars()
+
+    async def fake_auto_execute(s, device_id, tip):  # pragma: no cover
+        raise AssertionError("must not auto-execute before agents are started")
+
+    monkeypatch.setattr(ft, "_fetch_ohlcv", fake_fetch)
+    monkeypatch.setattr("app.services.signal_sources.ingest.maybe_auto_execute", fake_auto_execute)
+
+    stats = await ft.run_factor_sweep(db)
+
+    assert stats["traded"] == 0
+    assert stats["skipped"] == 1
+    tips = (await db.execute(select(SignalTip))).scalars().all()
+    assert tips == []
+
+
+@pytest.mark.asyncio
 async def test_sweep_dedupes_within_refractory_window(db, monkeypatch):
-    await _add_watchlist(db, "dev-1", ("BTC",))
-    src = await ft._ensure_factor_source(db, "dev-1")
+    await _add_watchlist(db, TEST_DEVICE_ID, ("BTC",))
+    src = await ft._ensure_factor_source(db, TEST_DEVICE_ID)
     db.add(
         SignalTip(
-            device_id="dev-1", source_id=src.id, slug="BTC-long", symbol="BTC", side="long",
+            device_id=TEST_DEVICE_ID, source_id=src.id, slug="BTC-long", symbol="BTC", side="long",
             confidence=0.8, execution_status="executed",
             created_at=datetime.utcnow() - timedelta(minutes=5),
         )

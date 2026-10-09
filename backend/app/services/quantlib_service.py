@@ -29,9 +29,32 @@ from datetime import datetime, timedelta
 import math
 import structlog
 import numpy as np
-from scipy import stats
 
 logger = structlog.get_logger(__name__)
+
+#: Lazily-loaded scipy.
+#:
+#: `scipy.stats` costs ~1.8 s and tens of MB to import, and this module is
+#: imported at application start by `api/v1/quantlib.py`. On a Render free-tier
+#: container - 512 MB, and a cold start on every wake after the 15-minute idle
+#: sleep - paying that on every boot to serve options pricing on demand is a
+#: poor trade. It is used only for the normal distribution and one percentile
+#: call, so it is loaded on first use instead.
+#:
+#: Kept as scipy rather than replaced with `math.erf`: the functions are
+#: numerical, and the goal here is to avoid paying for them at boot, not to
+#: change any result.
+_scipy_stats = None
+
+
+def _stats():
+    """Return `scipy.stats`, importing it on first use."""
+    global _scipy_stats
+    if _scipy_stats is None:
+        from scipy import stats as scipy_stats
+
+        _scipy_stats = scipy_stats
+    return _scipy_stats
 
 
 class QuantLibService:
@@ -87,9 +110,9 @@ class QuantLibService:
         d2 = d1 - sigma * math.sqrt(T)
         
         if option_type == "call":
-            price = S * stats.norm.cdf(d1) - K * math.exp(-r * T) * stats.norm.cdf(d2)
+            price = S * _stats().norm.cdf(d1) - K * math.exp(-r * T) * _stats().norm.cdf(d2)
         else:
-            price = K * math.exp(-r * T) * stats.norm.cdf(-d2) - S * stats.norm.cdf(-d1)
+            price = K * math.exp(-r * T) * _stats().norm.cdf(-d2) - S * _stats().norm.cdf(-d1)
         
         # Intrinsic and time value
         if option_type == "call":
@@ -140,28 +163,28 @@ class QuantLibService:
         
         # Delta
         if option_type == "call":
-            delta = stats.norm.cdf(d1)
+            delta = _stats().norm.cdf(d1)
         else:
-            delta = stats.norm.cdf(d1) - 1
+            delta = _stats().norm.cdf(d1) - 1
         
         # Gamma (same for call and put)
-        gamma = stats.norm.pdf(d1) / (S * sigma * math.sqrt(T))
+        gamma = _stats().norm.pdf(d1) / (S * sigma * math.sqrt(T))
         
         # Vega (same for call and put)
-        vega = S * stats.norm.pdf(d1) * math.sqrt(T) / 100  # Per 1% vol change
+        vega = S * _stats().norm.pdf(d1) * math.sqrt(T) / 100  # Per 1% vol change
         
         # Theta (per day)
-        theta_factor = -S * stats.norm.pdf(d1) * sigma / (2 * math.sqrt(T))
+        theta_factor = -S * _stats().norm.pdf(d1) * sigma / (2 * math.sqrt(T))
         if option_type == "call":
-            theta = (theta_factor - r * K * math.exp(-r * T) * stats.norm.cdf(d2)) / 365
+            theta = (theta_factor - r * K * math.exp(-r * T) * _stats().norm.cdf(d2)) / 365
         else:
-            theta = (theta_factor + r * K * math.exp(-r * T) * stats.norm.cdf(-d2)) / 365
+            theta = (theta_factor + r * K * math.exp(-r * T) * _stats().norm.cdf(-d2)) / 365
         
         # Rho
         if option_type == "call":
-            rho = K * T * math.exp(-r * T) * stats.norm.cdf(d2) / 100
+            rho = K * T * math.exp(-r * T) * _stats().norm.cdf(d2) / 100
         else:
-            rho = -K * T * math.exp(-r * T) * stats.norm.cdf(-d2) / 100
+            rho = -K * T * math.exp(-r * T) * _stats().norm.cdf(-d2) / 100
         
         return {
             "delta": round(delta, 4),
@@ -313,7 +336,7 @@ class QuantLibService:
         mu = np.mean(returns)
         sigma = np.std(returns)
         
-        z = stats.norm.ppf(1 - confidence_level, mu, sigma)
+        z = _stats().norm.ppf(1 - confidence_level, mu, sigma)
         
         return {
             "var": round(z, 6),
@@ -620,7 +643,7 @@ class QuantLibService:
         return {
             "current_volatility": round(current_vol * 100, 2),
             "mean_volatility": round(np.mean(volatilities) * 100, 2) if volatilities else 0,
-            "volatility_percentile": round(stats.percentileofscore(volatilities, current_vol), 1) if volatilities else 0,
+            "volatility_percentile": round(_stats().percentileofscore(volatilities, current_vol), 1) if volatilities else 0,
             "window_days": window,
         }
 

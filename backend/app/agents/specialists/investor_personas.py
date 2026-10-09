@@ -4,7 +4,7 @@ Fincept Specialist Agents - Investor Personas
 """
 from typing import Dict, Any, Optional
 from app.agents.base import BaseAgent
-from app.nvidia_nim import nvidia_client
+from app.services.llm_service import groq_client
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -32,7 +32,7 @@ class BuffettAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="Buffett",
-            model="nvidia/nemotron-3-ultra-550b-a55b",  # Deep reasoning for valuation
+            model="openai/gpt-oss-120b",  # Deep reasoning for valuation
             config={
                 "system_prompt": """You are Warren Buffett, dispensing value investing wisdom.
                 
@@ -68,7 +68,7 @@ Answer:
 4. Is it within your circle of competence?
 5. Would you buy it at current prices? Why or why not?"""
         
-        response = await nvidia_client.chat_completion(
+        response = await groq_client.chat_completion(
             [{"role": "system", "content": self.system_prompt},
              {"role": "user", "content": prompt}],
             task_type="portfolio"
@@ -102,7 +102,7 @@ class GrahamAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="Graham",
-            model="nvidia/nemotron-3-ultra-550b-a55b",
+            model="openai/gpt-oss-120b",
             config={
                 "system_prompt": """You are Benjamin Graham, the father of value investing and teacher of Warren Buffett.
 
@@ -140,7 +140,7 @@ Apply strict criteria:
 
 Return only tickers that pass ALL criteria."""
         
-        response = await nvidia_client.chat_completion(
+        response = await groq_client.chat_completion(
             [{"role": "system", "content": self.system_prompt},
              {"role": "user", "content": prompt}],
             task_type="analysis"
@@ -171,7 +171,7 @@ class LynchAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="Lynch",
-            model="nvidia/nemotron-3-ultra-550b-a55b",
+            model="openai/gpt-oss-120b",
             config={
                 "system_prompt": """You are Peter Lynch, the legendary Fidelity Magellan Fund manager.
 
@@ -211,7 +211,7 @@ Answer:
 4. Any consumer insights or one-uppetting opportunities?
 5. insider buying or low institutional ownership?"""
         
-        response = await nvidia_client.chat_completion(
+        response = await groq_client.chat_completion(
             [{"role": "system", "content": self.system_prompt},
              {"role": "user", "content": prompt}],
             task_type="analysis"
@@ -247,7 +247,7 @@ class MungerAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="Munger",
-            model="nvidia/nemotron-3-ultra-550b-a55b",
+            model="openai/gpt-oss-120b",
             config={
                 "system_prompt": """You are Charlie Munger, Warren Buffett's partner at Berkshire Hathaway.
 
@@ -285,7 +285,7 @@ Apply:
 4. Moat - what's the sustainable advantage?
 5. Human misjudgment - what biases might be at play?"""
         
-        response = await nvidia_client.chat_completion(
+        response = await groq_client.chat_completion(
             [{"role": "system", "content": self.system_prompt},
              {"role": "user", "content": prompt}],
             task_type="analysis"
@@ -320,7 +320,7 @@ class KlarmanAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="Klarman",
-            model="nvidia/nemotron-3-ultra-550b-a55b",
+            model="openai/gpt-oss-120b",
             config={
                 "system_prompt": """You are Seth Klarman, founder of Baupost Group and author of 'Margin of Safety'.
 
@@ -357,7 +357,7 @@ Answer:
 4. What can go wrong? Downside scenarios?
 5. Is this a fat pitch worth swinging at?"""
         
-        response = await nvidia_client.chat_completion(
+        response = await groq_client.chat_completion(
             [{"role": "system", "content": self.system_prompt},
              {"role": "user", "content": prompt}],
             task_type="portfolio"
@@ -397,7 +397,7 @@ class MarksAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="Marks",
-            model="nvidia/nemotron-3-ultra-550b-a550b",
+            model="openai/gpt-oss-120b",
             config={
                 "system_prompt": """You are Howard Marks, co-founder of Oaktree Capital and author of investment memos.
 
@@ -433,7 +433,7 @@ Answer:
 4. Is credit easy or tight?
 5. What hidden risks might consensus be ignoring?"""
         
-        response = await nvidia_client.chat_completion(
+        response = await groq_client.chat_completion(
             [{"role": "system", "content": self.system_prompt},
              {"role": "user", "content": prompt}],
             task_type="analysis"

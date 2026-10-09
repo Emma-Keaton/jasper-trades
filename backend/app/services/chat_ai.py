@@ -15,7 +15,7 @@ import structlog
 import json
 import re
 
-from app.nvidia_nim import nvidia_client
+from app.services.llm_service import groq_client
 from app.services.portfolio_service import PortfolioService
 from app.services.telegram_service import telegram_service
 
@@ -37,7 +37,7 @@ class ChatAI:
     - Agent decision explanations
     - General conversation
 
-    Uses NVIDIA NIM (Llama-3.2-3B) for fast, cheap responses.
+    Uses Groq (qwen3.8-27b) for fast, cheap responses.
     """
 
     def __init__(self, db_session):
@@ -272,7 +272,7 @@ Keep it conversational and informative.
                 {"role": "user", "content": prompt}
             ]
 
-            response = await nvidia_client.chat_completion(messages, task_type='analysis')
+            response = await groq_client.chat_completion(messages, task_type='analysis')
 
             message = f"📈 *{symbol} Trade Analysis*\n\n"
             message += "━━━━━━━━━━━━━━━━━━━━\n"
@@ -404,7 +404,7 @@ Keep it concise (3-5 sentences) and conversational.
                 {"role": "user", "content": prompt}
             ]
 
-            response = await nvidia_client.chat_completion(messages, task_type='analysis')
+            response = await groq_client.chat_completion(messages, task_type='analysis')
 
             message = f"💡 *{symbol} Analysis*\n\n"
             message += "━━━━━━━━━━━━━━━━━━━━\n"
@@ -535,7 +535,7 @@ Respond conversationally and helpful:
                 {"role": "user", "content": prompt}
             ]
 
-            response = await nvidia_client.chat_completion(messages, task_type='analysis')
+            response = await groq_client.chat_completion(messages, task_type='analysis')
             return response.strip()
 
         except Exception as e:

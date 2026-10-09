@@ -5,6 +5,8 @@ Sends Telegram notifications for trade executions
 from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any, Optional
+
+from pydantic import BaseModel, Field, model_validator
 import structlog
 import asyncio
 from datetime import datetime
@@ -25,6 +27,8 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
+from app.device_auth import require_device_id
+
 def _trading_asset_class(symbol: str) -> str:
     """Route-aware asset class: 'cn' for Chinese codes, 'us-stocks' for US tickers."""
     symbol = str(symbol or "").strip()
@@ -34,14 +38,59 @@ def _trading_asset_class(symbol: str) -> str:
     return "us-stocks" if detected == "stocks" else detected
 
 
+class ExecuteTradeRequest(BaseModel):
+    """Body for `POST /api/v1/trading/execute`.
+
+    This was a set of bare query parameters while the frontend sent a JSON body
+    (`type`/`shares`), so FastAPI ignored the body entirely and every call from
+    the UI returned 422 - the primary trade button could not place an order.
+
+    The frontend field names are preserved (`type`, `shares`) because that is what
+    is on the wire. `side` and `quantity` are accepted as aliases so a caller
+    written against the documented query names also works.
+    """
+
+    symbol: str
+    # Accept either name. `type` is what the frontend sends.
+    type: Optional[str] = Field(
+        default=None, description="'buy' or 'sell'. Alias: side."
+    )
+    side: Optional[str] = Field(
+        default=None, description="Alias for `type`."
+    )
+    shares: Optional[float] = Field(
+        default=None, gt=0, description="Quantity. Alias: quantity."
+    )
+    quantity: Optional[float] = Field(
+        default=None, gt=0, description="Alias for `shares`."
+    )
+    order_type: str = "market"
+    portfolio_id: Optional[int] = None
+    broker: str = "auto"
+    # Optional client-supplied limit price. The gate resolves a market price
+    # when omitted.
+    price: Optional[float] = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _require_side_and_quantity(self):
+        if not (self.type or self.side):
+            raise ValueError("one of 'type' or 'side' is required")
+        if self.shares is None and self.quantity is None:
+            raise ValueError("one of 'shares' or 'quantity' is required")
+        return self
+
+    @property
+    def resolved_side(self) -> str:
+        return (self.type or self.side or "").strip().lower()
+
+    @property
+    def resolved_quantity(self) -> float:
+        return float(self.shares if self.shares is not None else self.quantity)
+
+
 @router.post("/execute")
 async def execute_trade(
-    symbol: str,
-    side: str,
-    quantity: float,
-    order_type: str = "market",
-    portfolio_id: Optional[int] = None,
-    broker: str = "auto",
+    request: ExecuteTradeRequest,
     x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -51,24 +100,23 @@ async def execute_trade(
     Routes through the unified trade gate: practice mode executes in the
     universal paper engine; live mode only with a live-configured device AND a
     connected non-paper broker.
-
-    Args:
-        symbol: Trading symbol
-        side: buy/sell
-        quantity: Number of shares
-        order_type: market/limit
-        portfolio_id: Portfolio ID (uses default if not specified)
-        broker: Broker name or "auto" for automatic selection
     """
+    symbol = request.symbol.strip().upper()
+    side = request.resolved_side
+    quantity = request.resolved_quantity
+    order_type = request.order_type
+    portfolio_id = request.portfolio_id
+    broker = request.broker
+
     try:
         from app.services import trade_gate
 
-        device_id = (x_device_id or "").strip() or "default-device"
+        device_id = require_device_id(x_device_id)
         mode = await trade_gate.resolve_mode(db, device_id)
         live_asset_class = _trading_asset_class(symbol)
 
         # Resolve a market price (needed for the gate + paper fills).
-        price = await ValuationService().get_price(symbol)
+        price = request.price or await ValuationService().get_price(symbol)
 
         gate = await trade_gate.check_prerequisites(
             db,
@@ -149,12 +197,17 @@ async def execute_trade(
             portfolio_service = PortfolioService(db)
 
             if portfolio_id is None:
-                portfolios = await portfolio_service.get_portfolios()
+                portfolios = await portfolio_service.get_portfolios(device_id)
                 if not portfolios:
                     portfolio = await portfolio_service.create_portfolio(
                         name="Default",
                         initial_cash=settings.UNIVERSAL_PAPER_CAPITAL,
                         is_paper=True,
+                        # `device_id` is NOT NULL. It was omitted here, so on a
+                        # fresh database this raised IntegrityError and the
+                        # request 500'd. Guarded by `if not portfolios:`, so it
+                        # only ever fired on first boot against an empty table.
+                        device_id=device_id,
                     )
                     portfolio_id = portfolio.id
                 else:
@@ -231,13 +284,15 @@ async def execute_trade(
         portfolio_service = PortfolioService(db)
 
         if portfolio_id is None:
-            portfolios = await portfolio_service.get_portfolios()
+            portfolios = await portfolio_service.get_portfolios(device_id)
             if not portfolios:
-                # Create default portfolio
+                # Create default portfolio. `device_id` is NOT NULL; omitting it
+                # raised IntegrityError on a fresh database.
                 portfolio = await portfolio_service.create_portfolio(
                     name="Default",
                     initial_cash=settings.UNIVERSAL_PAPER_CAPITAL,
                     is_paper=True,
+                    device_id=device_id,
                 )
                 portfolio_id = portfolio.id
             else:
@@ -347,7 +402,7 @@ async def get_positions(
 
     # Get default portfolio
     if portfolio_id is None:
-        portfolios = await portfolio_service.get_portfolios()
+        portfolios = await portfolio_service.get_portfolios(device_id)
         if not portfolios:
             return {"positions": []}
         portfolio_id = portfolios[0].id
@@ -393,7 +448,7 @@ async def get_position(
 
     # Get default portfolio
     if portfolio_id is None:
-        portfolios = await portfolio_service.get_portfolios()
+        portfolios = await portfolio_service.get_portfolios(device_id)
         if not portfolios:
             raise HTTPException(status_code=404, detail="No portfolios found")
         portfolio_id = portfolios[0].id
@@ -428,14 +483,16 @@ async def get_position(
 async def close_position(
     symbol: str,
     portfolio_id: Optional[int] = None,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Close a position (market sell)."""
+    device_id = require_device_id(x_device_id)
     portfolio_service = PortfolioService(db)
 
     # Get default portfolio
     if portfolio_id is None:
-        portfolios = await portfolio_service.get_portfolios()
+        portfolios = await portfolio_service.get_portfolios(device_id)
         if not portfolios:
             raise HTTPException(status_code=404, detail="No portfolios found")
         portfolio_id = portfolios[0].id
@@ -491,13 +548,46 @@ async def close_position(
     db.add(trade)
     await db.commit()
 
+    realized_pnl = result.get("realized_pnl", 0) or 0
+
+    # Announce the close. `notify_trade_closed` existed but was never called, so
+    # closing a position was silent. Fire-and-forget: a Telegram failure must not
+    # roll back or delay a completed close.
+    #
+    # This block used `position.average_price`, but the column is `avg_price`
+    # (models.py). It raised AttributeError *after* reduce_position,
+    # update_cash and the trade commit had all succeeded, so every close returned
+    # HTTP 500 while the books had already changed: the client saw a failure and
+    # the position was gone. The arithmetic is also computed defensively, so a
+    # malformed position cannot turn a completed close into a 500.
+    from app.services.notification_hub import hub
+
+    entry_price = float(position.avg_price or 0.0)
+    closed_qty = float(position.quantity or 0.0)
+    cost_basis = entry_price * closed_qty
+    pnl_percent = (realized_pnl / cost_basis * 100) if cost_basis else 0.0
+
+    hub.trade_closed_soon(
+        device_id,
+        {
+            "symbol": symbol,
+            "side": "sell",
+            "quantity": closed_qty,
+            "price": current_price,
+            "entry_price": entry_price,
+            "pnl": realized_pnl,
+            "pnl_percent": round(pnl_percent, 4),
+            "status": trade.status,
+        },
+    )
+
     return {
         "status": "success",
         "symbol": symbol,
         "quantity_closed": position.quantity,
         "price": current_price,
         "proceeds": proceeds,
-        "realized_pnl": result.get("realized_pnl", 0),
+        "realized_pnl": realized_pnl,
     }
 
 

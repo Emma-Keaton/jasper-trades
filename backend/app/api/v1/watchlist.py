@@ -22,14 +22,24 @@ from app.models import WatchlistItem
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
 
 
+from app.device_auth import require_device_id
+
 def _device_id(x_device_id: Optional[str] = Header(None)) -> str:
+    """Resolve the device credential.
+
+    Rejects the historical `"default-device"` placeholder explicitly: a request
+    carrying it is treated as unauthenticated, because it identifies no device.
+    """
     device_id = (x_device_id or "").strip()
     if not device_id or device_id == "default-device":
         raise HTTPException(
-            status_code=400,
-            detail="X-Device-ID header required. Use a real device fingerprint.",
+            status_code=401,
+            detail=(
+                "X-Device-ID header required and must be this device's UUID. "
+                "The device ID is the credential that authenticates this device."
+            ),
         )
-    return device_id
+    return require_device_id(x_device_id)
 
 
 class WatchlistAdd(BaseModel):

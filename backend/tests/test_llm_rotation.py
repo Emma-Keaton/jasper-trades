@@ -1,9 +1,9 @@
-"""Gemini key rotation: round-robin, 429 cooldown, all-cooling wait, client rotation."""
+"""Groq key rotation: round-robin, 429 cooldown, all-cooling wait, client rotation."""
 from types import SimpleNamespace
 
 import pytest
 
-from app.services.llm_service import GeminiKeyRotator, GeminiLLMClient, _parse_keys
+from app.services.llm_service import GroqKeyRotator, GroqLLMClient, _parse_keys
 
 JSON_REPLY = '{"ok": true}'
 
@@ -21,12 +21,20 @@ class FakeCompletions:
 
 
 class FakeOpenAI:
-    def __init__(self, base_url=None, api_key=None):
+    """Stand-in for `openai.AsyncOpenAI`.
+
+    `default_headers` is part of the real signature (the Groq client sends
+    `_GROQ_HEADERS`), so the stub must accept it even though it ignores it.
+    """
+
+    def __init__(self, base_url=None, api_key=None, default_headers=None):
+        self.base_url = base_url
+        self.default_headers = default_headers
         self.chat = SimpleNamespace(completions=FakeCompletions(api_key))
 
 
 # ---------------------------------------------------------------------------
-# GeminiKeyRotator
+# GroqKeyRotator
 # ---------------------------------------------------------------------------
 
 def test_parse_keys():
@@ -38,11 +46,11 @@ def test_parse_keys():
 
 def test_rotator_requires_keys():
     with pytest.raises(ValueError):
-        GeminiKeyRotator([])
+        GroqKeyRotator([])
 
 
 async def test_rotator_round_robin():
-    rot = GeminiKeyRotator(["key-a", "key-b"])
+    rot = GroqKeyRotator(["key-a", "key-b"])
     first = await rot.acquire()
     second = await rot.acquire()
     third = await rot.acquire()
@@ -52,7 +60,7 @@ async def test_rotator_round_robin():
 
 
 async def test_rate_limited_key_is_skipped():
-    rot = GeminiKeyRotator(["key-a", "key-b"])
+    rot = GroqKeyRotator(["key-a", "key-b"])
     first = await rot.acquire()
     rot.mark_rate_limited(first, retry_after=60)
     second = await rot.acquire()
@@ -60,7 +68,7 @@ async def test_rate_limited_key_is_skipped():
 
 
 async def test_rate_limit_increments_consecutive_429s():
-    rot = GeminiKeyRotator(["key-a"])
+    rot = GroqKeyRotator(["key-a"])
     state = await rot.acquire()
     rot.mark_rate_limited(state, retry_after=10)
     assert state.consecutive_429s == 1
@@ -69,7 +77,7 @@ async def test_rate_limit_increments_consecutive_429s():
 
 
 async def test_mark_success_resets_consecutive_429s():
-    rot = GeminiKeyRotator(["key-a"])
+    rot = GroqKeyRotator(["key-a"])
     state = await rot.acquire()
     rot.mark_rate_limited(state, retry_after=10)
     rot.mark_success(state)
@@ -77,7 +85,7 @@ async def test_mark_success_resets_consecutive_429s():
 
 
 async def test_all_cooling_waits_then_rotates():
-    rot = GeminiKeyRotator(["key-a", "key-b"])
+    rot = GroqKeyRotator(["key-a", "key-b"])
     s1 = await rot.acquire()
     s2 = await rot.acquire()
     rot.mark_rate_limited(s1, retry_after=0.01)
@@ -87,12 +95,12 @@ async def test_all_cooling_waits_then_rotates():
 
 
 # ---------------------------------------------------------------------------
-# GeminiLLMClient
+# GroqLLMClient
 # ---------------------------------------------------------------------------
 
 async def test_chat_completion_rotates_on_429(monkeypatch):
     monkeypatch.setattr("app.services.llm_service.AsyncOpenAI", FakeOpenAI)
-    client = GeminiLLMClient(keys=["key-good", "key-fail"])
+    client = GroqLLMClient(keys=["key-good", "key-fail"])
     assert client.is_configured
     text = await client.chat_completion(
         [{"role": "user", "content": "hi"}], task_type="analysis"
@@ -102,7 +110,7 @@ async def test_chat_completion_rotates_on_429(monkeypatch):
 
 async def test_chat_completion_raises_when_all_fail(monkeypatch):
     monkeypatch.setattr("app.services.llm_service.AsyncOpenAI", FakeOpenAI)
-    client = GeminiLLMClient(keys=["key-fail", "key-fail"])
+    client = GroqLLMClient(keys=["key-fail", "key-fail"])
     with pytest.raises(RuntimeError, match="429"):
         await client.chat_completion([{"role": "user", "content": "hi"}])
     # Both keys should now be cooling down.
@@ -113,7 +121,7 @@ async def test_chat_completion_raises_when_all_fail(monkeypatch):
 
 async def test_structured_output_parses_json(monkeypatch):
     monkeypatch.setattr("app.services.llm_service.AsyncOpenAI", FakeOpenAI)
-    client = GeminiLLMClient(keys=["key-good", "key-fail"])
+    client = GroqLLMClient(keys=["key-good", "key-fail"])
     result = await client.structured_output(
         [{"role": "user", "content": "analyze"}], {"ok": "boolean"}
     )
@@ -128,11 +136,11 @@ async def test_structured_output_falls_back_to_empty_on_non_json(monkeypatch):
             )
 
     class TextOpenAI:
-        def __init__(self, base_url=None, api_key=None):
+        def __init__(self, base_url=None, api_key=None, default_headers=None):
             self.chat = SimpleNamespace(completions=TextCompletions())
 
     monkeypatch.setattr("app.services.llm_service.AsyncOpenAI", TextOpenAI)
-    client = GeminiLLMClient(keys=["key-good"])
+    client = GroqLLMClient(keys=["key-good"])
     result = await client.structured_output(
         [{"role": "user", "content": "analyze"}], {"ok": "boolean"}
     )
@@ -142,8 +150,11 @@ async def test_structured_output_falls_back_to_empty_on_non_json(monkeypatch):
 def test_unconfigured_client_when_no_keys(monkeypatch):
     from app.services import llm_service
 
-    monkeypatch.setattr(llm_service.settings, "GEMINI_API_KEY", None)
-    monkeypatch.setattr(llm_service.settings, "GEMINI_API_KEYS", None)
-    client = GeminiLLMClient(keys=[])
+    # Settings field names are upper-case; `Groq_API_KEY`/`Groq_API_KEYS` never
+    # existed and monkeypatching them raised AttributeError instead of clearing
+    # the keys, so this test could not test what it claimed.
+    monkeypatch.setattr(llm_service.settings, "GROQ_API_KEY", None)
+    monkeypatch.setattr(llm_service.settings, "GROQ_API_KEYS", None)
+    client = GroqLLMClient(keys=[])
     assert client.is_configured is False
     assert client.rotator is None

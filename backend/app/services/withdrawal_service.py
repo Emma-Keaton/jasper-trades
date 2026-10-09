@@ -5,19 +5,23 @@ Withdrawal & Auto-Payout Service - PRODUCTION READY
 REAL IMPLEMENTATION - NO SIMULATED LOGIC
 
 Currency Flow:
-1. Trading profits → Portfolio USD
+1. Trading profits -> Portfolio USD
 2. Auto-payout: Configurable % of daily profit (default 50%)
 3. Payout destinations:
-   - crypto_wallet: USDT via Tatum (ERC20/SOLANA/BSC)
+   - crypto_wallet: USDT sent directly on-chain (Tron, BSC, Polygon, Ethereum,
+     or Solana; the user picks the network). See `app/services/payout_rail.py`.
+   - naira_bank: NGN via Paystack/Flutterwave
 
-API Keys (encrypted in DeviceSettings):
-- TATUM_API_KEY: Blockchain transfers
-- BINANCE_API_KEY + BINANCE_API_SECRET: USDT withdrawals
+Signing keys (encrypted in DeviceSettings):
+- `payout_wallet_keys`: one hot-wallet private key per chain family
+  (`evm` / `tron` / `solana`). Transfers are signed locally and broadcast to the
+  chain's RPC; no third party handles them.
+- BINANCE_API_KEY + BINANCE_API_SECRET: USDT withdrawals via the exchange
 
 Security:
-- All API keys encrypted with Fernet (AES)
+- All secrets encrypted with Fernet (AES)
 - Withdrawal limits enforced
-- Multi-signature ready
+- Private keys never logged or returned by an API
 - Audit trail in database
 """
 from typing import Dict, Any, Optional, List, Tuple
@@ -34,6 +38,7 @@ from decimal import Decimal
 import pytz
 
 from app.models import Withdrawal, Portfolio, Trade, DeviceSettings
+from app.services import payout_rail
 from app.services.notify_service import notify_service
 from app.services.encryption import EncryptionHelper
 
@@ -66,19 +71,34 @@ class ApiKeyService:
             return None
 
         encryption = EncryptionHelper()
-        
+
         # Direct key lookups
-        if key_name == "TATUM_API_KEY":
-            # Tatum API key for blockchain transfers
-            return encryption.decrypt(settings.tatum_api_key) if settings.tatum_api_key else None
-        elif key_name == "NVIDIA_API_KEY":
-            return encryption.decrypt(settings.nvidia_key) if settings.nvidia_key else None
+        if key_name == "GROQ_API_KEY":
+            return encryption.decrypt(settings.groq_key) if settings.groq_key else None
         elif key_name == "BINANCE_API_KEY":
             return encryption.decrypt(settings.binance_key) if settings.binance_key else None
         elif key_name == "BINANCE_API_SECRET":
             return encryption.decrypt(settings.binance_secret) if settings.binance_secret else None
 
         return None
+
+    async def get_payout_wallet_keys(self) -> Optional[Dict[str, str]]:
+        """Decrypt the payout hot-wallet key bundle.
+
+        The bundle is one encrypted JSON blob holding one private key per chain
+        *family*, because the families are unrelated keyspaces: an EVM key cannot
+        sign for Solana, and neither can sign for Tron. Shape:
+
+            {"evm": "0x...", "solana": "<base58 secret key>", "tron": "<hex>"}
+
+        A single `evm` key covers every EVM chain, so Ethereum/BSC/Polygon share
+        one entry and one address.
+        """
+        settings = await self.get_settings()
+        if not settings or not settings.payout_wallet_keys:
+            return None
+        encryption = EncryptionHelper()
+        return encryption.decrypt_json(settings.payout_wallet_keys)
 
     async def get_payout_config(self) -> Optional[Dict]:
         """Get decrypted payout configuration."""
@@ -90,12 +110,32 @@ class ApiKeyService:
         return encryption.decrypt_json(settings.payout_config)
 
 
+def payout_rail_keys_for(keys: Dict[str, str], chain_id: str) -> str:
+    """Pick the private key that can sign for `chain_id`.
+
+    Raises rather than falling back to a key from another family: signing with
+    the wrong key type would either fail obscurely or, worse, produce a valid
+    transaction on an unrelated chain.
+    """
+    family_field = payout_rail.FAMILY_KEY_FIELD.get(
+        payout_rail.get_chain(chain_id).family
+    )
+    key = (keys or {}).get(family_field or "")
+    if not key:
+        raise ValueError(
+            f"No '{family_field}' hot-wallet key configured. "
+            f"{payout_rail.get_chain(chain_id).label} payouts need one; add it "
+            "in Settings > Auto-Payout."
+        )
+    return key
+
+
 class WithdrawalService:
     """
     PRODUCTION Withdrawal Service - Real Implementation
 
     Features:
-    - USDT withdrawals via Tatum (ERC20/SOLANA/BSC)
+    - USDT withdrawals sent directly on-chain via `payout_rail`
     - Comprehensive audit trail
     - Rate limiting and fraud prevention
     """
@@ -105,11 +145,10 @@ class WithdrawalService:
     MIN_WITHDRAWAL = Decimal("1.0")  # $1 minimum
     MAX_DAILY_WITHDRAWAL = Decimal("10000.0")  # $10k/day limit
     MAX_WITHDRAWALS_PER_HOUR = 5  # Rate limiting
-    
-    # USDT contract addresses
-    USDT_CONTRACT_ETH = "0xdac17f958d2ee523a2206206994597c13d831ec7"
-    USDT_MINT_SOLANA = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
-    USDT_CONTRACT_BSC = "0x55d398326f99059ff775485246999027b3197955"
+
+    # USDT contract/mint addresses live in `payout_rail.CHAINS`, one entry per
+    # supported network. Duplicating them here previously meant the code could
+    # disagree with the chain registry about which contract to pay out on.
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -127,10 +166,11 @@ class WithdrawalService:
         destination_address: str,
         daily_pnl: Optional[float] = None,
         payout_percentage: Optional[float] = None,
+        destination_chain: Optional[str] = None,
     ) -> Withdrawal:
         """
         Create withdrawal record with validation.
-        
+
         Args:
             portfolio_id: Portfolio to withdraw from
             amount: USD amount to withdraw
@@ -138,18 +178,31 @@ class WithdrawalService:
             destination_address: Wallet address or broker account ID
             daily_pnl: Daily profit (for auto-payout)
             payout_percentage: Payout % (for auto-payout)
-        
+            destination_chain: Network for a crypto payout -
+                "tron" | "bsc" | "polygon" | "ethereum" | "solana".
+                Required when `destination_type` is "crypto_wallet".
+
         Returns:
             Withdrawal record
-        
+
         Raises:
             ValueError: If validation fails
         """
         amount_decimal = Decimal(str(amount))
-        
+
         # Validate minimum
         if amount_decimal < self.MIN_WITHDRAWAL:
             raise ValueError(f"Minimum withdrawal: ${self.MIN_WITHDRAWAL}")
+
+        # A crypto payout must name its network. Validating here, before the row
+        # exists, means an unusable withdrawal is never recorded as pending and
+        # never consumes a slot in the hourly rate limit.
+        if destination_type == "crypto_wallet":
+            chain = payout_rail.get_chain(destination_chain or "")
+            payout_rail.validate_address(chain.id, destination_address)
+            destination_chain = chain.id
+        else:
+            destination_chain = None
 
         # Check portfolio exists and has balance
         portfolio = await self._get_portfolio(portfolio_id)
@@ -189,6 +242,7 @@ class WithdrawalService:
             withdrawal_type=withdrawal_type,
             destination_type=destination_type,
             destination_address=destination_address,
+            destination_chain=destination_chain,
             status="pending",
             fee=float(fee),
             net_amount=float(net_amount),
@@ -273,86 +327,50 @@ class WithdrawalService:
 
         return withdrawal
 
-    # ========== BLOCKCHAIN TRANSFER (TATUM) ==========
+    # ========== BLOCKCHAIN TRANSFER (DIRECT, SIGNED LOCALLY) ==========
 
     async def _execute_blockchain_transfer(self, w: Withdrawal) -> str:
+        """Send USDT to the recipient's wallet by signing it ourselves.
+
+        Replaces the previous Tatum integration, which could not work: it posted
+        `fromAddress: None` assuming Tatum held a custody wallet. Tatum has no
+        such wallet for this endpoint, so the transfer was never signable.
+        See `app/services/payout_rail.py` for the chain registry and the cost
+        comparison that motivated removing the vendor.
+
+        `withdrawal.destination_address` carries the recipient's address;
+        `withdrawal.destination_chain` selects the network.
         """
-        REAL USDT transfer via Tatum API.
-        
-        Supports:
-        - Ethereum (ERC20 USDT)
-        - Solana (SPL USDT)
-        - BSC (BEP20 USDT)
-        
-        Args:
-            w: Withdrawal record
-        
-        Returns:
-            Transaction hash
-        
-        Raises:
-            ValueError: If transfer fails
-        """
-        tatum_key = await self.api_keys.get_key("TATUM_API_KEY")
-        if not tatum_key:
-            raise ValueError("TATUM_API_KEY not configured in Settings")
+        chain_id = (getattr(w, "destination_chain", None) or "").strip().lower()
+        if not chain_id:
+            raise ValueError(
+                "Withdrawal has no destination_chain; set the payout network "
+                "in Settings (Tron recommended for Nigerian users)"
+            )
 
-        addr = w.destination_address
-        
-        # Detect blockchain
-        if addr.startswith("0x"):
-            # Ethereum or BSC
-            chain = "ethereum"
-            contract = self.USDT_CONTRACT_ETH
-            decimals = 6
-            
-            # Check if BSC address (optional: you can add BSC detection)
-            # For now default to Ethereum
-        elif 32 <= len(addr) <= 44:
-            # Solana
-            chain = "solana"
-            contract = self.USDT_MINT_SOLANA
-            decimals = 6
-        else:
-            raise ValueError(f"Invalid wallet address: {addr}")
+        keys = await self.api_keys.get_payout_wallet_keys()
+        if not keys:
+            raise ValueError(
+                "No payout hot-wallet key configured. Add one in Settings > "
+                "Auto-Payout; it is stored encrypted."
+            )
 
-        # Calculate USDT amount (6 decimals for USDT)
-        usdt_amount = int(Decimal(str(w.amount)) * (10 ** decimals))
-
-        # Tatum API endpoint
-        url = "https://api.tatum.io/v3/blockchain/transaction"
-        
-        payload = {
-            "fromAddress": None,  # Tatum manages custody wallet
-            "to": [{"address": addr, "value": str(usdt_amount)}],
-            "feeCurrency": "SOL" if chain == "solana" else None,
-            "contractAddresses": [contract] if chain == "ethereum" else None,
-        }
-
-        headers = {
-            "x-api-key": tatum_key,
-            "Content-Type": "application/json",
-        }
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            
-            if resp.status_code != 200:
-                error_detail = resp.json() if resp.content else {}
-                raise ValueError(
-                    f"Tatum API error: {resp.status_code} - {error_detail}"
-                )
-
-            tx_hash = resp.json().get("txId")
-
-        if not tx_hash:
-            raise ValueError("Tatum returned no transaction ID")
+        result = await payout_rail.transfer_usdt(
+            chain_id=chain_id,
+            to_address=w.destination_address,
+            amount_usd=Decimal(str(w.amount)),
+            private_key=payout_rail_keys_for(keys, chain_id),
+            rpc_url=getattr(w, "destination_rpc", None),
+        )
 
         logger.info(
-            f"{chain.upper()} transfer: ${w.amount:.2f} USDT → {addr[:10]}... "
-            f"tx:{tx_hash[:10]}..."
+            "Payout sent: %s USDT to %s... on %s (tx %s)",
+            w.amount,
+            result.to_address[:10],
+            result.chain_id,
+            result.tx_hash[:12],
         )
-        return tx_hash
+        return result.tx_hash
 
 
         # ========== AUTO-PAYOUT (FLEXIBLE) ==========
@@ -376,11 +394,10 @@ class WithdrawalService:
         {
             "payout_enabled": true,
             "payout_percentage": 50.0,
-            "payout_schedule_hour": 20,
-            "payout_destination": "crypto_wallet",
-            "crypto_wallet": "0x...",
-            "crypto_chain": "ethereum" | "solana" | "bsc",
-            # split_ratio removed - only crypto wallet supported
+            "payout_schedule_hour": 20,      // WAT
+            "payout_destination": "crypto_wallet" | "naira_bank",
+            "crypto_wallet": "T...",
+            "payout_chain": "tron" | "bsc" | "polygon" | "ethereum" | "solana",
             "min_payout_threshold": 10.0
         }
         
@@ -457,20 +474,31 @@ class WithdrawalService:
     ) -> Optional[Withdrawal]:
         """Execute crypto wallet payout."""
         wallet = payout_config.get("crypto_wallet")
-        
-        if not wallet or not (wallet.startswith("0x") or 32 <= len(wallet) <= 44):
-            logger.error(f"Invalid crypto wallet: {wallet}")
+        # The network the user selected. Previously this was inferred from the
+        # address shape, which cannot tell BSC from Ethereum (both are 0x and 42
+        # characters) and would silently pay out on the wrong chain.
+        chain_id = payout_config.get("payout_chain")
+
+        if not wallet:
+            logger.error("No crypto wallet configured for payout")
+            return None
+
+        try:
+            chain = payout_rail.get_chain(chain_id or "")
+        except payout_rail.PayoutRailError as exc:
+            logger.error(f"Payout chain not usable: {exc}")
             return None
 
         w = await self.create_withdrawal(
             portfolio_id, amount, "auto_payout", "crypto_wallet",
-            wallet, daily_pnl, float(pct)
+            wallet, daily_pnl, float(pct), destination_chain=chain.id,
         )
         await self.process_withdrawal(w.id)
-        
+
         logger.info(
             f"Auto-payout to crypto: ${amount:.2f} ({float(pct)}% of ${daily_pnl:.2f}) "
-            f"→ {wallet[:10]}... tx:{w.transaction_hash[:10] if w.transaction_hash else 'pending'}..."
+            f"→ {wallet[:10]}... on {chain.id} "
+            f"tx:{w.transaction_hash[:10] if w.transaction_hash else 'pending'}..."
         )
         return w
 

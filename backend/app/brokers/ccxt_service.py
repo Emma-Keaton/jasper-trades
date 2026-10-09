@@ -18,11 +18,43 @@ from app.config import settings
 
 logger = structlog.get_logger(__name__)
 
-try:
-    import ccxt.async_support as ccxt
-    CCXT_AVAILABLE = True
-except ImportError:
-    CCXT_AVAILABLE = False
+#: Lazily-imported `ccxt.async_support`.
+#:
+#: `ccxt` costs ~1.1 s and ~54 MB to import, and this module is reached at
+#: application start through `app.brokers.registry`, which every request path
+#: imports. On a Render free-tier container (512 MB, cold start on every wake
+#: after the idle sleep) that is memory and startup time spent to support a
+#: broker that only activates when a user supplies CCXT credentials - which, by
+#: default, nobody has.
+#:
+#: So it is loaded on first connect instead. `CCXT_AVAILABLE` is computed from
+#: package metadata rather than by importing, which keeps the capability check
+#: without paying for it.
+def _ccxt():
+    """Import and cache `ccxt.async_support`."""
+    global _ccxt_module
+    if _ccxt_module is None:
+        import ccxt.async_support as module
+
+        _ccxt_module = module
+    return _ccxt_module
+
+
+_ccxt_module = None
+
+
+def _ccxt_installed() -> bool:
+    """Whether `ccxt` is installed, without importing it."""
+    from importlib.util import find_spec
+
+    try:
+        return find_spec("ccxt") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+CCXT_AVAILABLE = _ccxt_installed()
+if not CCXT_AVAILABLE:
     logger.warning("ccxt not installed. Crypto broker unavailable.")
 
 
@@ -51,8 +83,9 @@ class CCXTBrokerService(BaseBrokerService):
         self.api_secret = config.get("api_secret") if config else None
         self.sandbox = False  # paper trading is handled by Universal Paper Trading, not exchange sandboxes
 
-        # Exchange instance
-        self.exchange: Optional[ccxt.Exchange] = None
+        # Exchange instance. Typed loosely because `ccxt` is imported lazily
+        # below; see `_ccxt()` for why.
+        self.exchange: Optional[Any] = None
 
         # Exchange-specific configuration
         self.symbol_map = config.get("symbol_map", {})  # Map symbols to exchange format
@@ -74,6 +107,7 @@ class CCXTBrokerService(BaseBrokerService):
 
         try:
             # Create exchange instance
+            ccxt = _ccxt()
             exchange_class = getattr(ccxt, self.exchange_id.lower())
 
             self.exchange = exchange_class({

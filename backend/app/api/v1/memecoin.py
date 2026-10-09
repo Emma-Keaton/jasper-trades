@@ -14,6 +14,8 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/memecoin", tags=["memecoin"])
 
 
+from app.device_auth import require_device_id
+
 class MemecoinTradeRequest(BaseModel):
     """Trade a Solana memecoin (paper via universal engine, live via Solana/Jupiter)."""
     symbol: str  # ticker or mint address
@@ -102,7 +104,7 @@ async def memecoin_trade(
     from app.services import trade_gate
     from app.services.paper_trading_service import get_paper_trading_service
 
-    device_id = (x_device_id or "").strip() or "default-device"
+    device_id = require_device_id(x_device_id)
     symbol = req.symbol
     side = req.side.lower()
 

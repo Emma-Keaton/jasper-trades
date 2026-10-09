@@ -4,7 +4,6 @@ Main FastAPI Application
 """
 import logging
 import asyncio
-import uuid
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -24,11 +23,24 @@ from app.config import settings
 from app.database import get_db, init_db, close_db, async_session
 from app.models import Trade, Signal, Portfolio
 from app.agents import DirectorAgent, QuantAgent, RiskAgent, ExecutionAgent, agent_registry
-from app.nvidia_nim import nvidia_client
+from app.services.llm_service import groq_client
 from app.brokers import broker_registry, initialize_brokers
 from app.services import init_scheduler, get_scheduler
 from app.services.market_data_service import market_data_service
 from app.services.forex_polling_service import start_forex_polling, stop_forex_polling
+from app import device_identity
+from app.services.boot import (
+    DEPS_TASK,
+    STARTUP_STEP_TIMEOUT_SECONDS,
+    WARMUP_TASK,
+    log_boot,
+    run_boot_step,
+    run_warmup,
+    shutdown_step,
+    start_deferred_deps,
+    stop_deferred_deps,
+    stop_warmup,
+)
 
 # Import API routes
 from app.api.v1 import trading, agents, signals, portfolio, health, system, learning, risk, circuit_breaker
@@ -52,6 +64,7 @@ from app.api.v1 import banks  # Nigerian bank list
 from app.api.v1 import trove  # Trove stocks (Nigerian/US stocks)
 from app.api.v1 import akshare  # AKShare Chinese stocks
 from app.api.v1 import akshare_settings  # AKShare settings
+from app.api.v1 import dex_chains
 from app.api.v1 import tiger  # Tiger OpenAPI live CN/US stocks
 from app.api.v1 import exchanges
 from app.api.v1 import geo  # geo-availability probe (Nigeria-safe sources)
@@ -92,222 +105,327 @@ if not CTRADER_SCHEDULER_AVAILABLE:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager."""
-    # Startup
+    """Application lifespan manager.
+
+    Split into three phases, in this order deliberately:
+
+    1. **Required** - database schema, agent registration, broker registry.
+       Runs before the app serves anything. If the database is unreachable the
+       process cannot serve honestly, so this fails fast.
+    2. **Yield** - the app starts accepting requests. This is the point: a cold
+       Render free-tier container now answers its health check.
+    3. **Warm-up** - WebSockets, polling bots, Telegram listeners, background
+       schedulers, optional-dependency status. Runs in the background, each step
+       individually bounded and failure-isolated, so a slow or unreachable
+       third-party API delays only itself and never blocks serving.
+    """
+    global WARMUP_TASK
     logger.info("Starting up Jasper Trades...")
 
-    # Initialize database
-    await init_db()
-    logger.info("Database initialized")
+    # -- 1. Required --------------------------------------------------------
+    await run_boot_step("database", init_db, required=True)
 
-    # Initialize agents
-    director = DirectorAgent()
-    quant = QuantAgent()
-    risk = RiskAgent()
-    execution = ExecutionAgent()
+    async def register_agents():
+        director = DirectorAgent()
+        quant = QuantAgent()
+        risk = RiskAgent()
+        execution = ExecutionAgent()
 
-    agent_registry.register(director)
-    agent_registry.register(quant)
-    agent_registry.register(risk)
-    agent_registry.register(execution)
+        agent_registry.register(director)
+        agent_registry.register(quant)
+        agent_registry.register(risk)
+        agent_registry.register(execution)
+        return list(agent_registry._agents.keys())
 
-    logger.info("Agents initialized", agents=list(agent_registry._agents.keys()))
+    names = await run_boot_step("agents", register_agents, required=True)
+    logger.info("Agents initialized", agents=names)
 
-    # Initialize brokers
-    try:
+    # Mark agents active. Without this every agent reported `is_active: false`
+    # for the process lifetime, so the status endpoint told the UI that nothing
+    # was running. Isolated per agent: one failing to start must not leave the
+    # rest inactive.
+    started = await run_boot_step("agents-start", agent_registry.start_all, required=False)
+    if started:
+        inactive = [name for name, ok in started.items() if not ok]
+        if inactive:
+            logger.warning("Some agents did not start", agents=inactive)
+
+    async def connect_brokers():
         initialize_brokers()
-        broker_results = await broker_registry.connect_all()
-        logger.info("Brokers initialized", results=broker_results)
-    except Exception as e:
-        logger.warning(f"Broker initialization failed (will retry on first trade): {e}")
+        return await broker_registry.connect_all()
 
-    # Initialize scheduler (background tasks)
-    scheduler = init_scheduler(async_session)
-    await scheduler.start()
-    logger.info("Scheduler started")
+    await run_boot_step("brokers", connect_brokers, required=False)
 
-    # Start WebSocket publisher tasks (prices/signals/trades queued to frontends)
+    async def start_scheduler():
+        scheduler = init_scheduler(async_session)
+        await scheduler.start()
+        return scheduler
+
+    await run_boot_step("scheduler", start_scheduler, required=False)
+
+    # -- 2. Serve -----------------------------------------------------------
+    logger.info("Jasper Trades startup complete; accepting requests")
+
+    # -- 3. Warm up in the background ---------------------------------------
+    await run_warmup(
+        [
+            # First, and cheap: report which soft dependencies are absent so a
+            # degraded capability is never silent. Install is not here - see
+            # _start_deferred_deps for why it waits.
+            ("optional-deps", _ensure_optional_deps),
+            ("websocket-publishers", _start_websocket_publishers),
+            ("default-portfolio", _create_default_portfolio),
+            ("market-data", _start_market_data),
+            ("telegram-bot", _start_telegram_bot),
+            ("payout-scheduler", _start_payout_scheduler),
+            ("ctrader-token-refresh", _start_ctrader_scheduler),
+            ("forex-polling", start_forex_polling),
+            ("telegram-listeners", _start_telegram_listeners),
+            ("dexchain-watcher", _start_dexchain_watcher),
+        ]
+    )
+
+    # Started here, but it does no work yet: the task waits out a settle period and
+    # a memory gate before installing anything, so in practice it begins once the
+    # app is serving and boot has stopped competing for the 512 MB.
+    if settings.OPTIONAL_DEPS_AUTO_INSTALL:
+        start_deferred_deps(_install_optional_deps)
+
+    try:
+        yield
+    finally:
+        logger.info("Shutting down Jasper Trades...")
+
+        # Every step runs unconditionally. Render sends SIGTERM then force-kills,
+        # so skipping the remainder after one failure would leave the scheduler
+        # running or the database open.
+        await stop_deferred_deps()
+        await stop_warmup()
+        await shutdown_step("telegram-bot", _stop_telegram_bot)
+        await shutdown_step("scheduler", _stop_scheduler)
+        await shutdown_step("market-data", _stop_market_data)
+        await shutdown_step("payout-scheduler", _stop_payout_scheduler)
+        await shutdown_step("forex-polling", stop_forex_polling)
+        await shutdown_step("telegram-listeners", _stop_telegram_listeners)
+        await shutdown_step("agents", agent_registry.stop_all)
+        await shutdown_step("brokers", broker_registry.disconnect_all)
+        await shutdown_step("database", close_db)
+        logger.info("Jasper Trades shutdown complete")
+
+
+# ---------------------------------------------------------------------------
+# Boot steps
+#
+# Each is a small module-level coroutine so `run_boot_step` can wrap it in a
+# timeout, and so shutdown has symmetric counterparts. Keeping them out of the
+# lifespan body is what makes that wrapping possible at all.
+# ---------------------------------------------------------------------------
+
+async def _ensure_optional_deps():
+    """Report which soft dependencies are absent. Installs nothing.
+
+    Logging only, because it runs as the first warm-up step while boot is still
+    competing for memory. The install is _install_optional_deps below.
+    """
+    from app.services.optional_deps import ensure_optional_deps
+
+    await ensure_optional_deps()
+
+
+async def _install_optional_deps():
+    """Settle, wait for memory headroom, then install the absent soft tier.
+
+    Started as a cancellable background task and does nothing until the app is
+    already serving and the process is small enough that a pip subprocess cannot
+    provoke the OOM killer on a 512 MB instance.
+    """
+    from app.services.optional_deps import install_deferred
+
+    await install_deferred()
+
+
+async def _start_websocket_publishers():
     from app.api.websocket.streams import start_publisher_tasks
+
     await start_publisher_tasks()
-    logger.info("WebSocket publisher tasks started")
 
-    # Create default portfolio if none exists
+
+async def _create_default_portfolio():
+    """Seed a paper portfolio so a fresh database is immediately usable.
+
+    The device UUID minted here is a *server-generated placeholder*, not a
+    credential. It exists only so a brand-new database has a portfolio row and
+    the UI is not empty. It is never returned to a client and never sent as a
+    header, so it grants nobody access - the real device UUID comes from the
+    browser via `crypto.randomUUID()`.
+
+    It also cannot satisfy the `require_device_id` validation rule, so a request
+    can never present it. A device presenting its own UUID creates its own
+    portfolio on first use via `create_portfolio(device_id=...)`.
+    """
+    from app.services.portfolio_service import PortfolioService
+
+    db = async_session()
     try:
-        from app.services.portfolio_service import PortfolioService
-        db = async_session()
-        portfolio_service = PortfolioService(db)
+        service = PortfolioService(db)
+        if await service.get_portfolios():
+            return None
+        placeholder_device = device_identity.new_device_id()
+        await service.create_portfolio(
+            name="Default",
+            initial_cash=settings.UNIVERSAL_PAPER_CAPITAL,
+            is_paper=True,
+            device_id=placeholder_device,
+        )
+        logger.info(
+            "Seeded placeholder portfolio for a fresh database",
+            device_id=placeholder_device[:8],
+        )
+        return None
+    finally:
+        await db.close()
 
-        portfolios = await portfolio_service.get_portfolios()
+
+async def _start_market_data():
+    """Start price streams for the symbols the portfolio actually holds.
+
+    On a free-tier instance the container is destroyed on every sleep, so these
+    WebSockets are re-established on every wake. `market_data_service` owns its
+    own backoff reconnect once started; this only has to get it going.
+    """
+    from app.services.portfolio_service import PortfolioService
+
+    db = async_session()
+    try:
+        service = PortfolioService(db)
+        portfolios = await service.get_portfolios()
         if not portfolios:
-            # Generate a device ID for the default portfolio
-            device_id = str(uuid.uuid4())
-            await portfolio_service.create_portfolio(
-                name="Default",
-                initial_cash=settings.UNIVERSAL_PAPER_CAPITAL,
-                is_paper=True,
-                device_id=device_id,
-            )
-            logger.info(f"Created default portfolio for device {device_id[:8]}...")
+            return None
+        positions = await service.get_all_positions(portfolios[0].id)
+        symbols = [p.symbol for p in positions] if positions else ["AAPL", "NVDA", "SPY"]
+        await market_data_service.start(symbols)
 
+        crypto_symbols = [
+            s
+            for s in symbols
+            if any(x in s.upper() for x in ["BTC", "ETH", "USDT", "USDC", "SOL", "BNB"])
+        ]
+        if crypto_symbols:
+            from app.services.ccxt_watch_service import get_ccxt_watch_service
+
+            await get_ccxt_watch_service().start(crypto_symbols)
+        return len(symbols)
+    finally:
         await db.close()
-    except Exception as e:
-        logger.warning(f"Could not create default portfolio: {e}")
 
-    logger.info("Jasper Trades startup complete")
 
-    # Start market data WebSocket (real-time prices)
-    try:
-        # Get symbols from default portfolio
-        from app.services.portfolio_service import PortfolioService
-        db = async_session()
-        portfolio_service = PortfolioService(db)
-        portfolios = await portfolio_service.get_portfolios()
-        
-        if portfolios:
-            positions = await portfolio_service.get_all_positions(portfolios[0].id)
-            symbols = [p.symbol for p in positions] if positions else ["AAPL", "NVDA", "SPY"]
-            await market_data_service.start(symbols)
-            logger.info(f"Market data started with {len(symbols)} symbols")
+async def _start_telegram_bot():
+    if not settings.TELEGRAM_BOT_TOKEN:
+        logger.info("Telegram bot disabled: TELEGRAM_BOT_TOKEN not set")
+        return None
+    from app.services.telegram_bot_service import (
+        get_telegram_bot_service,
+        is_polling_started,
+        mark_polling_started,
+    )
 
-            # Real-time crypto ticker stream (CCXT watchTicker) for the watchlist.
-            crypto_symbols = [
-                s for s in symbols
-                if any(x in s.upper() for x in ["BTC", "ETH", "USDT", "USDC", "SOL", "BNB"])
-            ]
-            if crypto_symbols:
-                from app.services.ccxt_watch_service import get_ccxt_watch_service
+    if is_polling_started():
+        logger.info("Telegram polling already active, skipping duplicate start")
+        return None
+    service = get_telegram_bot_service(settings.TELEGRAM_BOT_TOKEN)
+    await service.initialize()
+    asyncio.create_task(service.start_polling())
+    mark_polling_started()
+    return "polling"
 
-                await get_ccxt_watch_service().start(crypto_symbols)
-                logger.info(f"CCXT watch service started with {len(crypto_symbols)} crypto symbols")
-        
-        await db.close()
-    except Exception as e:
-        logger.warning(f"Market data service startup failed: {e}")
 
-    # Start Telegram Bot (Notifications + 2-Way Chat)
-    if settings.TELEGRAM_BOT_TOKEN:
-        try:
-            from app.services.telegram_bot_service import get_telegram_bot_service, is_polling_started, mark_polling_started
-            if not is_polling_started():
-                bot_service = get_telegram_bot_service(settings.TELEGRAM_BOT_TOKEN)
-                await bot_service.initialize()
-                
-                # Start polling in background (for local dev)
-                asyncio.create_task(bot_service.start_polling())
-                mark_polling_started()
-                logger.info("Telegram Bot started (long polling mode)")
-            else:
-                logger.info("Telegram Bot polling already active, skipping duplicate start")
-        except Exception as e:
-            logger.warning(f"Telegram Bot startup failed: {e}")
-    else:
-        logger.warning("TELEGRAM_BOT_TOKEN not set - Telegram bot disabled")
+async def _start_payout_scheduler():
+    """Auto-payouts need both the flag and a production environment.
 
-    # Start auto-payout scheduler (safe-by-default: only in production when enabled)
-    if settings.AUTO_PAYOUTS_ENABLED and _is_prod:
-        try:
-            from app.services.payout_scheduler import payout_scheduler
-            await payout_scheduler.start()
-            logger.info("Auto-payout scheduler started (checks every hour)")
-        except Exception as e:
-            logger.warning(f"Auto-payout scheduler startup failed: {e}")
-    else:
+    Deliberately safe-by-default: with either missing, this logs why instead of
+    starting, so an operator does not configure payouts and then see nothing
+    happen with no explanation.
+    """
+    if not (settings.AUTO_PAYOUTS_ENABLED and _is_prod):
         logger.info(
             "Auto-payout scheduler not started "
             f"(AUTO_PAYOUTS_ENABLED={settings.AUTO_PAYOUTS_ENABLED}, "
-            f"ENVIRONMENT={settings.ENVIRONMENT})"
+            f"ENVIRONMENT={settings.ENVIRONMENT}; both required)"
         )
+        return None
+    from app.services.payout_scheduler import payout_scheduler
 
-    # Start cTrader OAuth token refresh scheduler (refreshes tokens every 6 hours)
-    if CTRADER_SCHEDULER_AVAILABLE:
-        try:
-            from app.database import async_engine
-            await start_token_refresh_scheduler(async_engine)
-            logger.info("cTrader token refresh scheduler started (refreshes every 6 hours)")
-        except Exception as e:
-            logger.warning(f"cTrader token refresh scheduler startup failed: {e}")
+    await payout_scheduler.start()
+    return "hourly"
 
-    # Start forex polling service (NGN/USD rates every 60 seconds)
-    try:
-        await start_forex_polling()
-        logger.info("Forex polling service started (NGN/USD rates every 60s)")
-    except Exception as e:
-        logger.warning(f"Forex polling service startup failed: {e}")
 
-    # Start real-time Telegram signal listeners (one client per connected user)
-    try:
-        from sqlalchemy import select as _select
-        from app.models import TelegramAccount
-        from app.services.signal_sources.telegram_listener import get_listener
+async def _start_ctrader_scheduler():
+    if not CTRADER_SCHEDULER_AVAILABLE:
+        return None
+    from app.database import async_engine
 
-        async with async_session() as db:
-            acc_res = await db.execute(_select(TelegramAccount))
-            accounts = acc_res.scalars().all()
-        started = 0
-        for acc in accounts:
-            if await get_listener().sync(acc.device_id):
-                started += 1
-        logger.info(f"Telegram signal listeners started: {started}/{len(accounts)}")
-    except Exception as e:
-        logger.warning(f"Telegram signal listener startup failed: {e}")
+    await start_token_refresh_scheduler(async_engine)
+    return "6h"
 
-    yield
 
-    # Shutdown
-    logger.info("Shutting down Jasper Trades...")
+async def _start_dexchain_watcher():
+    from app.services.dex_chain_autotrade import start_dexchain_watch
 
-    # Stop Telegram Bot
-    try:
-        from app.services.telegram_bot_service import telegram_bot_service
-        if telegram_bot_service and telegram_bot_service.running:
-            await telegram_bot_service.stop_polling()
-            logger.info("Telegram Bot stopped")
-    except Exception as e:
-        logger.warning(f"Error stopping Telegram Bot: {e}")
+    asyncio.create_task(start_dexchain_watch())
 
-    # Stop scheduler
-    if get_scheduler():
-        await get_scheduler().stop()
-        logger.info("Scheduler stopped")
 
-    # Stop market data
+async def _start_telegram_listeners():
+    from sqlalchemy import select as _select
+
+    from app.models import TelegramAccount
+    from app.services.signal_sources.telegram_listener import get_listener
+
+    async with async_session() as db:
+        result = await db.execute(_select(TelegramAccount))
+        accounts = result.scalars().all()
+
+    started = 0
+    for account in accounts:
+        if await get_listener().sync(account.device_id):
+            started += 1
+    logger.info(f"Telegram signal listeners started: {started}/{len(accounts)}")
+    return started
+
+
+# ---------------------------------------------------------------------------
+# Shutdown counterparts
+# ---------------------------------------------------------------------------
+
+async def _stop_telegram_bot():
+    from app.services.telegram_bot_service import telegram_bot_service
+
+    if telegram_bot_service and telegram_bot_service.running:
+        await telegram_bot_service.stop_polling()
+
+
+async def _stop_scheduler():
+    scheduler = get_scheduler()
+    if scheduler:
+        await scheduler.stop()
+
+
+async def _stop_market_data():
+    from app.services.ccxt_watch_service import get_ccxt_watch_service
+
     await market_data_service.stop()
-    logger.info("Market data service stopped")
+    await get_ccxt_watch_service().stop()
 
-    # Stop payout scheduler
-    try:
-        from app.services.payout_scheduler import payout_scheduler
-        await payout_scheduler.stop()
-        logger.info("Auto-payout scheduler stopped")
-    except Exception as e:
-        logger.warning(f"Error stopping payout scheduler: {e}")
 
-    # Stop forex polling service
-    try:
-        await stop_forex_polling()
-        logger.info("Forex polling service stopped")
-    except Exception as e:
-        logger.warning(f"Error stopping forex polling: {e}")
+async def _stop_payout_scheduler():
+    from app.services.payout_scheduler import payout_scheduler
 
-    # Stop real-time Telegram signal listeners
-    try:
-        from app.services.signal_sources.telegram_listener import get_listener
-        await get_listener().stop_all()
-        logger.info("Telegram signal listeners stopped")
-    except Exception as e:
-        logger.warning(f"Error stopping Telegram signal listeners: {e}")
+    await payout_scheduler.stop()
 
-    # Stop agents
-    await agent_registry.stop_all()
-    logger.info("Agents stopped")
 
-    # Disconnect brokers
-    await broker_registry.disconnect_all()
-    logger.info("Brokers disconnected")
+async def _stop_telegram_listeners():
+    from app.services.signal_sources.telegram_listener import get_listener
 
-    # Close database
-    await close_db()
-    logger.info("Database closed")
+    await get_listener().stop_all()
 
 
 # Create FastAPI app
@@ -459,6 +577,7 @@ app.include_router(tiger.router, prefix="/api/v1", tags=["tiger"])  # Tiger Open
 app.include_router(geo.router, prefix="/api/v1", tags=["geo"])  # geo-availability
 app.include_router(paper_trading.router, prefix="/api/v1", tags=["paper-trading"])  # paper engine
 app.include_router(memecoin.router, prefix="/api/v1", tags=["memecoin"])  # Solana memecoins
+app.include_router(dex_chains.router, prefix="/api/v1", tags=["dex-chains"])  # Dex chain watchers
 app.include_router(market_data.router, prefix="/api/v1", tags=["market-data"])  # unified market data
 app.include_router(watchlist.router, prefix="/api/v1", tags=["watchlist"])  # durable watchlist
 app.include_router(factor_trading.router, prefix="/api/v1", tags=["factor-trading"])  # factor results

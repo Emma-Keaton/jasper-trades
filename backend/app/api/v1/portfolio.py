@@ -1,13 +1,14 @@
 """
 Portfolio management endpoints.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any, Optional
 from datetime import datetime
 import structlog
 
 from app.database import get_db
+from app.device_auth import require_device_id
 from app.services.portfolio_service import PortfolioService
 from app.services.valuation_service import ValuationService
 from app.models import PortfolioSnapshot
@@ -22,15 +23,19 @@ router = APIRouter()
 @router.get("")
 async def get_portfolio(
     portfolio_id: Optional[int] = None,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Get portfolio summary."""
+    device_id = require_device_id(x_device_id)
     portfolio_service = PortfolioService(db)
     valuation_service = ValuationService()
 
-    # Get default portfolio if ID not specified
+    # Get this device's default portfolio if no ID was given. Scoped by device:
+    # the device UUID is the credential, so an unscoped lookup would return
+    # whichever portfolio was created first - possibly another device's.
     if portfolio_id is None:
-        portfolios = await portfolio_service.get_portfolios()
+        portfolios = await portfolio_service.get_portfolios(device_id=device_id)
         if not portfolios:
             raise HTTPException(status_code=404, detail="No portfolios found")
         portfolio_id = portfolios[0].id

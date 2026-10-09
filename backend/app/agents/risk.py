@@ -15,6 +15,27 @@ MAX_POSITION_USD = 50_000
 MAX_PORTFOLIO_RISK_PCT = 2.0
 DEFAULT_STOP_LOSS_PCT = 0.05
 
+#: Minimum factor-consensus confidence before a trade is approved at all.
+MIN_APPROVAL_CONFIDENCE = 0.4
+
+
+def _as_float(value: Any, default: float = 0.0) -> float:
+    """Parse a numeric field, falling back to `default`.
+
+    Factor output arrives from a service and from the database, so a string or
+    None here would otherwise raise `TypeError` out of a risk decision - the
+    worst place for a crash.
+    """
+    if value is None:
+        return default
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return default
+    if result != result or result in (float("inf"), float("-inf")):  # NaN/inf
+        return default
+    return result
+
 
 class RiskAgent(BaseAgent):
     """
@@ -42,43 +63,65 @@ class RiskAgent(BaseAgent):
         )
 
     async def analyze(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Assess risk parameters for a potential trade."""
-        advise = market_data.get("advise") or {}
+        """Assess risk parameters for a potential trade.
+
+        Position size scales with confidence and is capped by risk level.
+
+        This previously keyed the size purely off `net_signal` magnitude, so a
+        *weak* signal (`net_signal` near zero) was labelled "low risk" and
+        received the largest size - 75% of the $50k cap. A trade with barely any
+        consensus behind it was the one most likely to be given the biggest
+        position. Confidence now drives size, and the risk cap can only reduce it.
+        """
+        advise = (market_data.get("advise") or {}) if market_data else {}
         strategy = advise.get("strategy") or {}
-        confidence = float(strategy.get("confidence") or 0.0)
+
+        confidence = _as_float(strategy.get("confidence"))
         direction = advise.get("recommended_direction", "neutral")
 
-        # Volatility-adjusted sizing
-        net = abs(float(strategy.get("net_signal") or 0))
-        if net > 0.5:
+        # `net_signal` is the absolute strength of factor consensus, not
+        # volatility. It is used only to detect a crowded/noisy situation, which
+        # caps size; it never increases it.
+        net = _as_float(strategy.get("net_signal"))
+        if abs(net) > 0.5:
             risk_level = "high"
-            suggested_size_pct = 0.25
-        elif net > 0.2:
+            size_cap_pct = 0.25
+        elif abs(net) > 0.2:
             risk_level = "moderate"
-            suggested_size_pct = 0.5
+            size_cap_pct = 0.50
         else:
             risk_level = "low"
-            suggested_size_pct = 0.75
+            size_cap_pct = 0.75
 
-        # Position sizing suggestion (percentage of max)
-        suggested_usd = self.max_position_usd * suggested_size_pct
+        # Scale by conviction, then cap. A high-confidence signal still cannot
+        # exceed the risk cap, and a low-confidence one gets a small position
+        # even when the cap is generous.
+        confidence_frac = max(0.0, min(confidence, 1.0))
+        size_pct = size_cap_pct * confidence_frac
+        suggested_usd = self.max_position_usd * size_pct
 
-        # Stop-loss
+        # Stop-loss: tighter when the factor picture is noisy, wider when calm.
         stop_loss_pct = self.default_stop_loss_pct
         if risk_level == "high":
-            stop_loss_pct *= 0.75  # tighter stop when volatile
+            stop_loss_pct *= 0.75
         elif risk_level == "low":
-            stop_loss_pct *= 1.25  # wider stop when calm
+            stop_loss_pct *= 1.25
+
+        approved = (
+            confidence > MIN_APPROVAL_CONFIDENCE
+            and direction in ("long", "short")
+        )
 
         return {
             "risk_level": risk_level,
             "confidence": confidence,
             "direction": direction,
             "max_position_usd": self.max_position_usd,
+            "size_cap_pct": size_cap_pct,
             "suggested_position_usd": round(suggested_usd, 2),
             "stop_loss_pct": round(stop_loss_pct, 4),
             "take_profit_pct": round(stop_loss_pct * 2, 4),
-            "approved": confidence > 0.4 and direction != "neutral",
+            "approved": approved,
         }
 
     async def generate_signal(

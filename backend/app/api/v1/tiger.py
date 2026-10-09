@@ -27,6 +27,8 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
+from app.device_auth import require_device_id
+
 class TigerSettingsRequest(BaseModel):
     """Tiger OpenAPI configuration (live trading only)."""
     tiger_id: str
@@ -183,8 +185,7 @@ async def place_tiger_order(
     from app.services import trade_gate
     from app.services.paper_trading_service import get_paper_trading_service
 
-    device_id = (x_device_id or "").strip() or "default-device"
-
+    device_id = require_device_id(x_device_id)
     if order.side not in ("buy", "sell"):
         raise HTTPException(status_code=400, detail="side must be 'buy' or 'sell'")
     if order.order_type == "limit" and order.price is None:

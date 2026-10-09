@@ -54,18 +54,28 @@ class PortfolioService:
         self,
         portfolio_type: Optional[str] = None,  # "paper" or "live"
         broker: Optional[str] = None,
+        device_id: Optional[str] = None,
     ) -> List[Portfolio]:
         """
-        Get all portfolios with optional filters.
+        Get portfolios with optional filters.
 
         Args:
             portfolio_type: Filter by paper/live
             broker: Filter by broker
+            device_id: Restrict to one device.
 
-        Returns:
-            List of Portfolio objects
+                Pass this from every device-scoped caller. The device UUID is the
+                credential, so an unscoped query returns *every* device's
+                portfolio and callers that then take `portfolios[0]` would read
+                and mutate whichever device happened to be created first.
+
+                Left optional so genuinely global callers (admin, migration
+                scripts) still work, but no request path should rely on that.
         """
         query = select(Portfolio)
+
+        if device_id:
+            query = query.where(Portfolio.device_id == device_id)
 
         if portfolio_type:
             is_paper = portfolio_type.lower() == "paper"
@@ -74,6 +84,7 @@ class PortfolioService:
         if broker:
             query = query.where(Portfolio.broker == broker)
 
+        query = query.order_by(Portfolio.id.asc())
         result = await self.db.execute(query)
         return list(result.scalars().all())
 

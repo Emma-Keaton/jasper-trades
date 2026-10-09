@@ -184,12 +184,12 @@ async def compare_models(
     Returns all model outputs side-by-side.
     """
     try:
-        from app.nvidia_nim import nvidia_client
+        from app.services.llm_service import groq_client
         import asyncio
 
         async def get_model_output(model_name: str, model: Any) -> Dict[str, Any]:
             try:
-                output = await nvidia_client.complete(
+                output = await groq_client.complete(
                     model=model.model_id,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,

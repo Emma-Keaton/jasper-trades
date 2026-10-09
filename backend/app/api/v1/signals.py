@@ -1,7 +1,7 @@
 """
 Signal management endpoints.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Body
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any, Optional, List
@@ -11,7 +11,13 @@ import structlog
 from app.database import get_db, async_session
 from app.services.signal_service import SignalService
 from app.services.copytrade_service import CopyTradeService
-from app.models import Agent
+from app.device_auth import require_device_id
+from app.models import Agent, Signal
+
+#: Fraction of this device's default portfolio cash used to size a signal
+#: order when the caller supplies no quantity. Deliberately small: the trade
+#: gate still has the final say on affordability.
+SIGNAL_DEFAULT_FRACTION_OF_CASH = 0.05
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -59,6 +65,170 @@ async def list_signals(
         ],
         "count": len(signals),
     }
+
+
+@router.get("/active")
+async def get_active_signals(
+    limit: int = Query(default=50, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Signals that are still live: not expired, not hold.
+
+    The frontend calls this to populate its active-signals panel, and it was
+    calling a route that did not exist, so the panel was permanently empty.
+    `list_signals` filters on explicit parameters and cannot express "still
+    actionable", which is why this exists separately rather than as a flag.
+    """
+    service = SignalService(db)
+    now = datetime.utcnow()
+    signals = [
+        s for s in await service.get_signals(limit=limit)
+        if s.action in ("buy", "sell")
+        and (s.expires_at is None or s.expires_at > now)
+    ]
+    return {
+        "signals": [
+            {
+                "id": s.id,
+                "symbol": s.symbol,
+                "action": s.action,
+                "strength": s.strength,
+                "agent_name": s.agent_name,
+                "reasoning": s.reasoning,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+                "metadata": s.metadata,
+            }
+            for s in signals
+        ],
+        "count": len(signals),
+    }
+
+
+@router.post("/{signal_id}/ack")
+async def acknowledge_signal(
+    signal_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Acknowledge a signal so it stops appearing in the active panel.
+
+    Recorded in `metadata.acknowledged_at` rather than a dedicated column: it is
+    a UI acknowledgement, not a property of the signal itself, and `metadata` is
+    already JSON.
+    """
+    result = await db.execute(select(Signal).where(Signal.id == signal_id))
+    signal = result.scalar_one_or_none()
+    if not signal:
+        raise HTTPException(status_code=404, detail="Signal not found")
+
+    metadata = dict(signal.metadata or {})
+    metadata["acknowledged_at"] = datetime.utcnow().isoformat()
+    signal.metadata = metadata
+    await db.commit()
+    await db.refresh(signal)
+
+    return {
+        "id": signal.id,
+        "symbol": signal.symbol,
+        "acknowledged_at": metadata["acknowledged_at"],
+    }
+
+
+@router.post("/{signal_id}/execute")
+async def execute_signal(
+    signal_id: int,
+    quantity: Optional[float] = Query(default=None, gt=0),
+    x_device_id: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Place an order from a signal.
+
+    Routed through the same path as the manual trade button, so a signal cannot
+    bypass the trade gate: mode resolution, confidence floor, cash checks and the
+    paper/live split all apply exactly as they do for a manual order.
+
+    A Signal carries strength (0-1), not a size. When the caller does not
+    supply a quantity, the size is derived from this device's default portfolio
+    using SIGNAL_DEFAULT_FRACTION_OF_CASH, so the button works from the UI
+    without inventing an arbitrary share count. Pass quantity to override.
+    """
+    from app.api.v1.trading import ExecuteTradeRequest, execute_trade
+
+    device_id = require_device_id(x_device_id)
+
+    result = await db.execute(select(Signal).where(Signal.id == signal_id))
+    signal = result.scalar_one_or_none()
+    if not signal:
+        raise HTTPException(status_code=404, detail="Signal not found")
+    if signal.action not in ("buy", "sell"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Signal action '{signal.action}' is not executable",
+        )
+    if signal.expires_at is not None and signal.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=409, detail="Signal has expired")
+
+    if quantity is None:
+        quantity = await _quantity_from_portfolio_cash(db, device_id, signal.symbol)
+        if quantity is None or quantity <= 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Cannot size this order: no cash in this device's default "
+                    "portfolio. Pass an explicit quantity."
+                ),
+            )
+
+    return await execute_trade(
+        request=ExecuteTradeRequest(
+            symbol=signal.symbol,
+            type=signal.action,
+            shares=quantity,
+        ),
+        x_device_id=device_id,
+        db=db,
+    )
+
+
+async def _quantity_from_portfolio_cash(
+    db: AsyncSession, device_id: str, symbol: str
+) -> Optional[float]:
+    """Order size in *units*, sized from this device's default portfolio cash.
+
+    Used only when the caller omits a quantity. A Signal carries strength
+    (0-1), not a size, so something has to pick one.
+
+    The notional target is a fraction of available cash; that is converted to
+    units at the current price, because shares is a quantity and passing a USD
+    figure would oversize the order by the price multiple. Returns None when
+    there is no portfolio, no cash, or no price - the caller then refuses rather
+    than guessing a size.
+    """
+    from app.services.portfolio_service import PortfolioService
+    from app.services.valuation_service import ValuationService
+
+    portfolios = await PortfolioService(db).get_portfolios(device_id=device_id)
+    if not portfolios:
+        return None
+
+    cash = float(portfolios[0].cash or 0.0)
+    if cash <= 0:
+        return None
+
+    notional = cash * SIGNAL_DEFAULT_FRACTION_OF_CASH
+    if notional <= 0:
+        return None
+
+    try:
+        price = float(await ValuationService().get_price(symbol) or 0)
+    except Exception:  # noqa: BLE001
+        return None
+    if price <= 0:
+        return None
+
+    # Six decimals: enough resolution for a sub-dollar coin, and it never rounds
+    # a real position down to zero.
+    return round(notional / price, 6)
 
 
 @router.get("/{signal_id}")
