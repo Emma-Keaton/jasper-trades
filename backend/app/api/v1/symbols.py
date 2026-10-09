@@ -84,10 +84,18 @@ async def get_trove_settings(device_id: str):
             settings = result.scalar_one_or_none()
 
             if settings and settings.trove_enabled and settings.trove_api_key:
+                if not settings.trove_base_url:
+                    # Enabled with credentials but no host. Reported as
+                    # unconfigured rather than dialling an unverifiable default,
+                    # which used to fail TLS on every call.
+                    logger.warning(
+                        "Trove is enabled for this device but trove_base_url is unset; "
+                        "set it from the Trove dashboard."
+                    )
+                    return None, None, False
                 encryption = EncryptionHelper()
                 api_key = encryption.decrypt(settings.trove_api_key)
-                base_url = settings.trove_base_url or "https://sandbox.api.trovefinance.com/v1"
-                return api_key, base_url, True
+                return api_key, settings.trove_base_url, True
     except Exception as e:
         logger.warning(f"Failed to load Trove settings: {e}")
 

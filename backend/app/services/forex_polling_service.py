@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 import asyncio
 import structlog
 
+from sqlalchemy import select
 from app.database import async_session
 from app.models import DeviceSettings
 from app.services.encryption import EncryptionHelper
@@ -92,7 +93,7 @@ class ForexPollingService:
         try:
             async with async_session() as session:
                 result = await session.execute(
-                    DeviceSettings.__table__.select()
+                    select(DeviceSettings)
                     .where(DeviceSettings.trove_enabled == True)
                     .limit(1)
                 )

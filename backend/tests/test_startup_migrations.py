@@ -13,11 +13,13 @@ later, at request time, as "column does not exist".
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
 
 from app.migrations import (
+    _migrate_broker_connections,
     _migrate_device_settings,
     _migrate_portfolios,
     _migrate_signal_tips,
@@ -35,6 +37,10 @@ LEGACY_TABLES = {
     "signal_tips": ["id", "device_id", "symbol"],
     "trades": ["id", "symbol"],
     "withdrawals": ["id", "portfolio_id", "amount"],
+    # Pre-dates device scoping entirely: no device_id at all. This is the table
+    # that had no migrator, so an upgraded database kept the old shape and every
+    # broker query failed with "no such column".
+    "broker_connections": ["id", "broker_type", "account_id"],
 }
 
 
@@ -203,6 +209,60 @@ class TestMigratorsCoverTheModels:
         listed = set(_columns_listed_in(_migrate_withdrawals, "withdrawals"))
         model = {c.name for c in Base.metadata.tables["withdrawals"].columns}
         assert listed <= model, f"unknown: {sorted(listed - model)}"
+
+    def test_broker_connections_migrator_matches_model(self):
+        listed = set(_columns_listed_in(_migrate_broker_connections, "broker_connections"))
+        model = {c.name for c in Base.metadata.tables["broker_connections"].columns}
+        assert listed <= model, f"unknown: {sorted(listed - model)}"
+
+    def test_broker_connections_is_migrated_at_all(self):
+        """Regression: the table had no migrator, so `device_id` was never added.
+
+        `create_all` only builds fresh tables. Any database created before broker
+        connections became device-scoped kept the old shape, and the cTrader boot
+        step logged `no such column: broker_connections.device_id` while startup
+        continued.
+        """
+        from app import migrations as migrations_module
+
+        assert "device_id" in _columns_listed_in(
+            migrations_module._migrate_broker_connections, "broker_connections"
+        )
+        source = Path(migrations_module.__file__).read_text(encoding="utf-8")
+        assert "_migrate_broker_connections()" in source, (
+            "migrate() must actually call the broker_connections migrator"
+        )
+
+    async def test_broker_connections_scopes_preexisting_rows(self, legacy_database):
+        """A pre-scoping table must gain device_id and the columns added since."""
+        engine, columns_of, _ = legacy_database
+
+        import app.migrations as migrations
+
+        migrations.engine = engine
+        migrations.get_existing_columns = columns_of
+
+        assert "device_id" not in await columns_of("broker_connections")
+
+        await migrations._migrate_broker_connections()
+
+        columns = await columns_of("broker_connections")
+        assert "device_id" in columns
+        assert {"encrypted_access_token", "connection_status", "token_expires_at"} <= columns
+
+    async def test_running_twice_is_safe(self, legacy_database):
+        """migrate() runs on every boot; a second pass must not error."""
+        engine, columns_of, _ = legacy_database
+
+        import app.migrations as migrations
+
+        migrations.engine = engine
+        migrations.get_existing_columns = columns_of
+
+        await migrations._migrate_broker_connections()
+        await migrations._migrate_broker_connections()
+
+        assert "device_id" in await columns_of("broker_connections")
 
     def test_payout_columns_are_migrated(self):
         """The specific columns this change added."""

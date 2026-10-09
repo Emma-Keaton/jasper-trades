@@ -46,8 +46,26 @@ class TroveBrokerService(BaseBrokerService):
     """
 
     # Trove API endpoints
-    SANDBOX_BASE_URL = "https://sandbox.api.trovefinance.com/v1"
+    #
+    # SANDBOX_BASE_URL is deliberately None. It previously defaulted to
+    # https://sandbox.api.trovefinance.com/v1, which can never be used: the domain
+    # serves a single wildcard certificate for *.trovefinance.com, and a wildcard
+    # matches exactly one label. `sandbox.api.trovefinance.com` has two, so every
+    # request failed with
+    #   ssl: CERTIFICATE_VERIFY_FAILED ... Hostname mismatch, certificate is not
+    #   valid for 'sandbox.api.trovefinance.com'
+    # regardless of credentials or sandbox account.
+    #
+    # The working host is not guessed here. Pointing a sandbox account at a
+    # plausible-looking production host is a worse failure than refusing to start,
+    # so a caller must pass base_url explicitly (from TROVE_BASE_URL or the stored
+    # per-device setting). See TROVE_BASE_URL_DEFAULT_UNRESOLVED below.
+    SANDBOX_BASE_URL = None
     LIVE_BASE_URL = "https://api.trovefinance.com/v1"
+
+    #: True when the sandbox host must be supplied by configuration. Callers use
+    #: this to emit an actionable error instead of silently dialling a dead host.
+    TROVE_BASE_URL_DEFAULT_UNRESOLVED = True
 
     # Rate limiting (adjust based on Trove's actual limits)
     MAX_REQUESTS_PER_SECOND = 100
@@ -71,7 +89,16 @@ class TroveBrokerService(BaseBrokerService):
         if base_url:
             self.base_url = base_url
         else:
-            self.base_url = self.SANDBOX_BASE_URL if sandbox else self.LIVE_BASE_URL
+            resolved = self.SANDBOX_BASE_URL if sandbox else self.LIVE_BASE_URL
+            if not resolved:
+                # Never fall back to an unverifiable host. See SANDBOX_BASE_URL.
+                raise ValueError(
+                    "Trove base URL is not configured. TROVE_BASE_URL (or the "
+                    "per-device trove_base_url setting) must name a Trove host; "
+                    "the previous default could not pass TLS verification and is "
+                    "not being replaced by a guess."
+                )
+            self.base_url = resolved
 
         # Rate limiting state
         self._request_timestamps: List[datetime] = []

@@ -640,7 +640,11 @@ async def reset_onboarding_state(
 class TroveSettingsRequest(BaseModel):
     """Trove API configuration"""
     trove_api_key: str
-    trove_base_url: Optional[str] = "https://sandbox.api.trovefinance.com/v1"
+    # No default. The previous default host (sandbox.api.trovefinance.com) cannot
+    # pass TLS verification - the domain serves a *.trovefinance.com wildcard,
+    # which matches one label only - so it is required from the caller instead of
+    # being silently dialled. Leaving it unset keeps Trove inert and reportable.
+    trove_base_url: Optional[str] = None
     trove_enabled: bool = True
     trove_sandbox: bool = True
 
@@ -764,6 +768,8 @@ async def test_trove_connection(
     if not device_id:
         return {"valid": False, "message": "X-Device-ID header required"}
 
+    import httpx
+
     async with async_session() as session:
         result = await session.execute(
             select(DeviceSettings).where(DeviceSettings.device_id == device_id)
@@ -773,13 +779,22 @@ async def test_trove_connection(
         if not row or not row.trove_api_key:
             return {"valid": False, "message": "Trove API key not configured"}
 
+        if not row.trove_base_url:
+            return {
+                "valid": False,
+                "message": (
+                    "Trove base URL is not set. Supply trove_base_url from "
+                    "your Trove dashboard; there is no usable default."
+                ),
+            }
+
         # Decrypt API key
         encryption = get_encryption()
         api_key = encryption.decrypt(row.trove_api_key)
-        base_url = row.trove_base_url or "https://sandbox.api.trovefinance.com/v1"
+        base_url = row.trove_base_url
 
-        # Test connection
-        import httpx
+        # The request and the account-id write stay inside the session block, so
+        # the row is still open when it is committed.
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(

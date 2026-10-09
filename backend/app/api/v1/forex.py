@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import structlog
 
+from sqlalchemy import select
 from app.database import async_session
 from app.models import DeviceSettings
 from app.services.market_data_providers import get_market_data_service
@@ -68,7 +69,7 @@ async def get_forex_rate(
         try:
             async with async_session() as session:
                 result = await session.execute(
-                    DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+                    select(DeviceSettings).where(DeviceSettings.device_id == device_id)
                 )
                 settings = result.scalar_one_or_none()
 
@@ -140,7 +141,7 @@ async def convert_currency(
         try:
             async with async_session() as session:
                 result = await session.execute(
-                    DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+                    select(DeviceSettings).where(DeviceSettings.device_id == device_id)
                 )
                 settings = result.scalar_one_or_none()
 
@@ -211,7 +212,7 @@ async def get_major_forex_rates(
         try:
             async with async_session() as session:
                 result = await session.execute(
-                    DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+                    select(DeviceSettings).where(DeviceSettings.device_id == device_id)
                 )
                 settings = result.scalar_one_or_none()
 

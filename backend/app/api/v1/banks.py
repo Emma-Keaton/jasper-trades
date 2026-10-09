@@ -18,6 +18,7 @@ import structlog
 import httpx
 import os
 
+from sqlalchemy import select
 from app.database import async_session
 from app.models import DeviceSettings
 from app.services.encryption import EncryptionHelper
@@ -50,7 +51,7 @@ async def get_gateway_api_key(device_id: str) -> tuple[Optional[str], str]:
     
     async with async_session() as session:
         result = await session.execute(
-            DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+            select(DeviceSettings).where(DeviceSettings.device_id == device_id)
         )
         settings = result.scalar_one_or_none()
 

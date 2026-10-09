@@ -56,7 +56,7 @@ async def save_settings(
     try:
         async with async_session() as session:
             result = await session.execute(
-                DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+                select(DeviceSettings).where(DeviceSettings.device_id == device_id)
             )
             row = result.scalar_one_or_none()
 
@@ -103,7 +103,7 @@ async def get_settings(
     try:
         async with async_session() as session:
             result = await session.execute(
-                DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+                select(DeviceSettings).where(DeviceSettings.device_id == device_id)
             )
             row = result.scalar_one_or_none()
 
@@ -267,7 +267,7 @@ async def get_universal_paper_trading(
     try:
         async with async_session() as session:
             result = await session.execute(
-                DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+                select(DeviceSettings).where(DeviceSettings.device_id == device_id)
             )
             row = result.scalar_one_or_none()
             
@@ -308,7 +308,7 @@ async def save_universal_paper_trading(
     try:
         async with async_session() as session:
             result = await session.execute(
-                DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+                select(DeviceSettings).where(DeviceSettings.device_id == device_id)
             )
             row = result.scalar_one_or_none()
             
@@ -452,9 +452,14 @@ async def get_trove_settings(
 
             # Check connection status if enabled
             is_connected = False
-            if row.trove_enabled and api_key:
-                try:
-                    base_url = row.trove_base_url or "https://sandbox.api.trovefinance.com/v1"
+        if row.trove_enabled and api_key:
+            try:
+                base_url = row.trove_base_url
+                if not base_url:
+                    # No fallback: the previous default host cannot pass TLS
+                    # verification, so guessing one would only move the failure.
+                    is_connected = False
+                else:
                     async with httpx.AsyncClient() as client:
                         test_response = await client.get(
                             f"{base_url}/health",
@@ -462,9 +467,9 @@ async def get_trove_settings(
                             timeout=5.0
                         )
                         is_connected = test_response.status_code == 200
-                except Exception as e:
-                    logger.warning(f"Connection test failed: {e}")
-                    is_connected = False
+            except Exception as e:
+                logger.warning(f"Connection test failed: {e}")
+                is_connected = False
 
             response = TroveSettingsResponse(
                 trove_enabled=bool(row.trove_enabled),
@@ -512,7 +517,7 @@ async def save_trove_settings(
 
         async with async_session() as session:
             result = await session.execute(
-                DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+                select(DeviceSettings).where(DeviceSettings.device_id == device_id)
             )
             row = result.scalar_one_or_none()
 
@@ -569,17 +574,29 @@ async def test_trove_connection(
     try:
         async with async_session() as session:
             result = await session.execute(
-                DeviceSettings.__table__.select().where(DeviceSettings.device_id == device_id)
+                select(DeviceSettings).where(DeviceSettings.device_id == device_id)
             )
             row = result.scalar_one_or_none()
 
             if not row or not row.trove_api_key or not row.trove_enabled:
                 return {"valid": False, "message": "Trove not configured or enabled"}
 
+            if not row.trove_base_url:
+                # Reported distinctly from a missing key: the operator needs to know
+                # the host is unset, not that their credentials are wrong.
+                return {
+                    "valid": False,
+                    "message": (
+                        "Trove base URL is not set. Set trove_base_url (or "
+                        "TROVE_BASE_URL) to your Trove API host; there is no "
+                        "default because the previous one failed TLS verification."
+                    ),
+                }
+
             # Decrypt API key
             encryption = EncryptionHelper()
             api_key = encryption.decrypt(row.trove_api_key)
-            base_url = row.trove_base_url or "https://sandbox.api.trovefinance.com/v1"
+            base_url = row.trove_base_url
 
             # Test connection
             async with httpx.AsyncClient() as client:

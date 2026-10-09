@@ -67,6 +67,7 @@ async def migrate():
         # Step 2: Incremental column additions are safe on both dialects now.
         await _migrate_device_settings()
         await _migrate_portfolios()
+        await _migrate_broker_connections()
         await _migrate_signal_tips()
         await _migrate_trades()
         await _migrate_withdrawals()
@@ -188,6 +189,66 @@ async def _migrate_portfolios():
 
     for col, sqlite_ddl, pg_ddl in expected_columns:
         await add_column_if_missing("portfolios", col, sqlite_ddl, pg_ddl)
+
+
+async def _migrate_broker_connections():
+    """Add missing columns to broker_connections, including the scoping column.
+
+    This table had no migrator at all. `create_all` is authoritative only for a
+    *fresh* database, so any database created before broker connections became
+    device-scoped never received `device_id`, and the first query touching it failed
+    with `no such column: broker_connections.device_id`.
+
+    It surfaced as a boot warning rather than a failure: the cTrader token-refresh
+    step logged `failed after 2.9s: no such column` and startup continued, because
+    that step is not required. Any deployment whose database predates device
+    scoping - a Supabase instance included - would hit this.
+
+    Pre-existing rows are backfilled to `legacy_device`, matching
+    `_migrate_portfolios`. Those rows are reachable through the same
+    `require_device_id` rule that makes the server-seeded placeholder portfolio
+    unreachable, so they are inert rather than silently tradable: no client can
+    present `legacy_device` as a valid UUID, so those rows belong to no device and
+    are never selected.
+    """
+    expected_columns = [
+        # Scoping. NOT NULL with a default, as in _migrate_portfolios.
+        ("device_id", "TEXT NOT NULL DEFAULT 'legacy_device'", "VARCHAR(255) NOT NULL DEFAULT 'legacy_device'"),
+        ("broker_type", "TEXT NOT NULL DEFAULT ''", "VARCHAR(20) NOT NULL DEFAULT ''"),
+        ("broker_name", "TEXT", "VARCHAR(100)"),
+        ("account_id", "TEXT", "VARCHAR(100)"),
+        ("account_currency", "TEXT DEFAULT 'USD'", "VARCHAR(3) DEFAULT 'USD'"),
+        ("account_balance", "REAL DEFAULT 0.0", "FLOAT DEFAULT 0.0"),
+        ("ctrader_account_id", "TEXT", "VARCHAR(100)"),
+        ("encrypted_access_token", "TEXT", "TEXT"),
+        ("encrypted_refresh_token", "TEXT", "TEXT"),
+        ("token_expires_at", "DATETIME", "TIMESTAMP"),
+        ("encrypted_api_key", "TEXT", "TEXT"),
+        ("encrypted_api_secret", "TEXT", "TEXT"),
+        ("is_active", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
+        ("is_connected", "BOOLEAN DEFAULT 0", "BOOLEAN DEFAULT false"),
+        ("connection_status", "TEXT", "VARCHAR(50)"),
+        ("last_sync_at", "DATETIME", "TIMESTAMP"),
+        ("created_at", "DATETIME", "TIMESTAMP"),
+        ("updated_at", "DATETIME", "TIMESTAMP"),
+    ]
+
+    for col, sqlite_ddl, pg_ddl in expected_columns:
+        await add_column_if_missing("broker_connections", col, sqlite_ddl, pg_ddl)
+
+    # `add_column_if_missing` only warns on failure, so a column that could not be
+    # added - wrong DDL, missing table, a read-only replica - would otherwise leave
+    # boot to discover it as a runtime "no such column" much later. That is exactly
+    # how the missing migrator went unnoticed, so the one column this table cannot
+    # work without is verified rather than assumed.
+    existing = await get_existing_columns("broker_connections")
+    if "device_id" not in existing:
+        raise RuntimeError(
+            "broker_connections.device_id is still missing after migration. "
+            "Every broker query filters on it, so the service cannot start "
+            "correctly. Check that the table exists and the migration had "
+            "permission to ALTER it."
+        )
 
 
 async def _migrate_withdrawals():
