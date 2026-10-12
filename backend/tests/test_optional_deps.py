@@ -68,8 +68,10 @@ class TestProbe:
 
 
 class TestMemoryGate:
-    async def test_passes_immediately_when_under_the_limit(self):
-        assert await wait_for_memory_headroom(max_rss_mb=10_000.0, timeout=1.0) is True
+    async def test_passes_immediately_with_headroom_to_spare(self):
+        assert await wait_for_memory_headroom(
+            container_memory_mb=10_000.0, required_headroom_mb=1_000.0, timeout=1.0
+        ) is True
 
     async def test_fails_open_when_the_limit_is_never_met(self):
         """A gate that can never be satisfied must give up, not hang forever.
@@ -78,7 +80,10 @@ class TestMemoryGate:
         delay shutdown until SIGKILL.
         """
         result = await wait_for_memory_headroom(
-            max_rss_mb=1.0, timeout=1.0, poll_interval=0.1
+            container_memory_mb=10.0,
+            required_headroom_mb=10_000.0,
+            timeout=1.0,
+            poll_interval=0.1,
         )
         assert result is False
 
@@ -98,7 +103,10 @@ class TestMemoryGate:
 
         monkeypatch.setattr(psutil, "Process", lambda: FakeProc())
         assert await wait_for_memory_headroom(
-            max_rss_mb=100.0, timeout=5.0, poll_interval=0.01
+            container_memory_mb=1_000.0,
+            required_headroom_mb=100.0,
+            timeout=5.0,
+            poll_interval=0.01,
         ) is True
 
     async def test_missing_psutil_fails_open(self, monkeypatch):
@@ -111,7 +119,9 @@ class TestMemoryGate:
             return real_import(name, *args, **kwargs)
 
         monkeypatch.setattr("builtins.__import__", fake_import)
-        assert await wait_for_memory_headroom(max_rss_mb=1.0, timeout=1.0) is True
+        assert await wait_for_memory_headroom(
+            container_memory_mb=10.0, required_headroom_mb=10_000.0, timeout=1.0
+        ) is True
 
 
 class TestInstallMissing:
@@ -232,16 +242,43 @@ class TestConfig:
 
         assert Settings.model_fields["OPTIONAL_DEPS_AUTO_INSTALL"].default is True
 
-    def test_memory_limit_leaves_headroom_under_render_free_tier(self):
-        """512 MB total, ~190-250 MB after boot.
+    def test_memory_budget_is_anchored_to_render_free(self):
+        """The gate must reflect the instance it runs on.
 
-        The gate must be above the boot peak or it would never open, and far enough
-        below the ceiling that pip plus wheel extraction cannot OOM.
+        Render free gives 512 MB. If that changes, these defaults are wrong, and
+        failing here is how we find out before an install is OOM-killed in
+        production.
         """
         from app.config import Settings
 
-        limit = Settings.model_fields["OPTIONAL_DEPS_MAX_RSS_MB"].default
-        assert 260.0 < limit <= 400.0
+        container = Settings.model_fields["OPTIONAL_DEPS_CONTAINER_MEMORY_MB"].default
+        headroom = Settings.model_fields["OPTIONAL_DEPS_INSTALL_HEADROOM_MB"].default
+
+        assert container == 512.0, "Render free tier memory changed; re-derive this"
+        assert 0 < headroom < container / 2, (
+            "the headroom pip needs must be satisfiable against a near-empty "
+            f"instance, and was {headroom} against {container}"
+        )
+
+    def test_headroom_fits_realistic_boot_footprint(self):
+        """Boot measures ~315 MB, so the gate must still open at that footprint.
+
+        A gate that never opens is indistinguishable from a disabled one: the
+        install would silently never run and nothing would say so until a capability
+        was missing. This is the assertion that keeps the gate honest in both
+        directions - it must not block forever at the footprint we actually ship.
+        """
+        from app.config import Settings
+
+        container = Settings.model_fields["OPTIONAL_DEPS_CONTAINER_MEMORY_MB"].default
+        headroom = Settings.model_fields["OPTIONAL_DEPS_INSTALL_HEADROOM_MB"].default
+        measured_boot_rss_mb = 315.0
+
+        assert container - measured_boot_rss_mb >= headroom, (
+            f"at the measured boot footprint of {measured_boot_rss_mb} MB there is "
+            f"{container - measured_boot_rss_mb:.0f} MB free, less than the "
+            f"{headroom} MB the install needs: the gate would never open"
+        )
 
     def test_memory_wait_is_bounded(self):
         """An unbounded gate would hold a background task open indefinitely."""

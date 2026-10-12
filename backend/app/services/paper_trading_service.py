@@ -232,6 +232,8 @@ class UniversalPaperTradingService:
         commission_rate: float = 0.001,
         agent_name: str = "unknown",
         reasoning: str = "",
+        stop_loss: Optional[float] = None,
+        take_profit: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Simulate a fill and update the paper ledger. Purely numeric/safe."""
         state = await self._load_state(device_id)
@@ -259,6 +261,11 @@ class UniversalPaperTradingService:
             )
             pos["qty"] = total_qty
             pos["asset_class"] = asset_class
+            # Bracket levels for the signal-exit monitor (buy-side only).
+            if stop_loss and stop_loss > 0:
+                pos["stop_loss"] = float(stop_loss)
+            if take_profit and take_profit > 0:
+                pos["take_profit"] = float(take_profit)
             state["current_balance"] -= notional + commission
         else:  # sell
             if pos is None or pos["qty"] < qty:
@@ -407,6 +414,75 @@ class UniversalPaperTradingService:
             "trade_count": state["trade_count"],
         }
 
+
+    async def check_brackets(self, device_id: str) -> List[Dict[str, Any]]:
+        """Close paper positions that breach their stop-loss / take-profit.
+
+        Uses the same market price source as signal execution so a bracket is
+        checked against the same number the entry was sized at. Failures on a
+        single symbol never abort the rest of the device's positions.
+        """
+        from app.services.valuation_service import ValuationService
+
+        state = await self._load_state(device_id)
+        closed: List[Dict[str, Any]] = []
+        if not state.get("enabled", True):
+            return closed
+
+        val = ValuationService()
+        for symbol, pos in list(state.get("positions", {}).items()):
+            sl = pos.get("stop_loss")
+            tp = pos.get("take_profit")
+            if not sl and not tp:
+                continue
+            try:
+                price = await val.get_price(symbol)
+            except Exception:  # noqa: BLE001
+                price = None
+            if not price or price <= 0:
+                continue
+
+            trigger = None
+            if sl and price <= float(sl):
+                trigger = "stop_loss"
+            elif tp and price >= float(tp):
+                trigger = "take_profit"
+            if not trigger:
+                continue
+
+            qty = float(pos["qty"])
+            result = await self.place_trade(
+                device_id=device_id,
+                symbol=symbol,
+                side="sell",
+                qty=qty,
+                price=price,
+                asset_class=pos.get("asset_class", "crypto"),
+                agent_name="signal-exit",
+                reasoning=f"Auto-close on {trigger}",
+            )
+            if result.get("error"):
+                logger.warning(
+                    "Bracket close failed", symbol=symbol, trigger=trigger, error=result["error"]
+                )
+                continue
+            closed.append(
+                {
+                    "symbol": symbol,
+                    "trigger": trigger,
+                    "price": price,
+                    "qty": qty,
+                    "realized_pnl": result.get("realized_pnl"),
+                }
+            )
+            logger.info(
+                "Paper bracket closed",
+                symbol=symbol,
+                trigger=trigger,
+                price=price,
+                realized_pnl=result.get("realized_pnl"),
+            )
+        return closed
 
     async def _notify_telegram(self, device_id: str, trade: Dict[str, Any]) -> None:
         """Send a trade alert to the user's verified Telegram chat (if any).

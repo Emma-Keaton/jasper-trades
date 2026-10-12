@@ -1,4 +1,4 @@
-import { TourStep } from '../useOnboardingEngine';
+import type { TourStep } from '../useOnboardingEngine';
 
 export const dashboardTour: TourStep[] = [
   {

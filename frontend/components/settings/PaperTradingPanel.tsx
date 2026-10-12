@@ -49,9 +49,11 @@ export default function PaperTradingPanel({ mode, triggerToast, onSaved }: Paper
     })();
   }, []);
 
-  useEffect(() => {
+  const [prevMode, setPrevMode] = useState(mode);
+  if (mode !== prevMode) {
+    setPrevMode(mode);
     setConfig((prev) => ({ ...prev, enabled: mode === 'practice' }));
-  }, [mode]);
+  }
 
   const save = async () => {
     setSaving(true);

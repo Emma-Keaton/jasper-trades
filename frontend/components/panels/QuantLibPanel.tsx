@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 
 export function QuantLibPanel() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<unknown>(null);
   const [activeTool, setActiveTool] = useState<string>('black-scholes');
   const [spot, setSpot] = useState(100);
   const [strike, setStrike] = useState(100);
@@ -14,7 +14,7 @@ export function QuantLibPanel() {
   const [volatility, setVolatility] = useState(20);
   const [rate, setRate] = useState(5);
 
-  const handleCalculate = async (tool: string, data: any) => {
+  const handleCalculate = async (tool: string, data: unknown) => {
     setLoading(true);
     let response;
 
@@ -164,9 +164,9 @@ export function QuantLibPanel() {
       </button>
 
       {/* Results Display */}
-      {result && (
+      {result != null && (
         <div className={`p-3 rounded-lg border ${
-          result.error 
+          (result as { error?: string }).error 
             ? 'bg-[#EF4444]/10 border-[#EF4444]/30' 
             : 'bg-[#10B981]/10 border-[#10B981]/30'
         }`}>

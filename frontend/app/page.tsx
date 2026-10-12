@@ -12,7 +12,7 @@ import { usePortfolioHistory } from '@/hooks/usePortfolioHistory';
 import { useCurrency } from '@/lib/currencyContext';
 import { fetchTradingMode } from '@/lib/preferences';
 import { useTheme } from '@/lib/theme';
-import { Holding, TradeHistoryItem, Toast, WatchedEntry } from '@/app/types';
+import type { Holding, TradeHistoryItem, Toast, WatchedEntry } from '@/app/types';
 import { Badge } from '@/components/ui';
 import ChatWidget from '@/components/ChatWidget';
 import { OnboardingProvider } from '@/components/onboarding/OnboardingProvider';
@@ -22,7 +22,8 @@ import HomeScreen from '@/components/screens/HomeScreen';
 import TradesScreen from '@/components/screens/TradesScreen';
 import MarketsScreen from '@/components/screens/MarketsScreen';
 import SignalsScreen from '@/components/screens/SignalsScreen';
-import SettingsScreen, { StepId } from '@/components/screens/SettingsScreen';
+import type { StepId } from '@/components/screens/SettingsScreen';
+import SettingsScreen from '@/components/screens/SettingsScreen';
 import BacktestScreen from '@/components/screens/BacktestScreen';
 import AlphaZooScreen from '@/components/screens/AlphaZooScreen';
 
@@ -40,6 +41,11 @@ const ADVANCED_TABS = [
   { id: 'backtest', label: 'Backtesting', icon: Microscope },
   { id: 'alphazoo', label: 'Alpha Zoo', icon: Compass },
 ] as const;
+
+
+interface PortfolioSummary { id?: string; cash?: number; [k: string]: unknown }
+interface HoldingRow { symbol: string; name?: string; type?: string; shares?: number; quantity?: number; avg_price?: number; current_price?: number; pnl_percent?: number; unrealized_pnl_percent?: number }
+interface TradeRow { id: string | number; created_at: string; side?: string; type?: string; symbol: string; quantity?: number; shares?: number; price?: number; pnl?: number; total?: number; agent_name?: string }
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<string>('home');
@@ -88,8 +94,8 @@ const [, setWsStatus] = useState<string>('disconnected');
   const fetchFactorData = useCallback(async () => {
     try {
       const [signalsRes, statsRes] = await Promise.all([
-        apiRequest<any>('/api/v1/factor-trading/signals'),
-        apiRequest<any>('/api/v1/factor-trading/stats'),
+        apiRequest<{ watching?: WatchedEntry[] }>('/api/v1/factor-trading/signals'),
+        apiRequest<{ trades_taken?: number; watching?: number }>('/api/v1/factor-trading/stats'),
       ]);
       if (signalsRes.data?.watching) setWatched(signalsRes.data.watching as WatchedEntry[]);
       if (statsRes.data) {
@@ -107,39 +113,39 @@ const fetchBackendData = useCallback(async () => {
     setLoading(true);
     try {
       // Try status endpoint first, fall back to health if it fails
-      const statusResult = await apiRequest<any>('/api/v1/status');
+      const statusResult = await apiRequest<Record<string, unknown>>('/api/v1/status');
       if (!statusResult.data) {
-        const healthResult = await apiRequest<any>('/api/v1/health');
+        const healthResult = await apiRequest<Record<string, unknown>>('/api/v1/health');
         setBackendConnected(!!healthResult.data);
       } else {
         setBackendConnected(true);
       }
 
       // Backend returns a single portfolio summary object (not an array).
-      const portfolioResult = await apiRequest<any>('/api/v1/portfolio');
+      const portfolioResult = await apiRequest<PortfolioSummary>('/api/v1/portfolio');
       if (portfolioResult.data && portfolioResult.data.id) {
         const pid = portfolioResult.data.id;
-        setPortfolioId(pid);
+        setPortfolioId(pid != null ? Number(pid) : null);
         setCash(portfolioResult.data.cash || 0);
 
-        const initRes = await apiRequest<any>(`/api/v1/portfolio/${pid}/initialization-status`);
+        const initRes = await apiRequest<{ is_initialized?: boolean }>(`/api/v1/portfolio/${pid}/initialization-status`);
         if (initRes.data) setPortfolioInitialized(!!initRes.data.is_initialized);
 
-        const hRes = await apiRequest<any>(`/api/v1/portfolio/${pid}/holdings`);
+        const hRes = await apiRequest<HoldingRow[] | { holdings: HoldingRow[] }>(`/api/v1/portfolio/${pid}/holdings`);
         if (hRes.data) {
           const arr = Array.isArray(hRes.data) ? hRes.data : (hRes.data.holdings || []);
-          setHoldings(arr.map((h: any) => ({
-            symbol: h.symbol, name: h.name || h.symbol, type: h.type || 'Stock',
+          setHoldings(arr.map((h: HoldingRow): Holding => ({
+            symbol: h.symbol, name: h.name || h.symbol, type: (h.type as Holding['type']) || 'Stock',
             shares: h.shares || h.quantity || 0, avgPrice: h.avg_price || 0,
             currentPrice: h.current_price || h.avg_price || 0, pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0,
           })));
         }
-        const tRes = await apiRequest<any>(`/api/v1/trading/history?limit=30`);
+        const tRes = await apiRequest<TradeRow[] | { trades: TradeRow[] }>(`/api/v1/trading/history?limit=30`);
         if (tRes.data) {
-          const trades = tRes.data.trades || tRes.data || [];
-          setTradeHistory(trades.map((t: any) => ({
-            id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-            type: (t.side || t.type || '').toUpperCase(), symbol: t.symbol, side: (t.side === 'buy' ? 'Long' : 'Short') as 'Long' | 'Short', shares: t.quantity || t.shares || 0, price: t.price || 0, total: t.pnl != null ? t.pnl : ((t.quantity || 0) * (t.price || 0)), agent: t.agent_name || 'System',
+          const trades: TradeRow[] = Array.isArray(tRes.data) ? tRes.data : (tRes.data.trades || []);
+          setTradeHistory(trades.map((t: TradeRow): TradeHistoryItem => ({
+            id: String(t.id), date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            type: ((t.side || t.type || '').toUpperCase()) as TradeHistoryItem['type'], symbol: t.symbol, side: (t.side === 'buy' ? 'Long' : 'Short') as 'Long' | 'Short', shares: t.quantity || t.shares || 0, price: t.price || 0, total: t.pnl != null ? t.pnl : ((t.quantity || 0) * (t.price || 0)), agent: t.agent_name || 'System',
           })));
         }
       }
@@ -154,33 +160,33 @@ const fetchBackendData = useCallback(async () => {
     try {
       const pid = portfolioId;
       if (!pid) {
-        const portfolioResult = await apiRequest<any>('/api/v1/portfolio');
+        const portfolioResult = await apiRequest<PortfolioSummary>('/api/v1/portfolio');
         if (portfolioResult.data?.id) {
-          setPortfolioId(portfolioResult.data.id);
+          setPortfolioId(Number(portfolioResult.data.id));
           setCash(portfolioResult.data.cash || 0);
         }
         return;
       }
-      const fresh = await apiRequest<any>(`/api/v1/portfolio/${pid}`);
-      if (fresh.data) setCash(prev => Math.abs(prev - (fresh.data.cash || 0)) > 0.01 ? (fresh.data.cash || 0) : prev);
-      const hRes = await apiRequest<any>(`/api/v1/portfolio/${pid}/holdings`);
+      const fresh = await apiRequest<PortfolioSummary>(`/api/v1/portfolio/${pid}`);
+      if (fresh.data) setCash(prev => fresh.data && Math.abs(prev - (fresh.data.cash || 0)) > 0.01 ? (fresh.data.cash || 0) : prev);
+      const hRes = await apiRequest<HoldingRow[] | { holdings: HoldingRow[] }>(`/api/v1/portfolio/${pid}/holdings`);
       const arr = hRes.data ? (Array.isArray(hRes.data) ? hRes.data : (hRes.data.holdings || [])) : [];
-      const next = arr.map((h: any) => ({
-        symbol: h.symbol, name: h.name || h.symbol, type: h.type || 'Stock',
+      const next = arr.map((h: HoldingRow): Holding => ({
+        symbol: h.symbol, name: h.name || h.symbol, type: (h.type as Holding['type']) || 'Stock',
         shares: h.shares || h.quantity || 0, avgPrice: h.avg_price || 0,
         currentPrice: h.current_price || h.avg_price || 0, pnlPercent: h.pnl_percent || h.unrealized_pnl_percent || 0,
       }));
       setHoldings(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
-      const tRes = await apiRequest<any>(`/api/v1/trading/history?limit=30`);
+      const tRes = await apiRequest<TradeRow[] | { trades: TradeRow[] }>(`/api/v1/trading/history?limit=30`);
       if (tRes.data) {
-        const trades = (tRes.data.trades || tRes.data) || [];
-        const next = trades.slice(0, 30).map((t: any) => ({
-          id: t.id, date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          type: (t.side || t.type || '').toUpperCase(), symbol: t.symbol, side: (t.side === 'buy' ? 'Long' : 'Short') as 'Long' | 'Short', shares: t.quantity || t.shares || 0, price: t.price || 0, total: t.pnl || t.total || 0, agent: t.agent_name || 'System',
+        const trades: TradeRow[] = Array.isArray(tRes.data) ? tRes.data : (tRes.data.trades || []);
+        const next = trades.slice(0, 30).map((t: TradeRow): TradeHistoryItem => ({
+          id: String(t.id), date: new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          type: ((t.side || t.type || '').toUpperCase()) as TradeHistoryItem['type'], symbol: t.symbol, side: (t.side === 'buy' ? 'Long' : 'Short') as 'Long' | 'Short', shares: t.quantity || t.shares || 0, price: t.price || 0, total: t.pnl || t.total || 0, agent: t.agent_name || 'System',
         }));
         setTradeHistory(prev => JSON.stringify(prev) !== JSON.stringify(next) ? next : prev);
       }
-      const statusResult = await apiRequest<any>('/api/v1/status');
+      const statusResult = await apiRequest<Record<string, unknown>>('/api/v1/status');
       setBackendConnected(!!statusResult.data);
     } catch {
       /* silent */
@@ -440,7 +446,7 @@ case 'trades':
             {/* Desktop top bar */}
             <header className="sticky top-0 z-30 hidden h-14 items-center justify-between border-b border-slate-200 bg-white/85 px-8 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 md:flex">
               <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
-                <Bell className="h-4 w-4" />
+                <Bell className="h-4 w-4" aria-hidden="true" />
                 <span>Jasper keeps you updated in the chat bubble.</span>
               </div>
               <div className="flex items-center gap-3">
@@ -501,7 +507,7 @@ case 'trades':
             >
               <p className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-slate-50">{t.title}</p>
               <p className="text-sm text-slate-500 dark:text-slate-400">{t.message}</p>
-              <button onClick={() => removeToast(t.id)} className="ml-auto rounded-full p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"><X className="h-4 w-4" /></button>
+              <button onClick={() => removeToast(t.id)} aria-label="Dismiss notification" className="ml-auto rounded-full p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"><X className="h-4 w-4" /></button>
             </div>
           ))}
         </div>

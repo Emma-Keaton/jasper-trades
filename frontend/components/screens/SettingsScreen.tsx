@@ -52,12 +52,12 @@ export default function SettingsScreen({ triggerToast, onNavigate, defaultOpen, 
     let mounted = true;
     fetch(`${API_URL}/api/v1/settings/env-status`, { headers: deviceHeaders() })
       .then((r) => r.json())
-      .then((d) => { if (mounted) setEnvStatus(d); })
+      .then((d) => { if (mounted) setEnvStatus(d); return d; })
       .catch(() => console.error('Failed to load env status'));
     return () => { mounted = false; };
   }, []);
 
-  const geminiConfigured = !!envStatus?.environment_variables?.gemini_api_key?.configured;
+  const groqConfigured = !!envStatus?.environment_variables?.groq_api_key?.configured;
 
   const setTradingMode = (m: 'practice' | 'live') => {
     setMode(m);
@@ -74,13 +74,13 @@ export default function SettingsScreen({ triggerToast, onNavigate, defaultOpen, 
     { id: 'mode', icon: <DollarSign className="h-5 w-5" />, title: 'Trading mode', desc: mode === 'practice' ? 'Practice, using play money.' : 'Live, using real money.' },
     { id: 'wallet', icon: <Wallet className="h-5 w-5" />, title: 'Connect wallet & brokers', desc: 'MetaMask, Phantom, CCXT, cTrader, Trove, AKShare.', optional: true },
     { id: 'telegram', icon: <MessageCircle className="h-5 w-5" />, title: 'Telegram alerts', desc: 'Trade alerts and 2-way chat on your phone.', optional: true },
-    { id: 'ai', icon: <BrainCircuit className="h-5 w-5" />, title: 'AI engine', desc: geminiConfigured ? 'Gemini is connected and ready.' : 'Gemini needs an API key to trade.' },
+    { id: 'ai', icon: <BrainCircuit className="h-5 w-5" />, title: 'AI engine', desc: groqConfigured ? 'Groq is connected and ready.' : 'Groq needs an API key to trade.' },
     { id: 'appearance', icon: <Palette className="h-5 w-5" />, title: 'Appearance', desc: `${theme === 'dark' ? 'Dark' : 'Light'} mode · ${currency} currency` },
   ];
 
   const done = steps.filter(s => {
     if (s.id === 'mode') return true;
-    if (s.id === 'ai') return geminiConfigured;
+    if (s.id === 'ai') return groqConfigured;
     if (s.id === 'appearance') return true;
     return false;
   }).length;
@@ -193,21 +193,21 @@ export default function SettingsScreen({ triggerToast, onNavigate, defaultOpen, 
           <div className="flex items-center gap-3 rounded-control border border-slate-200 p-4 dark:border-slate-700">
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300"><BrainCircuit className="h-5 w-5" /></span>
             <div>
-              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Gemini 2.5 (primary AI)</p>
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Groq (primary AI)</p>
               <p className="text-xs text-slate-400 dark:text-slate-500">
-                {geminiConfigured ? 'Connected and ready' : 'Not configured — needs an API key'}
+                {groqConfigured ? 'Connected and ready' : 'Not configured — needs an API key'}
               </p>
             </div>
-            <Badge tone={geminiConfigured ? 'up' : 'down'} className="ml-auto">
-              <span className={`h-1.5 w-1.5 rounded-full ${geminiConfigured ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-              {geminiConfigured ? 'Connected' : 'Needs key'}
+            <Badge tone={groqConfigured ? 'up' : 'down'} className="ml-auto">
+              <span className={`h-1.5 w-1.5 rounded-full ${groqConfigured ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+              {groqConfigured ? 'Connected' : 'Needs key'}
             </Badge>
           </div>
-          <p className="text-sm text-slate-600 dark:text-slate-300">Jasper uses Gemini to watch markets, reason about trades in plain English, and explain what it did.</p>
-          {!geminiConfigured && (
+          <p className="text-sm text-slate-600 dark:text-slate-300">Jasper uses Groq to watch markets, reason about trades in plain English, and explain what it did.</p>
+          {!groqConfigured && (
             <div className="rounded-control bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-              Set <code className="font-semibold">GEMINI_API_KEY</code> (~3 keys, comma-separated) in your Render dashboard environment
-              variables to enable the AI engine. NVIDIA NIM is kept as a deprecated fallback only.
+              Set <code className="font-semibold">GROQ_API_KEY</code> (~3 keys, comma-separated) in your Render dashboard environment
+              variables to enable the AI engine. Restart the backend after setting it.
             </div>
           )}
           <div className="flex justify-end pt-2"><Button variant="secondary" onClick={() => setOpen(null)}>Done</Button></div>

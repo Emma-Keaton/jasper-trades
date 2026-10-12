@@ -11,13 +11,45 @@ from app.database import get_db
 from app.device_auth import require_device_id
 from app.services.portfolio_service import PortfolioService
 from app.services.valuation_service import ValuationService
-from app.models import PortfolioSnapshot
+from app.models import Portfolio, PortfolioSnapshot
 from sqlalchemy import select
 from datetime import datetime, timedelta
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+async def resolve_owned_portfolio(
+    portfolio_id: int,
+    db: AsyncSession,
+    x_device_id: Optional[str] = Header(None),
+) -> Portfolio:
+    """Load a portfolio, refusing one that belongs to a different device.
+
+    Every `/{portfolio_id}/...` route in this module went straight to
+    `PortfolioService(db).get_positions(portfolio_id, ...)` with no ownership check,
+    so the only credential was a guessable auto-increment integer: any device could
+    read another device's positions, cash, allocation and equity curve by asking for
+    the next id.
+
+    A 404 is returned rather than a 403 for someone else's portfolio. "Forbidden"
+    confirms the id exists, which is the information being withheld.
+    """
+    device_id = require_device_id(x_device_id)
+    result = await db.execute(
+        select(Portfolio).where(
+            Portfolio.id == portfolio_id,
+            Portfolio.device_id == device_id,
+        )
+    )
+    portfolio = result.scalar_one_or_none()
+    if portfolio is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Portfolio not found",
+        )
+    return portfolio
 
 
 @router.get("")
@@ -152,13 +184,66 @@ async def create_portfolio(
     }
 
 
+@router.get("/{portfolio_id}/trades")
+async def get_portfolio_trades(
+    portfolio_id: int,
+    limit: int = 100,
+    x_device_id: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trade history for one portfolio, scoped to the calling device.
+
+    The frontend's `getTrades(portfolioId)` has always called this. There was no
+    such route, so the method 404'd whenever it was wired up; `/trading/history`
+    exists but is keyed on the device header rather than a portfolio id.
+
+    Shape matches `Trade`, which is what the client types `Trade[]` against.
+    """
+    from app.models import Trade
+
+    await resolve_owned_portfolio(portfolio_id, db, x_device_id)
+
+    result = await db.execute(
+        select(Trade)
+        .where(Trade.portfolio_id == portfolio_id)
+        .order_by(Trade.created_at.desc())
+        .limit(max(1, min(int(limit), 500)))
+    )
+    trades = result.scalars().all()
+    return {
+        "trades": [
+            {
+                "id": t.id,
+                "symbol": t.symbol,
+                "side": t.side,
+                "quantity": t.quantity,
+                "price": t.price,
+                "status": t.status,
+                "agent_name": t.agent_name,
+                "broker": t.broker,
+                "broker_order_id": t.broker_order_id,
+                "entry_price": t.entry_price,
+                "exit_price": t.exit_price,
+                "pnl": t.pnl,
+                "pnl_percent": t.pnl_percent,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+            }
+            for t in trades
+        ],
+        "count": len(trades),
+    }
+
+
 @router.get("/{portfolio_id}/positions")
 async def get_positions(
     portfolio_id: int,
     include_empty: bool = False,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Get all positions in a portfolio."""
+    await resolve_owned_portfolio(portfolio_id, db, x_device_id)
     portfolio_service = PortfolioService(db)
     valuation_service = ValuationService()
 
@@ -189,9 +274,11 @@ async def get_positions(
 @router.get("/{portfolio_id}/holdings")
 async def get_holdings(
     portfolio_id: int,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Get portfolio holdings (alias for positions endpoint)."""
+    await resolve_owned_portfolio(portfolio_id, db, x_device_id)
     portfolio_service = PortfolioService(db)
     valuation_service = ValuationService()
 
@@ -222,9 +309,11 @@ async def get_holdings(
 @router.get("/{portfolio_id}/cash")
 async def get_cash(
     portfolio_id: int,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Get cash balance for a portfolio."""
+    await resolve_owned_portfolio(portfolio_id, db, x_device_id)
     portfolio_service = PortfolioService(db)
 
     portfolio = await portfolio_service.get_portfolio(portfolio_id)
@@ -244,9 +333,11 @@ async def update_cash(
     portfolio_id: int,
     amount: float,
     description: str = "cash adjustment",
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Add or withdraw cash from portfolio."""
+    await resolve_owned_portfolio(portfolio_id, db, x_device_id)
     portfolio_service = PortfolioService(db)
 
     portfolio = await portfolio_service.update_cash(portfolio_id, amount, description)
@@ -263,9 +354,11 @@ async def update_cash(
 @router.get("/{portfolio_id}/allocation")
 async def get_allocation(
     portfolio_id: int,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Get asset allocation for a portfolio."""
+    await resolve_owned_portfolio(portfolio_id, db, x_device_id)
     portfolio_service = PortfolioService(db)
 
     summary = await portfolio_service.get_portfolio_summary(portfolio_id)
@@ -283,9 +376,11 @@ async def get_allocation(
 @router.get("/{portfolio_id}/initialization-status")
 async def get_initialization_status(
     portfolio_id: int,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Check if portfolio is initialized with real trading activity."""
+    await resolve_owned_portfolio(portfolio_id, db, x_device_id)
     portfolio_service = PortfolioService(db)
 
     portfolio = await portfolio_service.get_portfolio(portfolio_id)
@@ -317,9 +412,11 @@ async def get_initialization_status(
 async def get_equity_curve(
     portfolio_id: int,
     period: str = "1m",
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Return daily portfolio snapshots for the equity curve chart."""
+    await resolve_owned_portfolio(portfolio_id, db, x_device_id)
     portfolio_service = PortfolioService(db)
 
     portfolio = await portfolio_service.get_portfolio(portfolio_id)
@@ -368,6 +465,7 @@ async def get_equity_curve(
 async def sync_broker_balance(
     portfolio_id: int,
     force_refresh: bool = False,
+    x_device_id: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -376,10 +474,10 @@ async def sync_broker_balance(
     Args:
         portfolio_id: Portfolio to sync
         force_refresh: Force refresh even if recently synced
-
     Returns:
         Sync status and updated portfolio summary
     """
+    await resolve_owned_portfolio(portfolio_id, db, x_device_id)
     from app.brokers import get_broker
 
     portfolio_service = PortfolioService(db)

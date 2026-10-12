@@ -1,8 +1,8 @@
-﻿'use client';
+'use client';
 
 import React, { useEffect } from 'react';
 import { useOnboarding } from './OnboardingProvider';
-import { TourStep } from './useOnboardingEngine';
+import type { TourStep } from './useOnboardingEngine';
 import TourOverlay from './TourOverlay';
 import InteractiveTooltip from './InteractiveTooltip';
 
@@ -43,7 +43,7 @@ const TOUR_MAP: Record<string, TourStep[]> = {
 export default function OnboardingTour({ activePage, enabled = true }: OnboardingTourProps) {
   const {
     startTour, endTour, isTourActive, currentStep, targetElement,
-    markTourComplete, isTourComplete, showWelcome, isOnboardingComplete, isLoaded,
+    markTourComplete, isTourComplete, showWelcome, isLoaded,
     onboardingCompleted, welcomeDone,
   } = useOnboarding();
 

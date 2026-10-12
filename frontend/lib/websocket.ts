@@ -14,7 +14,7 @@ export type WebSocketRoom = 'prices' | 'signals' | 'trades' | 'portfolio' | 'ris
 
 export type WebSocketMessage = {
   type: string;
-  data: any;
+  data: unknown;
   timestamp?: string;
 };
 
@@ -24,9 +24,9 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'er
 
 // Simple logger (replaces structlog for browser)
 const logger = {
-  info: (msg: string, ...args: any[]) => console.log(`[INFO] ${msg}`, ...args),
-  warn: (msg: string, ...args: any[]) => console.warn(`[WARN] ${msg}`, ...args),
-  error: (msg: string, ...args: any[]) => console.error(`[ERROR] ${msg}`, ...args),
+  info: (msg: string, ...args: unknown[]) => console.log(`[INFO] ${msg}`, ...args),
+  warn: (msg: string, ...args: unknown[]) => console.warn(`[WARN] ${msg}`, ...args),
+  error: (msg: string, ...args: unknown[]) => console.error(`[ERROR] ${msg}`, ...args),
 };
 
 // Get WebSocket URL from environment variable

@@ -3,14 +3,14 @@
  * Defines tour steps for each page in Jasper Trades
  */
 
-import { TourStep } from '@/components/onboarding/useOnboardingEngine';
+import type { TourStep } from '@/components/onboarding/useOnboardingEngine';
 
 export interface TourConfig {
   id: string;
   name: string;
   pages: string[];
   autoStart?: boolean;
-  steps: Array<Partial<TourStep> & { [key: string]: any }>;
+  steps: Array<Partial<TourStep> & { [key: string]: unknown }>;
 }
 
 export const TOURS: Record<string, TourConfig> = {
@@ -95,7 +95,7 @@ export const TOURS: Record<string, TourConfig> = {
       {
         id: 'model-config',
         targetElement: '[data-tour="model-config"]',
-        title: 'NVIDIA Model Selection',
+        title: 'Groq Model Selection',
         description: 'Choose AI model per agent: Llama-3.2-3B (fast, $0.15/M tokens), Llama-3.3-70B (balanced, $0.65/M), Nemotron-120B (deep analysis, $2.00/M).',
         position: 'bottom',
       },
@@ -113,7 +113,7 @@ export const TOURS: Record<string, TourConfig> = {
         id: 'api-keys',
         targetElement: '[data-tour="api-keys-section"]',
         title: 'API Keys (Required)',
-        description: 'Start here! NVIDIA API key is required for AI features. Get free $25/month credits at catalog.ngc.nvidia.com. All keys are encrypted before storage.',
+        description: 'Start here! Groq API key is required for AI features. Get a free key at console.groq.com. All keys are encrypted before storage.',
         position: 'bottom',
       },
       {

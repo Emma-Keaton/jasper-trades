@@ -256,14 +256,24 @@ async def _check_caps(
             return f"order size {notional:.2f} exceeds {caps.max_position_percentage:.1f}% cap ({limit:.2f})"
 
     if caps.daily_loss_limit and side == "sell":
-        today_loss = await _today_realized_loss(db)
+        today_loss = await _today_realized_loss(db, portfolio_id)
         if abs(today_loss) + notional * 0.01 > float(caps.daily_loss_limit):
             return f"order would exceed daily loss limit {caps.daily_loss_limit:.2f}"
     return None
 
 
-async def _today_realized_loss(db: AsyncSession) -> float:
-    """Sum of today's negative realized PnL across trades (global daily guard)."""
+async def _today_realized_loss(db: AsyncSession, portfolio_id: int) -> float:
+    """Sum of today's negative realized PnL for one portfolio.
+
+    Scoped to the portfolio on purpose. This used to sum `Trade.pnl < 0` across the
+    whole table and apply the result as the caller's daily-loss cap, so one tenant's
+    losses consumed another tenant's risk budget - a stranger's losing day could
+    block your trades entirely.
+
+    Rows with no `portfolio_id` are excluded rather than counted everywhere: they
+    cannot be attributed to a tenant, and attributing them to all of them is the same
+    cross-tenant bug with an extra step. They predate portfolio-scoped trades.
+    """
     from datetime import datetime
 
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -271,6 +281,7 @@ async def _today_realized_loss(db: AsyncSession) -> float:
         select(func.coalesce(func.sum(Trade.pnl), 0.0)).where(
             Trade.created_at >= today,
             Trade.pnl < 0,
+            Trade.portfolio_id == portfolio_id,
         )
     )
     return float(res.scalar_one_or_none() or 0.0)

@@ -28,13 +28,14 @@ export function usePriceStream(options: UsePriceStreamOptions = {}) {
 
   const handleMessage = useCallback((message: WebSocketMessage) => {
     if (message.type === 'price_update' && message.data) {
+      const raw = message.data as { symbol: string; price: number; change?: number; change_percent?: number; volume?: number; timestamp?: string };
       const priceUpdate: PriceUpdate = {
-        symbol: message.data.symbol,
-        price: message.data.price,
-        change: message.data.change || 0,
-        changePercent: message.data.change_percent || 0,
-        volume: message.data.volume || 0,
-        timestamp: message.data.timestamp || new Date().toISOString(),
+        symbol: raw.symbol,
+        price: raw.price,
+        change: raw.change || 0,
+        changePercent: raw.change_percent || 0,
+        volume: raw.volume || 0,
+        timestamp: raw.timestamp || new Date().toISOString(),
       };
 
       onPriceUpdate?.(priceUpdate);

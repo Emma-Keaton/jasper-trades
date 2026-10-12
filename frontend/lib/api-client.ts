@@ -101,7 +101,7 @@ export interface SystemStatus {
   agents: string[];
   active_agents: number;
   brokers: string[];
-  broker_status: Record<string, any>;
+  broker_status: Record<string, unknown>;
   scheduler: {
     running: boolean;
     tasks: number;
@@ -169,7 +169,7 @@ export async function apiRequest<T>(
 // Health & Status APIs
 export const healthAPI = {
   check: () => apiRequest<SystemStatus>('/api/v1/status'),
-  systemTasks: () => apiRequest<any>('/api/v1/system/tasks'),
+  systemTasks: () => apiRequest<unknown>('/api/v1/system/tasks'),
 };
 
 // Portfolio APIs
@@ -261,97 +261,97 @@ export const agentAPI = {
 // Signals APIs
 export const signalsAPI = {
   getSources: (deviceId: string) =>
-    apiRequest<any[]>(`/api/v1/signals/sources`, {
+    apiRequest<unknown[]>(`/api/v1/signals/sources`, {
       headers: { 'X-Device-ID': deviceId },
     }),
-  createSource: (deviceId: string, payload: any) =>
-    apiRequest<any>(`/api/v1/signals/sources`, {
+  createSource: (deviceId: string, payload: unknown) =>
+    apiRequest<unknown>(`/api/v1/signals/sources`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
   deleteSource: (deviceId: string, id: number) =>
-    apiRequest<any>(`/api/v1/signals/sources/${id}`, {
+    apiRequest<unknown>(`/api/v1/signals/sources/${id}`, {
       method: 'DELETE',
       headers: { 'X-Device-ID': deviceId },
     }),
   getTips: (deviceId: string) =>
-    apiRequest<any[]>(`/api/v1/signals/tips`, {
+    apiRequest<unknown[]>(`/api/v1/signals/tips`, {
       headers: { 'X-Device-ID': deviceId },
     }),
   fetchSignals: (deviceId: string) =>
-    apiRequest<any>(`/api/v1/signals/fetch`, {
+    apiRequest<unknown>(`/api/v1/signals/fetch`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
     }),
-  executeTip: (deviceId: string, tipId: number, payload: any) =>
-    apiRequest<any>(`/api/v1/signals/tips/${tipId}/execute`, {
+  executeTip: (deviceId: string, tipId: number, payload: unknown) =>
+    apiRequest<unknown>(`/api/v1/signals/tips/${tipId}/execute`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
   telegramAccount: (deviceId: string) =>
-    apiRequest<any>(`/api/v1/signals/telegram/account`, {
+    apiRequest<unknown>(`/api/v1/signals/telegram/account`, {
       headers: { 'X-Device-ID': deviceId },
     }),
-  telegramChannels: (deviceId: string, body: any) =>
-    apiRequest<any>(`/api/v1/signals/telegram/channels`, {
+  telegramChannels: (deviceId: string, body: unknown) =>
+    apiRequest<unknown>(`/api/v1/signals/telegram/channels`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
-  telegramCreateSources: (deviceId: string, channels: any[]) =>
-    apiRequest<any>(`/api/v1/signals/telegram/sources`, {
+  telegramCreateSources: (deviceId: string, channels: unknown[]) =>
+    apiRequest<unknown>(`/api/v1/signals/telegram/sources`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
       body: JSON.stringify({ channels }),
     }),
   followSource: (deviceId: string, sourceId: number) =>
-    apiRequest<any>(`/api/v1/signals/follow`, {
+    apiRequest<unknown>(`/api/v1/signals/follow`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
       body: JSON.stringify({ source_id: sourceId }),
     }),
   unfollowSource: (deviceId: string, sourceId: number) =>
-    apiRequest<any>(`/api/v1/signals/follow/${sourceId}`, {
+    apiRequest<unknown>(`/api/v1/signals/follow/${sourceId}`, {
       method: 'DELETE',
       headers: { 'X-Device-ID': deviceId },
     }),
-  resolveTip: (deviceId: string, tipId: number, payload: any) =>
-    apiRequest<any>(`/api/v1/signals/tips/${tipId}/resolve`, {
+  resolveTip: (deviceId: string, tipId: number, payload: unknown) =>
+    apiRequest<unknown>(`/api/v1/signals/tips/${tipId}/resolve`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
   telegramStart: (deviceId: string, phone: string) =>
-    apiRequest<any>(`/api/v1/signals/telegram/connect/start`, {
+    apiRequest<unknown>(`/api/v1/signals/telegram/connect/start`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone }),
     }),
   telegramComplete: (deviceId: string, phone: string, code: string, password?: string) =>
-    apiRequest<any>(`/api/v1/signals/telegram/connect/complete`, {
+    apiRequest<unknown>(`/api/v1/signals/telegram/connect/complete`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone, code, password }),
     }),
   telegramDisconnect: (deviceId: string) =>
-    apiRequest<any>(`/api/v1/signals/telegram/disconnect`, {
+    apiRequest<unknown>(`/api/v1/signals/telegram/disconnect`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId },
     }),
   getSignalSettings: (deviceId: string) =>
-    apiRequest<any>(`/api/v1/signals/settings`, {
+    apiRequest<unknown>(`/api/v1/signals/settings`, {
       headers: { 'X-Device-ID': deviceId },
     }),
-  saveSignalSettings: (deviceId: string, payload: any) =>
-    apiRequest<any>(`/api/v1/signals/settings`, {
+  saveSignalSettings: (deviceId: string, payload: unknown) =>
+    apiRequest<unknown>(`/api/v1/signals/settings`, {
       method: 'POST',
       headers: { 'X-Device-ID': deviceId, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
   getSignalsStatus: (deviceId: string) =>
-    apiRequest<any>(`/api/v1/signals/status`, {
+    apiRequest<unknown>(`/api/v1/signals/status`, {
       headers: { 'X-Device-ID': deviceId },
     }),
 };
@@ -374,7 +374,11 @@ export const backtestAPI = {
   getBacktest: (id: string) =>
     apiRequest<BacktestResult>(`/api/v1/backtest/${id}`),
   getBacktestResults: () =>
-    apiRequest<BacktestResult[]>('/api/v1/backtest/results'),
+    // Was '/api/v1/backtest/results', which the backend resolves as
+    // GET /api/v1/backtest/{backtest_id} with backtest_id="results". The list lives
+    // at the collection root; the only client of this method is the backtest screen,
+    // which calls /api/v1/backtest/run directly.
+    apiRequest<BacktestResult[]>('/api/v1/backtest'),
   deleteBacktest: (id: string) =>
     apiRequest<void>(`/api/v1/backtest/${id}`, {
       method: 'DELETE',
@@ -401,9 +405,9 @@ export const alphaAPI = {
 
 // Settings API
 export const settingsAPI = {
-  getSettings: () => apiRequest<any>('/api/v1/settings'),
-  updateSettings: (settings: Record<string, any>) =>
-    apiRequest<any>('/api/v1/settings', {
+  getSettings: () => apiRequest<unknown>('/api/v1/settings'),
+  updateSettings: (settings: Record<string, unknown>) =>
+    apiRequest<unknown>('/api/v1/settings', {
       method: 'POST',
       body: JSON.stringify(settings),
     }),
@@ -416,144 +420,144 @@ export const settingsAPI = {
 
 // ============ QUANTLIB APIs (17 endpoints) ============
 export const quantlibAPI = {
-  getModules: () => apiRequest<any[]>('/api/v1/quantlib/modules'),
-  getBlackScholes: (data: any) =>
+  getModules: () => apiRequest<unknown[]>('/api/v1/quantlib/modules'),
+  getBlackScholes: (data: unknown) =>
     apiRequest('/api/v1/quantlib/options/black-scholes', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getGreeks: (data: any) =>
+  getGreeks: (data: unknown) =>
     apiRequest('/api/v1/quantlib/options/greeks', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getBinomialTree: (data: any) =>
+  getBinomialTree: (data: unknown) =>
     apiRequest('/api/v1/quantlib/options/binomial-tree', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getMonteCarloVaR: (data: any) =>
+  getMonteCarloVaR: (data: unknown) =>
     apiRequest('/api/v1/quantlib/risk/monte-carlo-var', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getHistoricalVaR: (data: any) =>
+  getHistoricalVaR: (data: unknown) =>
     apiRequest('/api/v1/quantlib/risk/historical-var', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getParametricVaR: (data: any) =>
+  getParametricVaR: (data: unknown) =>
     apiRequest('/api/v1/quantlib/risk/parametric-var', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getCVaR: (data: any) =>
+  getCVaR: (data: unknown) =>
     apiRequest('/api/v1/quantlib/risk/cvar', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getMaxDrawdown: (data: any) =>
+  getMaxDrawdown: (data: unknown) =>
     apiRequest('/api/v1/quantlib/risk/max-drawdown', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getSharpe: (data: any) =>
+  getSharpe: (data: unknown) =>
     apiRequest('/api/v1/quantlib/performance/sharpe', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getSortino: (data: any) =>
+  getSortino: (data: unknown) =>
     apiRequest('/api/v1/quantlib/performance/sortino', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getTreynor: (data: any) =>
+  getTreynor: (data: unknown) =>
     apiRequest('/api/v1/quantlib/performance/treynor', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getInformationRatio: (data: any) =>
+  getInformationRatio: (data: unknown) =>
     apiRequest('/api/v1/quantlib/performance/information', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getCalmar: (data: any) =>
+  getCalmar: (data: unknown) =>
     apiRequest('/api/v1/quantlib/performance/calmar', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getSterling: (data: any) =>
+  getSterling: (data: unknown) =>
     apiRequest('/api/v1/quantlib/performance/sterling', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getBurke: (data: any) =>
+  getBurke: (data: unknown) =>
     apiRequest('/api/v1/quantlib/performance/burke', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getMonteCarloSimulation: (data: any) =>
+  getMonteCarloSimulation: (data: unknown) =>
     apiRequest('/api/v1/quantlib/simulation/monte-carlo', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getHistoricalVolatility: (data: any) =>
+  getHistoricalVolatility: (data: unknown) =>
     apiRequest('/api/v1/quantlib/volatility/historical', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getStatus: () => apiRequest<any>('/api/v1/quantlib/status'),
+  getStatus: () => apiRequest<unknown>('/api/v1/quantlib/status'),
 };
 
 // ============ POLYMARKET APIs (10 endpoints) ============
 export const polymarketAPI = {
   search: (query: string) =>
-    apiRequest<any>(`/api/v1/polymarket/search?q=${encodeURIComponent(query)}`),
+    apiRequest<unknown>(`/api/v1/polymarket/search?q=${encodeURIComponent(query)}`),
   getMarket: (slug: string) =>
-    apiRequest<any>(`/api/v1/polymarket/market/${encodeURIComponent(slug)}`),
+    apiRequest<unknown>(`/api/v1/polymarket/market/${encodeURIComponent(slug)}`),
   getByCondition: (conditionId: string) =>
-    apiRequest<any>(`/api/v1/polymarket/market/by-condition/${encodeURIComponent(conditionId)}`),
+    apiRequest<unknown>(`/api/v1/polymarket/market/by-condition/${encodeURIComponent(conditionId)}`),
   getOrderbook: (tokenId: string) =>
-    apiRequest<any>(`/api/v1/polymarket/orderbook/${encodeURIComponent(tokenId)}`),
+    apiRequest<unknown>(`/api/v1/polymarket/orderbook/${encodeURIComponent(tokenId)}`),
   getPrice: (tokenId: string) =>
-    apiRequest<any>(`/api/v1/polymarket/price/${encodeURIComponent(tokenId)}`),
+    apiRequest<unknown>(`/api/v1/polymarket/price/${encodeURIComponent(tokenId)}`),
   analyze: (slug: string) =>
-    apiRequest<any>(`/api/v1/polymarket/analyze/${encodeURIComponent(slug)}`),
-  getTrending: () => apiRequest<any[]>('/api/v1/polymarket/trending'),
+    apiRequest<unknown>(`/api/v1/polymarket/analyze/${encodeURIComponent(slug)}`),
+  getTrending: () => apiRequest<unknown[]>('/api/v1/polymarket/trending'),
   getByCategory: (category: string) =>
-    apiRequest<any[]>(`/api/v1/polymarket/category/${encodeURIComponent(category)}`),
-  getStatus: () => apiRequest<any>('/api/v1/polymarket/status'),
+    apiRequest<unknown[]>(`/api/v1/polymarket/category/${encodeURIComponent(category)}`),
+  getStatus: () => apiRequest<unknown>('/api/v1/polymarket/status'),
   refreshCache: () =>
     apiRequest('/api/v1/polymarket/cache/refresh', { method: 'POST' }),
 };
 
 // ============ SWARM APIs (6 endpoints) ============
 export const swarmAPI = {
-  run: (data: any) =>
+  run: (data: unknown) =>
     apiRequest('/api/v1/swarm/run', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  get: (runId: string) => apiRequest<any>(`/api/v1/swarm/${runId}`),
-  list: () => apiRequest<any[]>('/api/v1/swarm/list'),
+  get: (runId: string) => apiRequest<unknown>(`/api/v1/swarm/${runId}`),
+  list: () => apiRequest<unknown[]>('/api/v1/swarm/list'),
   retry: (runId: string) =>
     apiRequest(`/api/v1/swarm/${runId}/retry`, { method: 'POST' }),
   reapStale: () => apiRequest('/api/v1/swarm/reap-stale', { method: 'POST' }),
-  getStatus: () => apiRequest<any>('/api/v1/swarm/status'),
+  getStatus: () => apiRequest<unknown>('/api/v1/swarm/status'),
 };
 
 // ============ LEARNING APIs (7 endpoints) ============
 export const learningAPI = {
-  getStatus: () => apiRequest<any>('/api/v1/learning/status'),
-  predict: (data: any) =>
+  getStatus: () => apiRequest<unknown>('/api/v1/learning/status'),
+  predict: (data: unknown) =>
     apiRequest('/api/v1/learning/predict', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getWinningPatterns: () => apiRequest<any>('/api/v1/learning/patterns/winning'),
-  getLosingPatterns: () => apiRequest<any>('/api/v1/learning/patterns/losing'),
-  getExperiences: () => apiRequest<any[]>('/api/v1/learning/experiences'),
-  getFeatureImportance: () => apiRequest<any>('/api/v1/learning/feature-importance'),
+  getWinningPatterns: () => apiRequest<unknown>('/api/v1/learning/patterns/winning'),
+  getLosingPatterns: () => apiRequest<unknown>('/api/v1/learning/patterns/losing'),
+  getExperiences: () => apiRequest<unknown[]>('/api/v1/learning/experiences'),
+  getFeatureImportance: () => apiRequest<unknown>('/api/v1/learning/feature-importance'),
   retrain: () => apiRequest('/api/v1/learning/retrain', { method: 'POST' }),
   deleteExperiences: () =>
     apiRequest('/api/v1/learning/experiences', { method: 'DELETE' }),
@@ -572,62 +576,62 @@ export const checkpointAPI = {
       body: JSON.stringify({ ticker }),
     }),
   getStatus: (ticker: string) =>
-    apiRequest<any>(`/api/v1/checkpoint/status/${ticker}`),
-  list: () => apiRequest<any[]>('/api/v1/checkpoint/list'),
+    apiRequest<unknown>(`/api/v1/checkpoint/status/${ticker}`),
+  list: () => apiRequest<unknown[]>('/api/v1/checkpoint/list'),
   clear: (ticker: string) =>
     apiRequest(`/api/v1/checkpoint/clear/${ticker}`, { method: 'POST' }),
   clearAll: () => apiRequest('/api/v1/checkpoint/clear-all', { method: 'POST' }),
   resume: (ticker: string) =>
     apiRequest(`/api/v1/checkpoint/resume/${ticker}`, { method: 'POST' }),
-  save: (data: any) =>
+  save: (data: unknown) =>
     apiRequest('/api/v1/checkpoint/save', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
   cleanup: () => apiRequest('/api/v1/checkpoint/cleanup', { method: 'POST' }),
-  getStatusAll: () => apiRequest<any>('/api/v1/checkpoint/status'),
+  getStatusAll: () => apiRequest<unknown>('/api/v1/checkpoint/status'),
 };
 
 // ============ ENSEMBLE APIs (6 endpoints) ============
 export const ensembleAPI = {
-  predict: (data: any) =>
+  predict: (data: unknown) =>
     apiRequest('/api/v1/ensemble/predict', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getModels: () => apiRequest<any[]>('/api/v1/ensemble/models'),
-  updateAccuracy: (data: any) =>
+  getModels: () => apiRequest<unknown[]>('/api/v1/ensemble/models'),
+  updateAccuracy: (data: unknown) =>
     apiRequest('/api/v1/ensemble/accuracy/update', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getPerformance: () => apiRequest<any>('/api/v1/ensemble/performance'),
-  getStatus: () => apiRequest<any>('/api/v1/ensemble/status'),
-  compare: () => apiRequest<any>('/api/v1/ensemble/compare'),
+  getPerformance: () => apiRequest<unknown>('/api/v1/ensemble/performance'),
+  getStatus: () => apiRequest<unknown>('/api/v1/ensemble/status'),
+  compare: () => apiRequest<unknown>('/api/v1/ensemble/compare'),
 };
 
 // ============ DEBATE APIs (4 endpoints) ============
 export const debateAPI = {
-  analyze: (data: any) =>
+  analyze: (data: unknown) =>
     apiRequest('/api/v1/debate/analyze', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  recordOutcome: (data: any) =>
+  recordOutcome: (data: unknown) =>
     apiRequest('/api/v1/debate/outcome/record', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
   getWinRate: (ticker: string) =>
-    apiRequest<any>(`/api/v1/debate/win-rate/${ticker}`),
-  getStatus: () => apiRequest<any>('/api/v1/debate/status'),
+    apiRequest<unknown>(`/api/v1/debate/win-rate/${ticker}`),
+  getStatus: () => apiRequest<unknown>('/api/v1/debate/status'),
 };
 
 // ============ SYSTEM APIs (3 endpoints) ============
 export const systemAPI = {
-  getKronosStats: () => apiRequest<any>('/api/v1/system/kronos/stats'),
-  getStatus: () => apiRequest<any>('/api/v1/system/status'),
-  getMarketData: () => apiRequest<any>('/api/v1/system/market-data'),
+  getKronosStats: () => apiRequest<unknown>('/api/v1/system/kronos/stats'),
+  getStatus: () => apiRequest<unknown>('/api/v1/system/status'),
+  getMarketData: () => apiRequest<unknown>('/api/v1/system/market-data'),
 };
 
 export { API_URL };

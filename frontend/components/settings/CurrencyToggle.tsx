@@ -30,10 +30,7 @@ export default function CurrencyToggle({ className = '' }: CurrencyToggleProps) 
 
   const formatLastUpdated = () => {
     if (!lastUpdated) return 'Never';
-    const seconds = Math.floor((new Date().getTime() - lastUpdated.getTime()) / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    return `${minutes}m ago`;
+    return lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const inverseRate = exchangeRate > 0 ? (1 / exchangeRate) : 1527.50; // Fallback to approximate market rate

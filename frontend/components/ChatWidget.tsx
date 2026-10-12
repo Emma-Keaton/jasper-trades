@@ -22,11 +22,6 @@ const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
-useEffect(() => {
-    if (isOpen && messages.length === 0) fetchHistory();
-    if (isOpen) scrollToBottom();
-  }, [isOpen, messages]);
-
   const fetchHistory = async () => {
     try {
 const deviceId = getOrCreateDeviceId();
@@ -35,6 +30,12 @@ const deviceId = getOrCreateDeviceId();
     } catch { /* ignore */ }
   };
 
+useEffect(() => {
+    if (isOpen && messages.length === 0) { void Promise.resolve().then(() => fetchHistory()); }
+    if (isOpen) scrollToBottom();
+  }, [isOpen, messages]);
+
+
   const sendMessage = async () => {
     if (!inputText.trim()) return;
     const id = Date.now();
@@ -42,7 +43,9 @@ const deviceId = getOrCreateDeviceId();
     setInputText('');
     setIsTyping(true);
     try {
-const res = await apiFetch(`/api/v1/chat`, {
+      // Trailing slash matters: the route is registered as POST /api/v1/chat/, so
+      // without it every send took a 307 redirect before the body was accepted.
+      const res = await apiFetch(`/api/v1/chat/`, {
         method: 'POST',
         body: JSON.stringify({ message: inputText }),
       });
@@ -98,8 +101,8 @@ const res = await apiFetch(`/api/v1/chat`, {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => setIsExpanded(e => !e)} className="rounded-full p-1.5 hover:bg-white/15">{isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</button>
-          <button onClick={() => setIsOpen(false)} className="rounded-full p-1.5 hover:bg-white/15"><X className="h-4 w-4" /></button>
+          <button onClick={() => setIsExpanded(e => !e)} aria-label={isExpanded ? 'Minimize chat' : 'Expand chat'} className="rounded-full p-1.5 hover:bg-white/15">{isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</button>
+          <button onClick={() => setIsOpen(false)} aria-label="Close chat" className="rounded-full p-1.5 hover:bg-white/15"><X className="h-4 w-4" /></button>
         </div>
       </div>
 

@@ -53,11 +53,10 @@ export default function AlphaZooScreen({ addAlphaFactor, triggerToast }: AlphaZo
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryRef = useRef(query);
-  queryRef.current = query;
+  useEffect(() => { queryRef.current = query; }, [query]);
 
   const fetchFactors = useCallback(async (searchQuery: string) => {
     try {
-      setLoading(true);
       const searchParam = searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : '';
       const [fRes, cRes] = await Promise.all([
         apiFetch(`/api/v1/alpha-factors?limit=500${searchParam}`),
@@ -66,7 +65,7 @@ export default function AlphaZooScreen({ addAlphaFactor, triggerToast }: AlphaZo
       if (fRes.ok) {
         const data = await fRes.json();
         setFactors(
-          (data.factors || []).map((f: any) => ({
+          (data.factors || []).map((f: { id: string | number; name: string; category: string; difficulty?: string; win_rate?: number; sharpe?: number | string; max_drawdown?: number; avg_return?: string; description?: string; description_blurb?: string; zoo?: string; theme?: string; has_compute?: boolean }) => ({
             id: f.id,
             name: f.name,
             category: f.category,
@@ -94,11 +93,12 @@ export default function AlphaZooScreen({ addAlphaFactor, triggerToast }: AlphaZo
   }, [triggerToast]);
 
   useEffect(() => {
-    fetchFactors('');
+    void Promise.resolve().then(() => fetchFactors(''));
   }, [fetchFactors]);
 
   const handleQueryChange = (value: string) => {
     setQuery(value);
+    setLoading(true);
     setVisibleCount(PAGE_SIZE);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -239,6 +239,7 @@ export default function AlphaZooScreen({ addAlphaFactor, triggerToast }: AlphaZo
                       addAlphaFactor({ id: f.id, name: f.name });
                     }}
                     className="rounded-full p-2 text-slate-400 transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/10 dark:hover:text-brand-300"
+                    aria-label="Add to strategy"
                     title="Add to strategy"
                   >
                     <Plus className="h-4 w-4" />

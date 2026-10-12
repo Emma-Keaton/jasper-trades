@@ -29,9 +29,11 @@ export default function SetupGuide({ title, intro, steps, open, onClose, accent 
   const [step, setStep] = useState(0);
   const isLast = step === steps.length - 1;
 
-  useEffect(() => {
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) setStep(0);
-  }, [open]);
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

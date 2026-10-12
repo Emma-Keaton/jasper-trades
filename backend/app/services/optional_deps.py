@@ -203,16 +203,18 @@ async def install_missing(*, timeout: float = 180.0) -> List[str]:
 
 async def wait_for_memory_headroom(
     *,
-    max_rss_mb: float,
+    container_memory_mb: float,
+    required_headroom_mb: float,
     timeout: float,
     poll_interval: float = 5.0,
 ) -> bool:
-    """Wait until RSS is under ``max_rss_mb``. Returns False if it never got there.
+    """Wait until ``container - rss >= required_headroom_mb``. False on timeout.
 
-    Render's free tier gives 512 MB total and destroys the container on idle sleep,
-    so an install that starts while the process is already large can be OOM-killed
-    mid-extraction and leave a half-written site-packages. Waiting for headroom is
-    cheaper than recovering from that.
+    Expressed as headroom rather than a ceiling on RSS, because the constraint is
+    the instance limit: boot already sits at ~315 MB against Render free's 512 MB,
+    so an absolute 320 MB bound is always open and guards nothing, while a tighter
+    one would block forever as usage legitimately grows. The question worth asking
+    is "is there room left for pip", not "is the process small".
 
     Fails open on purpose: if RSS cannot be read at all, treat it as acceptable
     rather than blocking the install forever, and log that the gate was skipped.
@@ -224,7 +226,8 @@ async def wait_for_memory_headroom(
         return True
 
     process = psutil.Process()
-    deadline = asyncio.get_running_loop().time() + timeout
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
     while True:
         try:
             rss_mb = process.memory_info().rss / 1e6
@@ -232,27 +235,38 @@ async def wait_for_memory_headroom(
             logger.warning("optional-deps: could not read RSS (%s); proceeding", exc)
             return True
 
-        if rss_mb <= max_rss_mb:
-            logger.info("optional-deps: memory headroom available (%.0f MB)", rss_mb)
+        free_mb = container_memory_mb - rss_mb
+        if free_mb >= required_headroom_mb:
+            logger.info(
+                "optional-deps: %.0f MB headroom available (%.0f MB used of %.0f MB, need %.0f MB)",
+                free_mb,
+                rss_mb,
+                container_memory_mb,
+                required_headroom_mb,
+            )
             return True
 
-        if asyncio.get_running_loop().time() >= deadline:
+        if loop.time() >= deadline:
             logger.warning(
-                "optional-deps: still %.0f MB after %.0fs (limit %.0f MB); proceeding anyway",
-                rss_mb,
+                "optional-deps: only %.0f MB headroom after %.0fs (need %.0f MB of %.0f MB); "
+                "proceeding anyway",
+                free_mb,
                 timeout,
-                max_rss_mb,
+                required_headroom_mb,
+                container_memory_mb,
             )
             return False
 
         logger.info(
-            "optional-deps: waiting for memory (%.0f MB > %.0f MB limit)", rss_mb, max_rss_mb
+            "optional-deps: waiting for memory (%.0f MB free, need %.0f MB)",
+            free_mb,
+            required_headroom_mb,
         )
         await asyncio.sleep(poll_interval)
 
 
 async def install_deferred() -> List[str]:
-    """Settle, wait for memory, then install the absent soft tier.
+    """Settle, wait for headroom, then install the absent soft tier.
 
     The order is the point. Boot and warm-up both run before the app yields, and
     they are where memory peaks; installing then would compete with the part of
@@ -263,7 +277,8 @@ async def install_deferred() -> List[str]:
 
     await asyncio.sleep(settings.OPTIONAL_DEPS_SETTLE_SECONDS)
     await wait_for_memory_headroom(
-        max_rss_mb=settings.OPTIONAL_DEPS_MAX_RSS_MB,
+        container_memory_mb=settings.OPTIONAL_DEPS_CONTAINER_MEMORY_MB,
+        required_headroom_mb=settings.OPTIONAL_DEPS_INSTALL_HEADROOM_MB,
         timeout=settings.OPTIONAL_DEPS_MEMORY_TIMEOUT_SECONDS,
     )
     return await install_missing()

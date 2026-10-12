@@ -2,14 +2,13 @@
 
 import React, { useState, useMemo } from 'react';
 import { Bot, Play, Pause, Sparkles, ArrowRight, Activity } from 'lucide-react';
-import { Holding, TradeHistoryItem } from '@/app/types';
-import { EquityDataPoint } from '@/hooks/usePortfolioHistory';
+import type { Holding, TradeHistoryItem } from '@/app/types';
+import type { EquityDataPoint } from '@/hooks/usePortfolioHistory';
 import { apiFetch, apiRequest } from '@/lib/api-client';
 import { Card, Stat, Button, Badge, EmptyState, RowLink } from '@/components/ui';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
-import { StepId } from '@/components/screens/SettingsScreen';
+import type { StepId } from '@/components/screens/SettingsScreen';
 import { fetchPreferences, fetchTradingMode, savePreferences } from '@/lib/preferences';
-import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { API_URL } from '@/lib/constants';
 
 interface HomeScreenProps {
@@ -45,12 +44,13 @@ export default function HomeScreen({
   React.useEffect(() => {
     isAiRunning().then(setRunning);
     fetchTradingMode().then((m) => setTradingMode(m));
-    apiRequest<any>('/api/v1/watchlist')
+    apiRequest<{ watchlist?: { symbol: string }[] }>('/api/v1/watchlist')
       .then((res) => {
         if (res.data?.watchlist) {
-          const syms = res.data.watchlist.map((w: any) => w.symbol).slice(0, 12);
+          const syms = res.data.watchlist.map((w) => w.symbol).slice(0, 12);
           setWatchlist(syms);
         }
+        return res;
       })
       .catch(() => {});
   }, []);

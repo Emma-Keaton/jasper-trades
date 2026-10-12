@@ -43,7 +43,7 @@ npm run dev
 
 ### 🤖 The AI Trader (4-stage pipeline)
 A `Director → Quant → Risk → Execution` agent pipeline (powered by the free
-**Google Gemini 2.5 Flash** model with multi-key rotation so it never stalls on
+**Groq** models with multi-key rotation so it never stalls on
 rate limits) analyzes markets, scores opportunities, checks risk, then executes.
 
 ### 💱 Trading & Execution
@@ -78,7 +78,6 @@ jasper-trades/
 │   ├── app/
 │   │   ├── agents/     4-stage AI pipeline (Director→Quant→Risk→Execution)
 │   │   ├── brokers/    cTrader (live), CCXT (crypto), Solana, Trove, AKShare
-│   │   ├── services/   LLM (Gemini+rotation), geo-probe, paper trading,
 │   │   │               CCXT data, CoinLore, Solana memecoins, market data
 │   │   ├── api/v1/     REST routes (incl. /geo, /paper, /memecoin)
 │   │   └── schedulers/ cTrader token refresh
@@ -101,8 +100,7 @@ jasper-trades/
 Set these in your `.env` / Render dashboard:
 
 ```
-GEMINI_API_KEY=key1,key2,key3        # ~3 keys from separate Google accounts (PRIMARY LLM)
-NVIDIA_API_KEY=                        # NVIDIA NIM fallback (used automatically if Gemini is down)
+GROQ_API_KEY=key1,key2,key3         # Groq keys (PRIMARY LLM)
 CTRADER_CLIENT_ID=                     # cTrader Connect app
 CTRADER_CLIENT_SECRET=
 CTRADER_REDIRECT_URI=
@@ -128,7 +126,7 @@ See **DEPLOYMENT.md** for the full guide and free-tier signup links.
 
 ## 🗺️ Roadmap
 
-- [x] Gemini 2.5 Flash LLM with multi-key rotation
+- [x] Groq LLM with multi-key rotation
 - [x] Nigeria-first market data (CoinGecko→CCXT→CoinLore) + geo-probing
 - [x] cTrader live + Universal Paper Trading (all paper)
 - [x] Solana memecoins (DexScreener discovery + Jupiter execution)
@@ -142,4 +140,3 @@ See **DEPLOYMENT.md** for the full guide and free-tier signup links.
 **📈 Start in Paper Lab** → connect Telegram → let the AI wow you. Upgrade to
 real trading on cTrader only when you're comfortable.
 
-*Built with Next.js 15, FastAPI, Gemini 2.5 Flash, cTrader, CCXT, Solana.*

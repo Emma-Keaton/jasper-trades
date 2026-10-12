@@ -117,3 +117,70 @@ async def test_reset_account_restores_initial():
     assert acct["current_balance"] == 10000.0
     assert acct["positions"] == {}
     assert acct["trade_count"] == 0
+
+
+async def test_bracket_levels_stored_on_buy(monkeypatch):
+    from app.services.valuation_service import ValuationService
+
+    svc = get_paper_trading_service()
+    await svc.place_trade(
+        device_id=TEST_DEVICE_ID, symbol="BTC", side="buy", qty=1, price=100,
+        asset_class="crypto", stop_loss=90, take_profit=120,
+    )
+    state = await svc._load_state(TEST_DEVICE_ID)
+    assert state["positions"]["BTC"]["stop_loss"] == 90
+    assert state["positions"]["BTC"]["take_profit"] == 120
+
+    async def _price(_self, _symbol):
+        return 85.0  # below the stop
+
+    monkeypatch.setattr(ValuationService, "get_price", _price)
+    closed = await svc.check_brackets(TEST_DEVICE_ID)
+    assert len(closed) == 1
+    assert closed[0]["trigger"] == "stop_loss"
+    assert closed[0]["symbol"] == "BTC"
+
+    acct = await svc.get_account(TEST_DEVICE_ID)
+    assert "BTC" not in acct["positions"]
+    assert acct["losses"] == 1
+
+
+async def test_bracket_take_profit_closes_and_no_trigger_holds(monkeypatch):
+    from app.services.valuation_service import ValuationService
+
+    svc = get_paper_trading_service()
+    await svc.place_trade(
+        device_id=TEST_DEVICE_ID, symbol="ETH", side="buy", qty=1, price=100,
+        asset_class="crypto", stop_loss=50, take_profit=150,
+    )
+
+    async def _mid(_self, _symbol):
+        return 100.0  # inside the bracket
+
+    monkeypatch.setattr(ValuationService, "get_price", _mid)
+    assert await svc.check_brackets(TEST_DEVICE_ID) == []
+    acct = await svc.get_account(TEST_DEVICE_ID)
+    assert "ETH" in acct["positions"]
+
+    async def _high(_self, _symbol):
+        return 155.0  # through the take-profit
+
+    monkeypatch.setattr(ValuationService, "get_price", _high)
+    closed = await svc.check_brackets(TEST_DEVICE_ID)
+    assert len(closed) == 1
+    assert closed[0]["trigger"] == "take_profit"
+    assert closed[0]["realized_pnl"] > 0
+    acct = await svc.get_account(TEST_DEVICE_ID)
+    assert "ETH" not in acct["positions"]
+    assert acct["wins"] == 1
+
+
+def test_opt_float_coercion():
+    from app.services.signal_sources.ingest import _opt_float
+
+    assert _opt_float("1.5") == 1.5
+    assert _opt_float(2) == 2.0
+    assert _opt_float(None) is None
+    assert _opt_float(0) is None
+    assert _opt_float(-1) is None
+    assert _opt_float("abc") is None

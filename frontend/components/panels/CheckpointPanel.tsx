@@ -5,15 +5,14 @@ import { checkpointAPI, debateAPI } from '@/lib/api-client';
 import { Loader2, Save, GitCompare } from 'lucide-react';
 
 export function CheckpointPanel() {
-  const [loading, setLoading] = useState(false);
-  const [checkpoints, setCheckpoints] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [checkpoints, setCheckpoints] = useState<{ id?: string | number; ticker?: string; symbol?: string; timestamp?: string; saved_at?: string }[]>([]);
   const [ticker, setTicker] = useState('AAPL');
 
   const loadCheckpoints = async () => {
-    setLoading(true);
     const response = await checkpointAPI.list();
     if (response.data) {
-      setCheckpoints(Array.isArray(response.data) ? response.data : []);
+      setCheckpoints(Array.isArray(response.data) ? (response.data as { id?: string | number; ticker?: string; symbol?: string; timestamp?: string; saved_at?: string }[]) : []);
     }
     setLoading(false);
   };
@@ -33,7 +32,7 @@ export function CheckpointPanel() {
   };
 
   React.useEffect(() => {
-    loadCheckpoints();
+    void Promise.resolve().then(loadCheckpoints);
   }, []);
 
   return (
@@ -73,7 +72,7 @@ export function CheckpointPanel() {
         </div>
       ) : checkpoints.length > 0 ? (
         <div className="space-y-2 max-h-64 overflow-y-auto">
-          {checkpoints.map((cp: any, idx: number) => (
+          {checkpoints.map((cp, idx) => (
             <div
               key={cp.id || cp.ticker || idx}
               className="p-3 bg-[#1E293B] border border-[#475569] rounded-lg flex items-center justify-between"
@@ -83,11 +82,11 @@ export function CheckpointPanel() {
                   {cp.ticker || cp.symbol || 'Unknown'}
                 </div>
                 <div className="text-xs text-[#94A3B8]">
-                  {cp.timestamp || cp.saved_at ? new Date(cp.timestamp || cp.saved_at).toLocaleString() : 'Unknown date'}
+                  {cp.timestamp || cp.saved_at ? new Date((cp.timestamp || cp.saved_at) as string).toLocaleString() : 'Unknown date'}
                 </div>
               </div>
               <button
-                onClick={() => clearCheckpoint(cp.ticker || cp.symbol)}
+                onClick={() => clearCheckpoint((cp.ticker || cp.symbol) as string)}
                 className="text-xs px-3 py-1.5 bg-[#EF4444]/20 text-[#EF4444] rounded hover:bg-[#EF4444]/30 transition"
               >
                 Clear
@@ -106,7 +105,7 @@ export function CheckpointPanel() {
 
 export function DebatePanel() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<unknown>(null);
 
   const runDebate = async () => {
     setLoading(true);
@@ -137,7 +136,7 @@ export function DebatePanel() {
         {loading ? 'Debating...' : 'Run Signal Debate'}
       </button>
 
-      {result && (
+      {result != null && (
         <div className="p-3 bg-[#EC4899]/10 border border-[#EC4899]/30 rounded-lg">
           <pre className="text-xs text-[#F8FAFC] font-mono whitespace-pre-wrap">
             {JSON.stringify(result, null, 2)}

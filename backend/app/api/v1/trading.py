@@ -635,6 +635,70 @@ async def get_trade_history(
     }
 
 
+@router.post("/{trade_id}/cancel")
+async def cancel_trade(
+    trade_id: int,
+    x_device_id: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a pending or submitted order.
+
+    `ExecutionAgent.cancel_order` has existed for a while and had no route to reach
+    it, so the frontend's `cancelTrade(tradeId)` had nothing to call.
+
+    Scoped to the calling device through the portfolio: `Trade` carries only
+    `portfolio_id`, so the ownership check has to join. Someone else's trade returns
+    404 rather than 403 - "forbidden" would confirm the id exists.
+    """
+    from app.agents import agent_registry
+    from app.models import Portfolio
+    from sqlalchemy import select
+
+    device_id = require_device_id(x_device_id)
+
+    result = await db.execute(
+        select(Trade)
+        .join(Portfolio, Trade.portfolio_id == Portfolio.id)
+        .where(Trade.id == trade_id, Portfolio.device_id == device_id)
+    )
+    trade = result.scalar_one_or_none()
+    if trade is None:
+        raise HTTPException(status_code=404, detail="Trade not found")
+
+    if trade.status == "filled":
+        raise HTTPException(
+            status_code=409,
+            detail="A filled trade cannot be cancelled",
+        )
+
+    agent = agent_registry.get("execution")
+    if agent is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Execution agent unavailable; cannot cancel right now",
+        )
+
+    if not getattr(agent, "_brokers_initialized", False):
+        await agent.initialize_brokers()
+
+    cancelled = await agent.cancel_order(trade)
+    if not cancelled:
+        # cancel_order never raises; a False means the venue refused or there was no
+        # venue to ask. The row keeps its current status so the UI shows reality.
+        return {
+            "id": trade.id,
+            "status": trade.status,
+            "cancelled": False,
+            "detail": "The venue did not accept the cancellation; order status unchanged",
+        }
+
+    trade.status = "cancelled"
+    await db.commit()
+    await db.refresh(trade)
+
+    return {"id": trade.id, "status": trade.status, "cancelled": True}
+
+
 @router.get("/history/{trade_id}")
 async def get_trade_details(
     trade_id: int,

@@ -120,18 +120,29 @@ class Settings(BaseSettings):
     # Optional third-party dependencies (app/services/optional_deps.py).
     #
     # On by default. The install is deliberately deferred: it runs after the app is
-    # already serving and only once the process is under OPTIONAL_DEPS_MAX_RSS_MB,
-    # so it cannot compete with boot for the 512 MB a Render free-tier instance has.
+    # already serving and only once the process has enough headroom left for pip,
+    # so it cannot compete with boot for a Render free-tier instance's 512 MB.
     #
     # Only affects the soft tier (statsmodels, yfinance). pandas is NOT here: it is
     # imported unguarded by 457 files and is a hard requirement declared in
     # requirements.txt.
     OPTIONAL_DEPS_AUTO_INSTALL: bool = True
 
-    # RSS ceiling, in MB, that must be clear before the install starts. Boot peaks
-    # around 190-250 MB on Render free, so 320 leaves room for one pip subprocess
-    # plus its wheel extraction without risking the OOM killer mid-install.
-    OPTIONAL_DEPS_MAX_RSS_MB: float = 320.0
+    # The instance's memory ceiling. Render free gives 512 MB; this is a declared
+    # assumption, not a measured value, so a plan change means changing this.
+    OPTIONAL_DEPS_CONTAINER_MEMORY_MB: float = 512.0
+
+    # Headroom pip needs on top of the running process: interpreter start, wheel
+    # download, and extraction of a pandas/scipy-sized wheel tree.
+    #
+    # The gate is expressed as headroom rather than as a ceiling on RSS because the
+    # constraint is the limit, not the current footprint. An absolute RSS bound is
+    # either always open (boot already sits near it, so it protects nothing) or
+    # blocks forever once usage legitimately grows. Measured boot RSS on this
+    # project is ~315 MB, which leaves ~197 MB against a 512 MB instance - enough
+    # for these two packages, but not generous. Declaring them in requirements.txt
+    # removes the question entirely.
+    OPTIONAL_DEPS_INSTALL_HEADROOM_MB: float = 120.0
 
     # Give up waiting for headroom after this long and install anyway. An install
     # that never starts because the process happens to be busy is worse than one

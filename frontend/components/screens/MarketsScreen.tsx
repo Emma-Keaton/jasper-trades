@@ -17,9 +17,18 @@ interface MarketItem {
   inWatchlist?: boolean;
 }
 
-function normalizeCrypto(items: any[]): MarketItem[] {
+
+interface RawQuote {
+  symbol?: string; base_symbol?: string; ticker?: string;
+  name?: string; base_name?: string;
+  change?: number; price_change_24h?: number; change_24h?: number; market_cap_change_24h?: number;
+  price_usd?: number | null; source?: string; type?: string; asset_class?: string;
+  price?: number; exchange?: string; company?: string; change_percent?: number;
+}
+
+function normalizeCrypto(items: RawQuote[]): MarketItem[] {
   return (items || [])
-    .map((c: any) => ({
+    .map((c: RawQuote) => ({
       symbol: (c.symbol || c.base_symbol || c.ticker || '').toUpperCase(),
       name: c.name || c.base_name || c.symbol || '',
       change: Number(c.change ?? c.price_change_24h ?? c.change_24h ?? c.market_cap_change_24h ?? 0),
@@ -30,9 +39,9 @@ function normalizeCrypto(items: any[]): MarketItem[] {
     .filter((i: MarketItem) => i.symbol);
 }
 
-function normalizeStocks(items: any[]): MarketItem[] {
+function normalizeStocks(items: RawQuote[]): MarketItem[] {
   return (items || [])
-    .map((s: any) => {
+    .map((s: RawQuote) => {
       const rawType = (s.type || s.asset_class || '').toLowerCase();
       let asset_class: MarketItem['asset_class'] = 'stocks';
       if (rawType === 'cn' || rawType === 'a_share' || rawType === 'a-share') {
@@ -49,6 +58,9 @@ function normalizeStocks(items: any[]): MarketItem[] {
     })
     .filter((i: MarketItem) => i.symbol);
 }
+
+interface DexChainRow { symbol: string; address: string; chain?: string; price_usd?: number | null; liquidity_usd?: number | null; volume_5m?: number | null; price_change_24h?: number | null; [key: string]: unknown }
+interface DexChainBuckets { hot_tokens?: DexChainRow[]; top_performers?: DexChainRow[]; whales?: DexChainRow[]; spikes?: DexChainRow[] }
 
 type Filter = 'all' | 'crypto' | 'stocks';
 
@@ -70,6 +82,7 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
   const [trending, setTrending] = useState<MarketItem[]>([]);
   const [watchlist, setWatchlist] = useState<MarketItem[]>([]);
   const [topMovers, setTopMovers] = useState<MarketItem[]>([]);
+  const [dexSnapshot, setDexSnapshot] = useState<{ per_chain?: Record<string, DexChainBuckets>; fetched_at?: number; total_rows?: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const mounted = useRef(true);
 
@@ -80,12 +93,12 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const togglingRef = useRef(false);
 
-  const refreshWatchlist = useCallback(async () => {
+  const _refreshWatchlist = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/v1/watchlist`, { headers: deviceHeaders() });
       if (!res.ok) return;
       const data = await res.json();
-      const items: MarketItem[] = (data.watchlist || []).map((w: any) => ({
+      const items: MarketItem[] = (data.watchlist || []).map((w: RawQuote) => ({
         symbol: (w.symbol || '').toUpperCase(),
         name: w.name || w.symbol || '',
         price_usd: w.price_usd ?? null,
@@ -161,6 +174,10 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
   useEffect(() => {
     mounted.current = true;
     (async () => {
+      const snap = await fetch(`${API_URL}/api/v1/dex-chains/snapshot`).catch(() => null);
+      if (snap && snap.ok) setDexSnapshot(await snap.json());
+    })();
+    (async () => {
       const [disco, trend, watchRes, moversRes] = await Promise.all([
         fetch(`${API_URL}/api/v1/memecoin/discover?limit=8`).catch(() => null),
         fetch(`${API_URL}/api/v1/memecoin/trending?limit=8`).catch(() => null),
@@ -178,7 +195,7 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
         }
         if (watchRes && watchRes.ok) {
           const data = await watchRes.json();
-          const items: MarketItem[] = (data.watchlist || []).map((w: any) => ({
+          const items: MarketItem[] = (data.watchlist || []).map((w: RawQuote) => ({
             symbol: (w.symbol || '').toUpperCase(),
             name: w.name || w.symbol || '',
             price_usd: w.price_usd ?? null,
@@ -205,15 +222,22 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
     };
   }, []);
 
-  useEffect(() => {
-    const q = searchQuery.trim();
-    if (!q) {
+  const [prevSearchQuery, setPrevSearchQuery] = useState(searchQuery);
+  if (prevSearchQuery !== searchQuery) {
+    setPrevSearchQuery(searchQuery);
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
       setSearchResults([]);
       setSearchState('idle');
-      return;
+    } else {
+      setSearchState('loading');
     }
+  }
 
-    setSearchState('loading');
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) return;
+
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(async () => {
@@ -489,6 +513,48 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {newTokens.map(renderCard)}
               </div>
+            )}
+          </section>
+
+          {/* Dex chain watchers: hot, top performers, whales, spikes */}
+          <section>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-emerald-500" />
+              <h2 className="text-lg font-display font-bold text-slate-900 dark:text-slate-50" data-onboarding="dex-watchers">Dex chain watchers</h2>
+            </div>
+            {dexSnapshot && dexSnapshot.per_chain ? (
+              <div className="mt-4 space-y-4">
+                {Object.entries(dexSnapshot.per_chain).map(([chainName, buckets]: [string, DexChainBuckets]) => (
+                  <div key={chainName}>
+                    <h3 className="text-sm font-semibold capitalize text-slate-700 dark:text-slate-300">{chainName}</h3>
+                    <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      {(['hot_tokens', 'top_performers', 'whales', 'spikes'] as const).map((bucket) => (
+                        <div key={bucket} className="rounded-card border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            {bucket.replace('_', ' ').replace(/s$/, bucket.endsWith('s') ? 's' : '')}
+                          </h4>
+                          {buckets[bucket] && buckets[bucket]!.length > 0 ? (
+                            <ul className="mt-2 space-y-2">
+                              {buckets[bucket]!.slice(0, 5).map((row: DexChainRow, i: number) => (
+                                <li key={`${row.address}-${i}`} className="flex items-center justify-between text-xs">
+                                  <span className="truncate font-semibold text-slate-800 dark:text-slate-200">{row.symbol}</span>
+                                  <span className={`ml-2 ${row.price_change_24h != null && row.price_change_24h >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    {row.price_change_24h != null ? `${row.price_change_24h.toFixed(1)}%` : '—'}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="mt-2 text-xs text-slate-400">No signals yet.</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">Loading dex chain watchers…</p>
             )}
           </section>
         </>

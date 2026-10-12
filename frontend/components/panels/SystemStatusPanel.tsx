@@ -7,13 +7,12 @@ import { Loader2, Server, Database, Activity } from 'lucide-react';
 export function SystemStatusPanel() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<{
-    kronos?: any;
-    system?: any;
-    marketData?: any;
+    kronos?: { status?: string; last_prediction?: string; accuracy?: number };
+    system?: { status?: string; memory_usage?: string; active_agents?: number };
+    marketData?: { providers?: unknown[]; last_update?: string; cache_hit_rate?: number };
   }>({});
 
   const loadStatus = async () => {
-    setLoading(true);
     const [kronosRes, systemRes, marketDataRes] = await Promise.all([
       systemAPI.getKronosStats(),
       systemAPI.getStatus(),
@@ -21,15 +20,15 @@ export function SystemStatusPanel() {
     ]);
 
     setStatus({
-      kronos: kronosRes.data,
-      system: systemRes.data,
-      marketData: marketDataRes.data,
+      kronos: kronosRes.data as { status?: string; last_prediction?: string; accuracy?: number } | undefined,
+      system: systemRes.data as { status?: string; memory_usage?: string; active_agents?: number } | undefined,
+      marketData: marketDataRes.data as { providers?: unknown[]; last_update?: string; cache_hit_rate?: number } | undefined,
     });
     setLoading(false);
   };
 
   useEffect(() => {
-    loadStatus();
+    void Promise.resolve().then(loadStatus);
     const interval = setInterval(loadStatus, 30000); // Refresh every 30s
     return () => clearInterval(interval);
   }, []);

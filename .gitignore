@@ -45,6 +45,9 @@ htmlcov/
 .env.*.local
 *.env
 *.env.production
+**/.env
+**/.env.*
+
 # Next.js
 .next/
 out/
@@ -86,6 +89,8 @@ Desktop.ini
 
 # managed
 **.data.json
+# Runtime training data from the paper-trade experience buffer
+backend/data/experiences.json
 **.node-persist**
 **_IGNORE_**
 # end managed

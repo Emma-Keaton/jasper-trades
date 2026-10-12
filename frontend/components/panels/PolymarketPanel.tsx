@@ -5,8 +5,8 @@ import { polymarketAPI } from '@/lib/api-client';
 import { Loader2, TrendingUp, Search } from 'lucide-react';
 
 export function PolymarketPanel() {
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [results, setResults] = useState<{ id?: string | number; slug?: string; title?: string; name?: string; description?: string; category?: string; volume_24h?: number }[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState<'search' | 'trending'>('trending');
 
@@ -15,7 +15,7 @@ export function PolymarketPanel() {
     setView('trending');
     const response = await polymarketAPI.getTrending();
     if (response.data) {
-      setResults(Array.isArray(response.data) ? response.data : []);
+      setResults(Array.isArray(response.data) ? (response.data as { id?: string | number; slug?: string; title?: string; name?: string; description?: string; category?: string; volume_24h?: number }[]) : []);
     }
     setLoading(false);
   };
@@ -29,14 +29,14 @@ export function PolymarketPanel() {
       // Handle both array and wrapped response
       const items = Array.isArray(response.data) 
         ? response.data 
-        : response.data.results || [];
+        : (response.data as { results?: { id?: string | number; slug?: string; title?: string; name?: string; description?: string; category?: string; volume_24h?: number }[] }).results || [];
       setResults(items);
     }
     setLoading(false);
   };
 
   React.useEffect(() => {
-    loadTrending();
+    void Promise.resolve().then(loadTrending);
   }, []);
 
   return (
@@ -84,7 +84,7 @@ export function PolymarketPanel() {
         </div>
       ) : results.length > 0 ? (
         <div className="space-y-2 max-h-96 overflow-y-auto">
-          {results.map((market: any, index: number) => (
+          {results.map((market: { id?: string | number; slug?: string; title?: string; name?: string; description?: string; category?: string; volume_24h?: number }, index: number) => (
             <div
               key={market.id || market.slug || index}
               className="p-3 bg-[#1E293B] border border-[#475569] rounded-lg hover:border-[#3B82F6]/50 transition cursor-pointer"

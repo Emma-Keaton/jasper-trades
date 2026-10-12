@@ -6,7 +6,7 @@ import { Loader2, Brain, Network } from 'lucide-react';
 
 export function SwarmPanel() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<unknown>(null);
 
   const runSwarm = async () => {
     setLoading(true);
@@ -37,7 +37,7 @@ export function SwarmPanel() {
         {loading ? 'Running Swarm...' : 'Run Swarm Analysis'}
       </button>
 
-      {result && (
+      {result != null && (
         <div className="p-3 bg-[#1E293B] border border-[#475569] rounded-lg">
           <pre className="text-xs text-[#F8FAFC] font-mono whitespace-pre-wrap">
             {JSON.stringify(result, null, 2)}
@@ -50,7 +50,7 @@ export function SwarmPanel() {
 
 export function LearningPanel() {
   const [loading, setLoading] = useState(false);
-  const [patterns, setPatterns] = useState<any>(null);
+  const [patterns, setPatterns] = useState<{ winning?: unknown; losing?: unknown } | null>(null);
 
   const loadPatterns = async () => {
     setLoading(true);
@@ -103,7 +103,7 @@ export function LearningPanel() {
 
 export function EnsemblePanel() {
   const [loading, setLoading] = useState(false);
-  const [prediction, setPrediction] = useState<any>(null);
+  const [prediction, setPrediction] = useState<unknown>(null);
 
   const getPrediction = async () => {
     setLoading(true);
@@ -131,7 +131,7 @@ export function EnsemblePanel() {
         {loading ? 'Predicting...' : 'Get Ensemble Prediction'}
       </button>
 
-      {prediction && (
+      {prediction != null && (
         <div className="p-3 bg-[#8B5CF6]/10 border border-[#8B5CF6]/30 rounded-lg">
           <pre className="text-xs text-[#F8FAFC] font-mono whitespace-pre-wrap">
             {JSON.stringify(prediction, null, 2)}

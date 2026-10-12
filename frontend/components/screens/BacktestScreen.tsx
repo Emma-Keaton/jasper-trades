@@ -92,7 +92,7 @@ const res = await apiFetch(`/api/v1/backtest/run`, {
               ) : (
                 <div className="mt-2 flex flex-wrap gap-2">
 {selectedAlphaFactors.map(f => (
-                    <Badge key={f.id} tone="accent">{f.name}<button onClick={() => removeAlphaFactor(f.id)} className="ml-1 font-bold hover:opacity-70">×</button></Badge>
+                    <Badge key={f.id} tone="accent">{f.name}<button onClick={() => removeAlphaFactor(f.id)} aria-label={`Remove ${f.name}`} className="ml-1 font-bold hover:opacity-70">×</button></Badge>
                   ))}
                 </div>
               )}

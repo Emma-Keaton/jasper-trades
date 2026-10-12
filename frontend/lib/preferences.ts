@@ -6,8 +6,8 @@
  * the database keyed by the X-Device-ID fingerprint. The device id and the
  * light/dark theme intentionally stay client-side.
  */
-import { API_URL, DEFAULT_DEVICE_ID } from '@/lib/constants';
-import { getOrCreateDeviceId, deviceHeaders } from '@/lib/deviceFingerprint';
+import { API_URL } from '@/lib/constants';
+import { deviceHeaders } from '@/lib/deviceFingerprint';
 
 export interface OnboardingPrefs {
   welcome_done?: boolean;
@@ -64,7 +64,7 @@ export interface AgentConfigMap {
 
 export async function saveAgentConfig(agentId: string, config: AgentConfigMap): Promise<void> {
   const current = await fetchPreferences();
-  const agent_configs = { ...(current.agent_configs || {}), [agentId]: config };
+  const agent_configs = { ...current.agent_configs, [agentId]: config };
   await savePreferences({ agent_configs });
 }
 
@@ -75,7 +75,7 @@ export async function loadAgentConfig(agentId: string): Promise<AgentConfigMap |
 
 export async function saveCollapsibleState(key: string, isOpen: boolean): Promise<void> {
   const current = await fetchPreferences();
-  const collapsible_sections = { ...(current.collapsible_sections || {}), [key]: isOpen };
+  const collapsible_sections = { ...current.collapsible_sections, [key]: isOpen };
   await savePreferences({ collapsible_sections });
 }
 
@@ -87,7 +87,7 @@ export async function loadCollapsibleState(key: string): Promise<boolean | null>
 
 export async function saveOnboardingPrefs(patch: OnboardingPrefs): Promise<void> {
   const current = await fetchPreferences();
-  const onboarding = { ...(current.onboarding || {}), ...patch };
+  const onboarding = { ...current.onboarding, ...patch };
   await savePreferences({ onboarding });
 }
 

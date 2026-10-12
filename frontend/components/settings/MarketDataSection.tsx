@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { TrendingUp, Check, Info, ExternalLink } from 'lucide-react';
-import { Toast } from '@/app/types';
+import type { Toast } from '@/app/types';
 import InfoModal from './InfoModal';
 import { getOrCreateDeviceId } from '@/lib/deviceFingerprint';
 import { apiFetch } from '@/lib/api-client';

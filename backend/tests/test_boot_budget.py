@@ -47,35 +47,68 @@ def _fresh_interpreter_source() -> str:
     )
 
 
+#: How many clean-interpreter imports to time.
+#:
+#: Three is enough to identify a median and costs about a minute on a cold cache.
+#: The point is not statistical rigour, it is that a *systematically* slower import
+#: survives the median while a *randomly* slow one does not. An eager import costs
+#: the same on every run; a busy host does not.
+BOOT_TIMING_RUNS = 3
+
+
 @pytest.fixture(scope="module")
 def boot_profile():
     """Import `app.main` in a clean interpreter and measure it.
 
     Run in a subprocess because the test session has already imported most of
     the app, which would make every measurement read as near-zero.
+
+    Timed ``BOOT_TIMING_RUNS`` times and reported as a median. A single sample on a
+    shared machine conflates "the app got slower" with "something else was running":
+    the same code measured 14 s and 45 s minutes apart with no change between them.
+    A regression in import cost is paid on every run, so it survives the median.
     """
+    import statistics
     import subprocess
     from pathlib import Path
 
     backend = Path(__file__).resolve().parent.parent
-    result = subprocess.run(
-        [sys.executable, "-c", _fresh_interpreter_source()],
-        capture_output=True,
-        text=True,
-        cwd=str(backend),
-        timeout=300,
-    )
-    line = (result.stdout or "").strip().splitlines()
-    if not line:
+    samples = []
+    profile = None
+
+    for _ in range(BOOT_TIMING_RUNS):
+        result = subprocess.run(
+            [sys.executable, "-c", _fresh_interpreter_source()],
+            capture_output=True,
+            text=True,
+            cwd=str(backend),
+            timeout=300,
+        )
+        line = (result.stdout or "").strip().splitlines()
+        if not line:
+            continue
+        seconds, rss_mb, modules, ccxt_loaded, scipy_loaded = line[-1].split()
+        samples.append(float(seconds))
+        # Module/eager-import facts are deterministic; keep the last successful read.
+        profile = {
+            "rss_mb": float(rss_mb),
+            "modules": int(modules),
+            "ccxt_loaded": bool(int(ccxt_loaded)),
+            "scipy_loaded": bool(int(scipy_loaded)),
+        }
+
+    if not samples:
         pytest.skip(f"could not measure boot: {result.stderr[-400:]}")
-    seconds, rss_mb, modules, ccxt_loaded, scipy_loaded = line[-1].split()
-    return {
-        "seconds": float(seconds),
-        "rss_mb": float(rss_mb),
-        "modules": int(modules),
-        "ccxt_loaded": bool(int(ccxt_loaded)),
-        "scipy_loaded": bool(int(scipy_loaded)),
-    }
+
+    profile.update(
+        {
+            "seconds": statistics.median(samples),
+            "seconds_min": min(samples),
+            "seconds_max": max(samples),
+            "samples": samples,
+        }
+    )
+    return profile
 
 
 class TestBootMemory:
@@ -102,25 +135,60 @@ class TestBootMemory:
         )
 
 
+#: Wall-clock ceiling for importing `app.main` in a clean interpreter.
+#:
+#: Anchored to `STARTUP_STEP_TIMEOUT_SECONDS` in app/services/boot.py (45s), which
+#: is the project's own statement of how long it is willing to wait before
+#: concluding that something is wrong. It is not derived from a measurement on any
+#: one machine: the same commit imports in 14 s and 28 s depending on host memory
+#: pressure, so a tighter bound measures the host rather than the app.
+#:
+#: The regression this test exists to catch - scipy or ccxt becoming eager imports -
+#: adds several seconds to *every* run and is therefore caught deterministically by
+#: `test_module_count_stays_bounded` and
+#: `test_heavy_optional_libraries_are_not_loaded`. This is the backstop for gross
+#: slowness only, and deliberately is not the primary guard.
+BOOT_IMPORT_SECONDS_CEILING = 45.0
+
+
 class TestBootTime:
     def test_import_completes_promptly(self, boot_profile):
         """A cold start pays this every wake.
 
-        The bound is deliberately loose. This assertion measures wall-clock in a
-        subprocess, so it is the one check in this file that moves when the host
-        is loaded - it failed under a full-suite run while passing in isolation,
-        with no code change. A tight threshold here would produce a test people
-        learn to ignore.
+        Measured as the median of `BOOT_TIMING_RUNS` clean interpreters, because a
+        single sample conflates app slowness with host contention on a shared
+        machine. The threshold is otherwise deliberately loose: this is a backstop
+        against gross slowness, and a tight bound produces a test people learn to
+        ignore.
 
-        The eager-import regression this was written for is caught deterministically
-        by `test_heavy_optional_libraries_are_not_loaded` and
-        `test_module_count_stays_bounded`, which do not depend on host speed. This
-        assertion is a backstop against gross slowness only.
+        The eager-import regressions this was written for are caught
+        deterministically by `test_heavy_optional_libraries_are_not_loaded` and
+        `test_module_count_stays_bounded`, neither of which depends on host speed.
         """
-        assert boot_profile["seconds"] < 20.0, (
-            f"importing app.main takes {boot_profile['seconds']:.1f} s. On a "
-            "free-tier instance this is paid on every wake after the idle sleep. "
-            "If scipy or ccxt have become eager again, expect ~11.7 s."
+        assert boot_profile["seconds"] < BOOT_IMPORT_SECONDS_CEILING, (
+            f"importing app.main takes {boot_profile['seconds']:.1f} s "
+            f"(median of {BOOT_TIMING_RUNS}; samples "
+            f"{[round(s, 1) for s in boot_profile['samples']]}), against a "
+            f"{BOOT_IMPORT_SECONDS_CEILING:.0f}s ceiling. On a free-tier instance "
+            "this is paid on every wake after the idle sleep. If scipy or ccxt have "
+            "become eager again, expect ~11.7 s and a module count near 3211 - check "
+            "test_module_count_stays_bounded, which is not host-sensitive."
+        )
+
+    def test_import_is_not_outlier_heavy(self, boot_profile):
+        """A consistently slow import is a regression; a randomly slow one is the host.
+
+        Guards against the median hiding a genuine problem: if every run is slow the
+        ratio stays near 1, whereas host contention produces one bad sample among
+        several good ones.
+        """
+        lo, hi = boot_profile["seconds_min"], boot_profile["seconds_max"]
+        assert lo > 0
+        assert hi / lo < 3.0, (
+            f"boot samples ranged {lo:.1f}-{hi:.1f}s "
+            f"({[round(s, 1) for s in boot_profile['samples']]}). Spread this wide "
+            "with no code change usually means the host is contended rather than the "
+            "app; if it reproduces on an idle machine, the import really is uneven."
         )
 
     def test_module_count_stays_bounded(self, boot_profile):

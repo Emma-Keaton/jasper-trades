@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { Briefcase, ArrowUpRight, ArrowDownRight, Play, Eye, Radar, CheckCircle2, XCircle } from 'lucide-react';
-import { Holding, TradeHistoryItem, WatchedEntry } from '@/app/types';
+import type { Holding, TradeHistoryItem, WatchedEntry } from '@/app/types';
 import { Card, Badge, EmptyState, Button, Stat } from '@/components/ui';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 
@@ -25,7 +25,7 @@ function trendLine(pnl: number): string {
 }
 
 export default function TradesScreen({
-  cash, holdings, tradeHistory, watched = [], factorStats, loading = false, onNavigate, triggerToast,
+  cash, holdings, tradeHistory, watched = [], factorStats, loading = false, onNavigate, triggerToast: _triggerToast,
 }: TradesScreenProps) {
   const { formatMoney } = useCurrencyFormatter();
 
@@ -153,7 +153,7 @@ export default function TradesScreen({
           </p>
         ) : (
           <div className="mt-4 divide-y divide-slate-100 rounded-card border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-            {(watched as any[]).filter((w: any) => w.last_status).slice(0, 10).map((w: any) => (
+            {watched.filter((w) => w.last_status).slice(0, 10).map((w) => (
               <div key={w.symbol} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
                   <span className={w.last_status === 'executed'

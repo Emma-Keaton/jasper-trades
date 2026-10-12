@@ -66,11 +66,11 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
         signalsAPI.getSignalsStatus(deviceId),
         signalsAPI.getSignalSettings(deviceId),
       ]);
-      if (sourcesRes.data) setSources(sourcesRes.data);
-      if (tipsRes.data) setTips(tipsRes.data);
-      if (accountRes.data) setTgConnected(!!accountRes.data.connected);
-      if (statusRes.data) setStatus(statusRes.data);
-      if (settingsRes.data) setSettings(settingsRes.data);
+      if (sourcesRes.data) setSources(sourcesRes.data as Source[]);
+      if (tipsRes.data) setTips(tipsRes.data as Tip[]);
+      if (accountRes.data) setTgConnected(!!(accountRes.data as { connected: boolean }).connected);
+      if (statusRes.data) setStatus(statusRes.data as SignalsStatus);
+      if (settingsRes.data) setSettings(settingsRes.data as SignalSettings);
     } catch {
       /* ignore */
     } finally { setLoading(false); }
@@ -109,7 +109,7 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
     }
     const r = await signalsAPI.createSource(deviceId, { source_type: newType, display_name: newName || newType, config: cfg });
     if (r.data) {
-      await signalsAPI.followSource(deviceId, r.data.id);
+      await signalsAPI.followSource(deviceId, (r.data as { id: number }).id);
       triggerToast('success', 'Source added', 'The AI can now look here for ideas.');
       setShowForm(false); setNewName(''); setRssUrls(''); setRedditSubs(''); setRedditFilter(''); setStSymbols(''); load();
     } else triggerToast('error', 'Could not add', 'Please check the details and try again.');
@@ -131,7 +131,7 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
         triggerToast('error', 'Could not watch channel', res.error);
         return;
       }
-      await signalsAPI.followSource(deviceId, res.data.id);
+      await signalsAPI.followSource(deviceId, (res.data as { id: number }).id);
       triggerToast('success', 'Channel watched', 'The AI now watches this public channel for ideas.');
       setPubChannel('');
       load();
@@ -170,8 +170,10 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
     setExecutingId(null);
     if (res.error) triggerToast('error', 'Could not execute', res.error);
     else {
-      const mode = (res.data && res.data.mode) || '';
-      triggerToast('success', 'Trade placed', `Executed ${(res.data && res.data.side || '').toUpperCase()} ${t.symbol}${mode ? ` (${mode})` : ''}.`);
+      const execData = res.data as { mode?: string; side?: string } | undefined;
+      const mode = execData?.mode || '';
+      const side = execData?.side || '';
+      triggerToast('success', 'Trade placed', `Executed ${side.toUpperCase()} ${t.symbol}${mode ? ` (${mode})` : ''}.`);
       load();
     }
   };
@@ -191,7 +193,7 @@ export default function SignalsScreen({ triggerToast }: SignalsScreenProps) {
       const res = await signalsAPI.telegramComplete(deviceId, tgPhone, tgCode, tgPassword || undefined);
       if (res.error) { triggerToast('error', 'Could not verify', res.error); return; }
       const ch = await signalsAPI.telegramChannels(deviceId, {});
-      setTgChannels(ch.error ? [] : (ch.data && ch.data.channels) || []);
+      setTgChannels(ch.error ? [] : ((ch.data as { channels?: Channel[] } | undefined)?.channels) || []);
       setTgStep(2);
     } finally { setTgBusy(false); }
   };

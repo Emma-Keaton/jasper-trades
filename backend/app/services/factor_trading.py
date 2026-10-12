@@ -136,12 +136,19 @@ async def _is_agents_started(db, device_id: str) -> bool:
 # Sweep
 # ---------------------------------------------------------------------------
 
-async def run_factor_sweep(db) -> Dict[str, Any]:
-    """Evaluate every watchlist symbol across devices; auto-execute strong calls.
+async def run_factor_sweep(db, *, device_id: Optional[str] = None) -> Dict[str, Any]:
+    """Evaluate watchlist symbols and auto-execute strong calls; skip if not asked.
 
     The advisor picks the winning factor consensus; only non-neutral, high
     enough confidence calls produce a SignalTip routed through
     ``maybe_auto_execute`` (paper by default, gate + caps enforced).
+
+    ``device_id`` restricts the sweep to one device. The scheduler passes nothing and
+    sweeps every device, which is correct for a periodic system task. A user action
+    must not: ``POST /agents/{name}/start`` used to call this with no filter, so one
+    user's Start button triggered a sweep across every other tenant's watchlist and
+    could open positions for them, then reported the combined total back to the
+    caller.
     """
     if not settings.FACTOR_TRADING_ENABLED:
         return {"enabled": False, "traded": 0}
@@ -152,8 +159,15 @@ async def run_factor_sweep(db) -> Dict[str, Any]:
     factor_service = AlphaFactorService(db)
     stats = {"enabled": True, "devices": 0, "symbols": 0, "traded": 0, "skipped": 0, "details": []}
 
-    # Group watchlist symbols by device.
-    rows = (await db.execute(select(WatchlistItem))).scalars().all()
+    # Group watchlist symbols by device, filtered in the query when scoped so an
+    # unscoped request never loads other tenants' rows.
+    if device_id is None:
+        rows = (await db.execute(select(WatchlistItem))).scalars().all()
+    else:
+        rows = (
+            await db.execute(select(WatchlistItem).where(WatchlistItem.device_id == device_id))
+        ).scalars().all()
+
     by_device: Dict[str, List[WatchlistItem]] = {}
     for item in rows:
         by_device.setdefault(item.device_id, []).append(item)

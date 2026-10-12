@@ -103,3 +103,9 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Safari <15.4 dvh fallback */
+@supports not (height: 100dvh) {
+  .min-h-dvh { min-height: 100vh; }
+  .h-dvh { height: 100vh; }
+}

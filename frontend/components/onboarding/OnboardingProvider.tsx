@@ -1,7 +1,9 @@
 'use client';
 
-import React, { createContext, useContext, ReactNode } from 'react';
-import { useOnboardingEngine, TourStep } from './useOnboardingEngine';
+import type { ReactNode } from 'react';
+import React, { createContext, useContext } from 'react';
+import type { TourStep } from './useOnboardingEngine';
+import { useOnboardingEngine } from './useOnboardingEngine';
 
 interface OnboardingContextType {
   currentStepIndex: number;
@@ -41,11 +43,14 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   // Derive showWelcome from engine state — avoid a duplicate DB load
   const [showWelcome, setShowWelcome] = React.useState(false);
 
-  React.useEffect(() => {
-    if (!engine.isLoaded) return;
-    // Show welcome only if welcome hasn't been dismissed yet
-    setShowWelcome(!engine.welcomeDone);
-  }, [engine.isLoaded, engine.welcomeDone]);
+  // Sync showWelcome with engine state without an effect
+  const [prevLoaded, setPrevLoaded] = React.useState(engine.isLoaded);
+  const [prevWelcomeDone, setPrevWelcomeDone] = React.useState(engine.welcomeDone);
+  if (engine.isLoaded !== prevLoaded || engine.welcomeDone !== prevWelcomeDone) {
+    setPrevLoaded(engine.isLoaded);
+    setPrevWelcomeDone(engine.welcomeDone);
+    setShowWelcome(engine.isLoaded && !engine.welcomeDone);
+  }
 
   const value = {
     ...engine,

@@ -182,6 +182,7 @@ async def lifespan(app: FastAPI):
             ("forex-polling", start_forex_polling),
             ("telegram-listeners", _start_telegram_listeners),
             ("dexchain-watcher", _start_dexchain_watcher),
+            ("signal-exits", _start_signal_exit_monitor),
         ]
     )
 
@@ -372,6 +373,12 @@ async def _start_dexchain_watcher():
     from app.services.dex_chain_autotrade import start_dexchain_watch
 
     asyncio.create_task(start_dexchain_watch())
+
+
+async def _start_signal_exit_monitor():
+    from app.services.signal_exits import start_signal_exit_monitor
+
+    asyncio.create_task(start_signal_exit_monitor())
 
 
 async def _start_telegram_listeners():

@@ -12,23 +12,51 @@ interface DeviceInfo {
   screenResolution: string;
   platform: string;
   version: string;
+  /** Pre-2.0 fingerprint, kept only so the migration is auditable. */
+  legacyDeviceId?: string;
 }
 
 const DEVICE_KEY = 'jasper_device_id';
 const DEVICE_INFO_KEY = 'jasper_device_info';
 
 /**
- * Generate a unique but stable device fingerprint
- * Uses combination of browser characteristics + random seed
+ * Generate the device UUID.
+ *
+ * This UUID *is* the credential: there are no user accounts, and whoever
+ * presents it is that device. It must therefore be unguessable, so it comes
+ * from `crypto.randomUUID()` (122 bits of CSPRNG output).
+ *
+ * The previous generator was
+ * `base64(platform + Date.now() + Math.random())` — a timestamp plus a
+ * non-cryptographic PRNG. Anyone who knew roughly when a device first connected
+ * could narrow the search space considerably. It also produced a 32-character
+ * opaque string rather than a UUID, so the server could not validate the header
+ * it was being sent.
+ *
+ * `crypto.randomUUID` requires a secure context (https, or localhost). If it is
+ * unavailable the caller gets a clear error rather than a weaker identifier,
+ * because a guessable device ID silently defeats the access model.
  */
 function generateDeviceId(): string {
-  const timestamp = Date.now().toString(36);
-  const randomPart = Math.random().toString(36).substring(2, 15);
-  const platform = (typeof navigator !== 'undefined' && navigator.platform) || 'unknown';
+  if (
+    typeof crypto === 'undefined' ||
+    typeof crypto.randomUUID !== 'function'
+  ) {
+    throw new Error(
+      'crypto.randomUUID() is unavailable. Jasper Trades requires a secure ' +
+        'context (https, or localhost) because the device ID is the ' +
+        'credential that authenticates this device.'
+    );
+  }
+  return crypto.randomUUID();
+}
 
-  // Create hash-like identifier
-  const fingerprint = `${platform}-${timestamp}-${randomPart}`;
-  return btoa(fingerprint).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** True when `id` is a canonical UUID. */
+function isUuid(id: string | null): boolean {
+  return typeof id === 'string' && UUID_RE.test(id);
 }
 
 /**
@@ -37,33 +65,61 @@ function generateDeviceId(): string {
  * SSR-safe: returns a throwaway id when not in the browser.
  */
 export function getOrCreateDeviceId(): string {
-  if (typeof window === 'undefined') return 'ssr';
+  // Server-side rendering has no localStorage and no secure context. Callers
+  // only read this into a header on a real request, so a placeholder is fine
+  // here - but it is deliberately not a valid UUID so it can never be mistaken
+  // for a real credential if it ever leaked into a request.
+  if (typeof window === 'undefined') return 'ssr-not-a-uuid';
 
   // Try to get existing device ID
   let deviceId = localStorage.getItem(DEVICE_KEY);
-  
+
+  // A device ID stored by an older build is a 32-character opaque fingerprint,
+  // not a UUID. The server now rejects those, so this device would lose access
+  // to its own settings, portfolio and history on upgrade. Mint a UUID and keep
+  // the old value in deviceInfo so the migration is visible rather than silent.
+  if (deviceId && !isUuid(deviceId)) {
+    console.warn(
+      'Replacing legacy non-UUID device ID with a UUID. Previously stored: ' +
+        deviceId
+    );
+    const legacy = deviceId;
+    deviceId = null;
+    try {
+      const saved: DeviceInfo = JSON.parse(
+        localStorage.getItem(DEVICE_INFO_KEY) || '{}'
+      );
+      saved.legacyDeviceId = legacy;
+      localStorage.setItem(DEVICE_INFO_KEY, JSON.stringify(saved));
+    } catch {
+      // A corrupt deviceInfo must not block issuing a working credential.
+    }
+  }
+
   if (!deviceId) {
     // Check if we have device info to recover from
     const savedInfo = localStorage.getItem(DEVICE_INFO_KEY);
     if (savedInfo) {
       try {
         const info: DeviceInfo = JSON.parse(savedInfo);
-        deviceId = info.deviceId;
-        console.log('Recovered device ID from backup info');
+        if (isUuid(info.deviceId)) {
+          deviceId = info.deviceId;
+          console.log('Recovered device UUID from backup info');
+        }
       } catch (e) {
         console.error('Failed to recover device info:', e);
       }
     }
-    
+
     // If still no device ID, generate new one
     if (!deviceId) {
       deviceId = generateDeviceId();
-      console.log('Generated new device ID:', deviceId);
+      console.log('Generated new device UUID:', deviceId);
     }
-    
+
     // Save to localStorage
     localStorage.setItem(DEVICE_KEY, deviceId);
-    
+
     // Save device metadata for recovery
     const deviceInfo: DeviceInfo = {
       deviceId,
@@ -72,9 +128,9 @@ export function getOrCreateDeviceId(): string {
       userAgent: navigator.userAgent,
       screenResolution: `${screen.width}x${screen.height}`,
       platform: navigator.platform,
-      version: '1.0.0' // App version
+      version: '2.0.0', // device-ID format is UUID as of 2.0.0
     };
-    
+
     localStorage.setItem(DEVICE_INFO_KEY, JSON.stringify(deviceInfo));
   } else {
     // Update last seen timestamp

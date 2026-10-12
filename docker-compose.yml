@@ -62,15 +62,15 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:///./data/sqlite/jasper_trades.db
       - DATA_DIR=/app/data
       
-      # NVIDIA NIM API - configure via Settings page
-      - NVIDIA_API_KEY=
-      - NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+      # Groq API - configure via Settings page
+      - GROQ_API_KEY=
+      - GROQ_BASE_URL=https://api.groq.com/openai/v1
       
       # Model Routing (optimized for free tier)
-      - MODEL_FAST=meta/llama-3.2-3b-instruct
-      - MODEL_BALANCED=meta/llama-3.1-8b-instruct
-      - MODEL_SMART=meta/llama-3.3-70b-instruct
-      - MODEL_DEEP=nvidia/nemotron-3-super-120b-a12b
+      - MODEL_FAST=qwen/qwen3.8-27b
+      - MODEL_BALANCED=openai/gpt-oss-120b
+      - MODEL_SMART=openai/gpt-oss-120b
+      - MODEL_DEEP=openai/gpt-oss-120b
       
       #  Trading - configure via Settings page
       - _API_KEY=

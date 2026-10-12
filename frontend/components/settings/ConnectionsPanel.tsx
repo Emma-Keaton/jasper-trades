@@ -676,7 +676,7 @@ function TigerBroker({
 
 function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error' | 'info', title: string, message: string) => void }) {
   const [connecting, setConnecting] = useState(false);
-  const [accounts, setAccounts] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<{ id: number; broker_name?: string; broker_type?: string; account_currency?: string; account_balance?: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const deviceId = getOrCreateDeviceId();

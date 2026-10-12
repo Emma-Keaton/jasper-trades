@@ -1,11 +1,11 @@
-import { TourStep } from '../useOnboardingEngine';
+import type { TourStep } from '../useOnboardingEngine';
 
 export const settingsTour: TourStep[] = [
   {
     id: 'api-keys',
     targetElement: '[data-onboarding="api-keys"]',
     title: 'API Keys Section',
-    description: 'Configure your NVIDIA NIM API key (for AI models), and Binance (crypto) credentials. Stored encrypted locally.',
+    description: 'Configure your Groq API key (for AI models), and Binance (crypto) credentials. Stored encrypted locally.',
     tip: 'Start with paper trading keys, switch to live when ready',
     position: 'bottom',
   },

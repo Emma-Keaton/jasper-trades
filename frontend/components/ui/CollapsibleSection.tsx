@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, LucideIcon } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { loadCollapsibleState, saveCollapsibleState } from '@/lib/preferences';
 
 interface CollapsibleSectionProps {
@@ -31,6 +32,7 @@ export function CollapsibleSection({
     let cancelled = false;
     loadCollapsibleState(storageKey).then((stored) => {
       if (!cancelled && stored !== null) setIsOpen(stored);
+      return stored;
     });
     return () => { cancelled = true; };
   }, [storageKey]);

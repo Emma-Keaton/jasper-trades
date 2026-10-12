@@ -29,16 +29,9 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast }) => {
     connected: false,
   });
   const [loading, setLoading] = useState(false);
-  const [marketData, setMarketData] = useState<any>(null);
+  const [marketData, setMarketData] = useState<{ name?: string; symbol?: string; current?: number; change?: number; change_pct?: number; open?: number; high?: number; low?: number; close?: number; volume?: number; amount?: number } | null>(null);
   const [testSymbol, setTestSymbol] = useState('600000');
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'checking' | 'connected'>('disconnected');
-
-  // Load config from backend on mount and poll every 5 seconds
-  useEffect(() => {
-    loadConfig();
-    const interval = setInterval(loadConfig, 5000);
-    return () => clearInterval(interval);
-  }, []);
 
   const loadConfig = async () => {
     try {
@@ -74,6 +67,14 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast }) => {
       setConnectionStatus('disconnected');
     }
   };
+
+  // Load config from backend on mount and poll every 5 seconds
+  useEffect(() => {
+    void Promise.resolve().then(loadConfig);
+    const interval = setInterval(loadConfig, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
 
   const saveConfig = async () => {
     setLoading(true);
@@ -264,8 +265,8 @@ const AKShareSettings: React.FC<AKShareSettingsProps> = ({ triggerToast }) => {
           <div className="mt-2 p-3 bg-[#0F172A] rounded-lg border border-[#475569]">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-sm font-semibold text-white">{marketData.name} ({marketData.symbol})</h4>
-              <span className={`text-sm font-bold ${marketData.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                ¥{marketData.current?.toFixed(2)} ({marketData.change >= 0 ? '+' : ''}{marketData.change_pct?.toFixed(2)}%)
+              <span className={`text-sm font-bold ${(marketData.change ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                ¥{marketData.current?.toFixed(2)} ({(marketData.change ?? 0) >= 0 ? '+' : ''}{marketData.change_pct?.toFixed(2)}%)
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">

@@ -19,7 +19,7 @@ interface NewsItem {
 
 export default function MarketIntelligence() {
   const [news, setNews] = useState<NewsItem[]>([]);
-  const [trending, setTrending] = useState<any[]>([]);
+  const [trending, setTrending] = useState<{ symbol?: string; name?: string; price?: number; change_percent?: number; [key: string]: string | number | boolean | undefined }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');

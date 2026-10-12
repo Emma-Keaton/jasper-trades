@@ -76,6 +76,23 @@ class RiskAgent(BaseAgent):
         advise = (market_data.get("advise") or {}) if market_data else {}
         strategy = advise.get("strategy") or {}
 
+        # Per-device tuning, when the caller supplies it. The registry holds a single
+        # RiskAgent for the whole process, so `self.max_position_usd` is a shared
+        # default and must not be mutated per request; the effective limit is
+        # resolved here from the caller's overrides instead. Absent overrides fall
+        # back to the process default, which preserves single-tenant behaviour.
+        overrides = (market_data.get("agent_config") or {}) if market_data else {}
+        max_position_usd = _as_float(
+            overrides.get("max_position_usd"), self.max_position_usd
+        )
+        default_stop_loss_pct = _as_float(
+            overrides.get("default_stop_loss_pct"), self.default_stop_loss_pct
+        )
+        # max_portfolio_risk_pct was previously loaded and never read. It is now
+        # applied as a ceiling on the suggested notional, which is what the name
+        # promises: no single position may exceed this share of the cap.
+        max_portfolio_risk_pct = _as_float(overrides.get("max_portfolio_risk_pct"))
+
         confidence = _as_float(strategy.get("confidence"))
         direction = advise.get("recommended_direction", "neutral")
 
@@ -98,10 +115,14 @@ class RiskAgent(BaseAgent):
         # even when the cap is generous.
         confidence_frac = max(0.0, min(confidence, 1.0))
         size_pct = size_cap_pct * confidence_frac
-        suggested_usd = self.max_position_usd * size_pct
+        suggested_usd = max_position_usd * size_pct
+
+        # Portfolio-risk ceiling, applied last so it can only reduce the size.
+        if max_portfolio_risk_pct > 0:
+            suggested_usd = min(suggested_usd, max_position_usd * max_portfolio_risk_pct / 100.0)
 
         # Stop-loss: tighter when the factor picture is noisy, wider when calm.
-        stop_loss_pct = self.default_stop_loss_pct
+        stop_loss_pct = default_stop_loss_pct
         if risk_level == "high":
             stop_loss_pct *= 0.75
         elif risk_level == "low":
@@ -116,7 +137,10 @@ class RiskAgent(BaseAgent):
             "risk_level": risk_level,
             "confidence": confidence,
             "direction": direction,
-            "max_position_usd": self.max_position_usd,
+            # The effective limit for this request, which may be this device's
+            # override rather than the process default. Reporting self.* here would
+            # hide the override that actually produced suggested_position_usd.
+            "max_position_usd": max_position_usd,
             "size_cap_pct": size_cap_pct,
             "suggested_position_usd": round(suggested_usd, 2),
             "stop_loss_pct": round(stop_loss_pct, 4),

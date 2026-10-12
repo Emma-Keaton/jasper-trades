@@ -66,28 +66,17 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   const [tourSteps, setTourSteps] = useState<TourStep[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
   const [targetElements, setTargetElements] = useState<TargetElementInfo[]>([]);
-  const [completedTours, setCompletedTours] = useState<string[]>([]);
-  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
+  const [completedTours, setCompletedTours] = useState<string[]>(() => loadLocalOnboarding().completed_tours);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(() => loadLocalOnboarding().onboarding_completed === true);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
-  const [welcomeDone, setWelcomeDone] = useState<boolean>(false);
+  const [welcomeDone, setWelcomeDone] = useState<boolean>(() => loadLocalOnboarding().welcome_done === true);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   // Load completed tours from the DB (per device) with localStorage fallback
   useEffect(() => {
     let cancelled = false;
 
-    // Immediately load from localStorage so tours don't flash on refresh
     const local = loadLocalOnboarding();
-    if (local.completed_tours.length > 0) {
-      setCompletedTours(local.completed_tours);
-    }
-    if (local.onboarding_completed) {
-      setOnboardingCompleted(true);
-    }
-    if (local.welcome_done) {
-      setWelcomeDone(true);
-    }
-
     // Then sync from backend (may override with more recent data)
     loadOnboardingPrefs().then((prefs) => {
       if (cancelled) return;
@@ -99,6 +88,7 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
       setWelcomeDone(welcomeDone);
       saveLocalOnboarding({ completed_tours: tours, onboarding_completed: completed, welcome_done: welcomeDone });
       setIsLoaded(true);
+      return prefs;
     }).catch((error) => {
       console.error('Failed to load onboarding state:', error);
       setIsLoaded(true);
@@ -136,7 +126,7 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   // Decouple rect updates from element list to avoid infinite re-subscribe loop
   const [targetRects, setTargetRects] = useState<Record<string, DOMRect | null>>({});
   const targetElementsRef = useRef(targetElements);
-  targetElementsRef.current = targetElements;
+  useEffect(() => { targetElementsRef.current = targetElements; }, [targetElements]);
 
   const updateRects = useCallback(() => {
     const rects: Record<string, DOMRect | null> = {};
@@ -147,7 +137,7 @@ export function useOnboardingEngine(): UseOnboardingEngineReturn {
   }, []);
 
   const updateRectsRef = useRef(updateRects);
-  updateRectsRef.current = updateRects;
+  useEffect(() => { updateRectsRef.current = updateRects; }, [updateRects]);
 
   useEffect(() => {
     if (resizeObserverRef.current) {

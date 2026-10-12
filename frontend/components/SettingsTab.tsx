@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Save, Key, Shield, Check, DollarSign, TrendingUp, Plane, Cpu, Briefcase, Lock, Brain } from 'lucide-react';
-import { Toast } from '@/app/types';
+import type { Toast } from '@/app/types';
 import { SkeletonCard } from './Skeleton';
 import { API_URL } from '@/lib/constants';
 import TradingCapsSection from './TradingCapsSection';
@@ -14,7 +14,7 @@ import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { SystemStatusPanel } from '@/components/panels/SystemStatusPanel';
 
 interface ApiSettings {
-  nvidia_api_key: string;
+  groq_api_key: string;
   binance_api_key: string;
   binance_api_secret: string;
   trove_api_key?: string;
@@ -43,15 +43,17 @@ interface SettingsTabProps {
 // Helper functions to compute completion status
 const getApiConfiguredCount = (formData: ApiSettings) => {
   let count = 0;
-  if (formData.nvidia_api_key) count++;
+  if (formData.groq_api_key) count++;
   if (formData.binance_api_key && formData.binance_api_secret) count++;
   return count;
 };
 
+interface PolymarketLeader { leader_id: string; leader_name: string; win_rate: number; total_pnl: number; is_following?: boolean }
+
 export default function SettingsTab({ triggerToast }: SettingsTabProps) { 
   const { resetTours } = useOnboarding();
   const [formData, setFormData] = useState<ApiSettings>({
-    nvidia_api_key: '',
+    groq_api_key: '',
     binance_api_key: '',
     binance_api_secret: '',
     trove_api_key: '',
@@ -119,7 +121,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
     loading: false,
     message: '',
     success: false,
-    leaders: [] as any[],
+    leaders: [] as PolymarketLeader[],
   });
   const [showLeaders, setShowLeaders] = useState(false);
 
@@ -168,7 +170,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
       
       // Always load form data (even if not configured)
       setFormData({
-        nvidia_api_key: s.nvidia_api_key || '',
+        groq_api_key: s.groq_key || '',
         binance_api_key: s.binance_api_key || '',
         binance_api_secret: s.binance_api_secret || '',
         trove_api_key: s.trove_api_key || '',
@@ -237,7 +239,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           service,
-          key: service === 'nvidia' ? formData.nvidia_api_key : formData.binance_api_key
+          key: service === 'groq' ? formData.groq_api_key : formData.binance_api_key
         }),
       });
       const result = await res.json();
@@ -259,7 +261,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
     try {
       // Save all form data
       const payload = {
-        nvidia_api_key: formData.nvidia_api_key,
+        groq_key: formData.groq_api_key,
         binance_api_key: formData.binance_api_key,
         binance_api_secret: formData.binance_api_secret,
         trove_api_key: formData.trove_api_key,
@@ -471,7 +473,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
       if (res.ok && data.success) {
         setPolymarket(prev => ({
           ...prev,
-          leaders: prev.leaders.map((l: any) =>
+          leaders: prev.leaders.map((l) =>
             l.leader_id === leaderId ? { ...l, is_following: true } : l
           ),
           message: `Now following ${leaderName}`,
@@ -584,26 +586,26 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
         {/* Group 1: AI & External Services */}
         <CollapsibleSection
           title="AI & External Services"
-          subtitle="Gemini (primary), NVIDIA NIM (deprecated), Binance, and market data providers"
+          subtitle="Groq (primary), Binance, and market data providers"
           icon={Key}
           defaultOpen={true}
           storageKey="settings-ai-services-open"
           completionStatus={
-            envStatus?.environment_variables?.gemini_api_key?.configured
-              ? 'Gemini ready'
+            envStatus?.environment_variables?.groq_api_key?.configured
+              ? 'Groq ready'
               : `${getApiConfiguredCount(formData)} of 2 configured`
           }
         >
           <div className="space-y-4">
-            {/* Gemini (primary LLM) */}
+            {/* Groq (primary LLM) */}
             <div data-tour="ai-keys-section" className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Brain className="w-5 h-5 text-[#8B5CF6]" />
-                  <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Gemini (Primary AI)</h3>
+                  <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Groq (Primary AI)</h3>
                 </div>
                 <div className="flex items-center gap-2">
-                  {envStatus?.environment_variables?.gemini_api_key?.configured ? (
+                  {envStatus?.environment_variables?.groq_api_key?.configured ? (
                     <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
                       <Lock className="w-3 h-3" /> ENV
                     </span>
@@ -614,43 +616,42 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
                   )}
                 </div>
               </div>
-              {envStatus?.environment_variables?.gemini_api_key?.configured ? (
+              {envStatus?.environment_variables?.groq_api_key?.configured ? (
                 <div className="p-2 bg-green-500/10 border border-green-500/30 rounded">
                   <p className="text-xs text-green-400 flex items-center gap-1 font-medium">
                     <Lock className="w-3 h-3" />
-                    <span>Managed via Render: GEMINI_API_KEY detected</span>
+                    <span>Managed via Render: GROQ_API_KEY detected</span>
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Gemini 2.5 Flash is the primary engine for AI chat, trade analysis, and trade reasoning.
+                    Groq is the primary engine for AI chat, trade analysis, and trade reasoning.
                   </p>
                 </div>
               ) : (
                 <div className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded">
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Gemini is the primary AI model. Set <code className="text-[#8B5CF6]">GEMINI_API_KEY</code> (~3 keys, comma-separated) in the Render dashboard to enable AI chat, analysis, and trade reasoning.
+                    Groq is the primary AI model. Set <code className="text-[#8B5CF6]">GROQ_API_KEY</code> (~3 keys, comma-separated) in the Render dashboard to enable AI chat, analysis, and trade reasoning.
                   </p>
                 </div>
               )}
             </div>
 
-            {/* NVIDIA NIM API (deprecated fallback) */}
+            
             <div data-tour="api-keys-section" className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Cpu className="w-5 h-5 text-[#3B82F6]" />
-                  <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">NVIDIA NIM API</h3>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/40 text-slate-300 uppercase">Deprecated fallback</span>
-                </div>
+                  <h3 className="text-md font-semibold text-slate-900 dark:text-slate-100">Groq API</h3>
+                                </div>
                 <div className="flex items-center gap-2">
-                  {envStatus?.environment_variables?.nvidia_api_key?.configured && (
+                  {envStatus?.environment_variables?.groq_api_key?.configured && (
                     <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1">
                       <Lock className="w-3 h-3" /> ENV
                     </span>
                   )}
-                  {!envStatus?.environment_variables?.nvidia_api_key?.configured && (
+                  {!envStatus?.environment_variables?.groq_api_key?.configured && (
                     <button
-                      onClick={() => testConnection('nvidia')}
-                      disabled={!formData.nvidia_api_key}
+                      onClick={() => testConnection('groq')}
+                      disabled={!formData.groq_api_key}
                       className="text-xs px-3 py-1.5 rounded-md bg-[#3B82F6]/20 text-[#3B82F6] disabled:opacity-50"
                     >
                       Test
@@ -660,34 +661,34 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
               </div>
               <input
                 type="password"
-                value={formData.nvidia_api_key}
-                onChange={(e) => envStatus?.environment_variables?.nvidia_api_key?.configured
+                value={formData.groq_api_key}
+                onChange={(e) => envStatus?.environment_variables?.groq_api_key?.configured
                   ? undefined
-                  : setFormData({...formData, nvidia_api_key: e.target.value})
+                  : setFormData({...formData, groq_api_key: e.target.value})
                 }
-                disabled={envStatus?.environment_variables?.nvidia_api_key?.configured}
-                placeholder="nvapi-..."
+                disabled={envStatus?.environment_variables?.groq_api_key?.configured}
+                placeholder="gsk_..."
                 className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 py-2 text-slate-900 dark:text-slate-100 text-sm ${
-                  envStatus?.environment_variables?.nvidia_api_key?.configured
+                  envStatus?.environment_variables?.groq_api_key?.configured
                     ? 'opacity-60 cursor-not-allowed'
                     : ''
                 }`}
               />
-              {envStatus?.environment_variables?.nvidia_api_key?.configured ? (
+              {envStatus?.environment_variables?.groq_api_key?.configured ? (
                 <div className="mt-2 p-2 bg-green-500/10 border border-green-500/30 rounded">
                   <p className="text-xs text-green-400 flex items-center gap-1 font-medium">
                     <Lock className="w-3 h-3" />
                     <span>Managed via Render:</span>
-                    <span className="ml-1 text-slate-600 dark:text-slate-300">NVIDIA_API_KEY environment variable detected</span>
+                    <span className="ml-1 text-slate-600 dark:text-slate-300">GROQ_API_KEY environment variable detected</span>
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     This field is locked. Update Render Dashboard variables to edit this value.
                   </p>
                 </div>
               ) : (
-                testResults.nvidia && (
-                  <p className={`text-xs mt-2 ${testResults.nvidia.valid ? 'text-green-500' : 'text-red-500'}`}>
-                    {testResults.nvidia.message}
+                testResults.groq && (
+                  <p className={`text-xs mt-2 ${testResults.groq.valid ? 'text-green-500' : 'text-red-500'}`}>
+                    {testResults.groq.message}
                   </p>
                 )
               )}
@@ -906,7 +907,7 @@ export default function SettingsTab({ triggerToast }: SettingsTabProps) {
                     <div className="mb-3">
                       <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-2">Top Polymarket Leaders</h3>
                       <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {polymarket.leaders.map((leader: any) => (
+                        {polymarket.leaders.map((leader) => (
                           <div key={leader.leader_id} className="p-2 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700">
                             <div className="flex items-center justify-between">
                               <div>

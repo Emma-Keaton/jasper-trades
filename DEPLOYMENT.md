@@ -1,14 +1,70 @@
 # Jasper Trades - Complete Deployment Guide
 
-## Quick Start (Local Testing)
+## Authentication: the device UUID
 
-```bash
-# Start both backend and frontend
-start.bat
+There are **no user accounts**. A device's UUID is its credential.
+
+The browser generates it once with `crypto.randomUUID()` (122 bits of CSPRNG
+output), stores it in `localStorage` under `jasper_device_id`, and sends it on
+every request as:
+
+```
+X-Device-ID: 3f2504e0-4f89-41d3-9a0c-0305e82c3301
 ```
 
-This opens two windows:
-- **Backend**: http://localhost:8000 (API docs at /docs)
+Whoever presents that UUID *is* that device. It grants full read/write access to
+that device's settings, portfolios, positions, trades, broker credentials and
+payout wallet keys.
+
+**The header is validated, not defaulted.** A missing or malformed
+`X-Device-ID` returns `401`. There is no fallback identity — the previous
+`x_device_id or "default-device"` meant any caller who omitted the header became
+the same shared device. `API_AUTH_KEY` exists in `config.py` but nothing reads
+it; the device UUID is the only authentication.
+
+**Upgrading from an older build.** Devices previously held a 32-character
+fingerprint rather than a UUID. The frontend detects this, mints a UUID, and
+keeps the old value under `legacyDeviceId` in `jasper_device_info` so the
+migration is visible. **That device's previous settings and history are not
+carried over** — the new UUID is a new device.
+
+### What this model does and does not give you
+
+| | |
+|---|---|
+| Unauthenticated access | Denied — 401 without a valid UUID |
+| Guessing another device | 122-bit CSPRNG UUID; not feasible |
+| Cross-device data access | Prevented — portfolios are scoped by `device_id` |
+| Revoking a device | **Not supported.** No server-side deny list |
+| Leaked UUID | **Full access.** Treat it like a password |
+| Public exposure | Unsuitable. Use an SSH tunnel or a private network |
+
+**Before exposing this to the internet**, put it behind a private network or a
+VPN. A leaked UUID cannot be revoked, and there is no second factor.
+
+`SECRET_KEY` is still required: it derives the Fernet key that encrypts broker
+credentials and the payout hot-wallet key at rest. It is not a request
+credential, but the startup check refuses to boot in production without it.
+
+---
+
+## Quick Start (Local Testing)
+
+There is no `start.bat` in this repository. Run the two servers in separate
+terminals:
+
+```bash
+# Terminal 1 - backend
+cd backend
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Terminal 2 - frontend
+cd frontend
+npm install
+npm run dev
+```
+
+- **Backend**: http://localhost:8000 (API docs at `/docs`)
 - **Frontend**: http://localhost:3000 (trading dashboard)
 
 **Note:** Database migrations run automatically on startup - no manual setup required!
@@ -42,22 +98,16 @@ copy .env.example .env.local
 **Backend (`backend/.env`):**
 ```env
 # LLM configuration
-# Gemini 2.5 Flash is the PRIMARY LLM. Set ~3 keys (comma-separated, ideally from
+# Groq is the PRIMARY LLM. Set ~2-3 keys (comma-separated).
 # separate Google accounts) so a rate-limited project never stalls a trade.
-GEMINI_API_KEY=key1,key2,key3
-GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+GROQ_API_KEY=key1,key2,key3
+GROQ_BASE_URL=https://api.groq.com/openai/v1
 
-# NVIDIA NIM is the AUTOMATIC FALLBACK when Gemini is down/unconfigured.
-# The proxy pings Gemini first and falls back to NVIDIA on failure.
-NVIDIA_API_KEY=nvapi-your-key-here
-NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-# (NVIDIA's per-task model is fixed in backend/app/nvidia_nim.py, e.g.
-#  analysis -> meta/llama-3.1-8b-instruct, portfolio -> nvidia/llama-3.3-nemotron-super-49b-v1)
 
-# Gemini model tiers (only used when Gemini is the provider)
-MODEL_FAST=gemini-2.5-flash-lite
-MODEL_SMART=gemini-2.5-flash
-MODEL_DEEP=gemini-2.5-pro
+# Groq model tiers
+MODEL_FAST=qwen/qwen3.8-27b
+MODEL_SMART=openai/gpt-oss-120b
+MODEL_DEEP=openai/gpt-oss-120b
 
 # Telegram Signal Sources (Telethon) - REQUIRED for signal import
 # Get API ID + hash from https://my.telegram.org (API development tools)
@@ -81,9 +131,22 @@ WALLETCONNECT_PROJECT_ID=your-project-id
 
 
 # Security (change in production)
-SECRET_KEY=change-this-to-random-secret-key
+# The startup check refuses to boot in production if SECRET_KEY is the literal
+# "change-this-in-production" or is shorter than 32 characters. Do not substitute
+# another placeholder of the same length: a known key passes the length check and
+# silently defeats session signing.
+#   python -c "import secrets; print(secrets.token_urlsafe(48))"
+SECRET_KEY=replace-with-a-real-random-32-plus-character-secret
+# API_AUTH_KEY is NOT an authentication credential - nothing reads it.
+# Authentication is the device UUID (see the Authentication section). Kept only
+# so an existing deployment does not lose an unused setting.
 API_AUTH_KEY=change-this-auth-key
 CORS_ORIGINS="http://localhost:3000,http://localhost:8080"
+
+# Environment. Must be "production" on a real deployment. It gates the
+# production security check and, left as "development", auto-payouts never start.
+ENVIRONMENT=development
+DEBUG=true
 ```
 
 **Frontend (`frontend/.env.local`):**
@@ -154,10 +217,10 @@ See `DATABASE_SETUP.md` for complete migration details.
 │ FREE CLOUD DEPLOYMENT                                   │
 ├─────────────────────────────────────────────────────────┤
 │ Frontend (Vercel)    - https://jasper-trades.vercel.app│
-│ Backend (Render)     - https://jasper-backend.onrender │
+│ Backend (Render)     - https://jasper-trades.onrender.com│
 │ Telegram Bot (Bot API) - Runs inside backend            │
-│ Google Gemini 2.5 Flash - Free tier (multi-key rotation) │
-│ Kronos (Render service)  - Price forecaster (separate)   │
+│ Groq - Free tier (multi-key rotation)             │
+│ Kronos (Modal service)   - Price forecaster (separate)    │
 └─────────────────────────────────────────────────────────┘
 
 Monthly Cost: $0
@@ -206,24 +269,80 @@ frontend/.env.local
 3. **Environment Variables:**
    ```
    PYTHON_VERSION=3.11.0
-   PORT=10000
-   SECRET_KEY=<generate random 32+ chars>
-   API_AUTH_KEY=<generate random string>
+   # Do NOT set PORT. Render injects it (8080). The repo's backend/.env.render
+   # and config.py both expect 8080; hardcoding a different value fights the
+   # platform and the health check.
+   SECRET_KEY=<generate random 32+ chars; see the Quick Start warning>
+   # API_AUTH_KEY is unused; see the Authentication section.
+   ENVIRONMENT=production          # required for the production security check
+   DEBUG=false                     # otherwise logs are not JSON and /docs stays on
    CORS_ORIGINS=https://jasper-trades.vercel.app
    WALLETCONNECT_PROJECT_ID=<your-walletconnect-project-id>  # optional; enables WalletConnect QR in Settings
+   DATABASE_URL=postgresql://...   # see below; required, disk is wiped
+
+   # Telegram (the bot and trade alerts stay disabled without a token)
+   TELEGRAM_BOT_TOKEN=<from @BotFather>
+   TELEGRAM_WEBHOOK_SECRET=<random string, required for webhook verification>
+
+   # Auto-payouts (Part 3.3). Both are required: the scheduler only starts when
+   # AUTO_PAYOUTS_ENABLED is true AND ENVIRONMENT is "production". Left off,
+   # payout settings save fine and then nothing ever fires.
+   AUTO_PAYOUTS_ENABLED=false
    ```
 
-   **Database — use Supabase for persistence (recommended).** Render free tier wipes its disk on every redeploy, so SQLite data is lost. Supabase Postgres survives redeploys and the app's schema is auto-created on startup (no manual DDL):
+   `backend/.env.render` in this repo is the reference for the full list and
+   also sets the rate-limit, HSTS/cookie, cTrader, Paystack/Flutterwave, and
+   Groq variables.
 
-   For **jasper-trades** the Supabase project is `ocemkfkrmznpzuydajlq` (region `aws-0-ca-central-1`, i.e. Central Canada). Use the **session pooler** on port `5432` (good for a persistent web service like Render):
+   **Database — use Supabase for persistence (required).** Render free tier wipes
+   its disk on every redeploy, so SQLite data is lost. This includes the Kronos
+   prediction ledger and learned parameters: without Postgres, calibration
+   evidence and learned thresholds reset to zero on every deploy and no model can
+   ever be promoted. Supabase Postgres survives redeploys.
+
+   **Provisioning the schema.** The app reconciles it on startup
+   (`app/migrations.py`: `create_all` plus incremental `ADD COLUMN IF NOT
+   EXISTS`), which is normally enough. To reach the same state from the Supabase
+   SQL editor with no deploy — useful when the first deploy cannot start because
+   the schema is missing a column it needs — apply the single generated file:
+
+   ```bash
+   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/scripts/schema.sql
+   ```
+
+   `backend/scripts/schema.sql` is generated from the models and is
+   non-destructive and re-runnable: on an empty project it builds all 43 tables
+   (including the nine under `app/models_ext` — cTrader, Polymarket, broker
+   connections), on an existing one it adds any column added since, and repeated
+   runs are no-ops. Regenerate after a model change with
+   `python backend/scripts/generate_schema.py`.
+
+   To drop everything and start over — destructive, and kept as a separate
+   explicit step so the schema file can never delete data by accident:
+
+   ```bash
+   python backend/scripts/reset_db.py "$DATABASE_URL"
+   # or, with psql available:
+   backend/scripts/reset.sh
+   ```
+
+   Both refuse to run unless the target actually contains jasper-trades tables.
+   This replaces two earlier reset scripts that had drifted apart and omitted the
+   `models_ext` tables.
+
+   Use the **session pooler** (port `5432`) for a persistent web service. Note
+   this differs from `backend/.env.example`, which documents port `6543` (the
+   transaction pooler) — use `5432` here and change the port if you see
+   `prepared statement` errors under load.
 
    ```
-   DATABASE_URL=postgresql://postgres.ocemkfkrmznpzuydajlq:<db_password>@aws-0-ca-central-1.pooler.supabase.com:5432/postgres
+   DATABASE_URL=postgresql://postgres.<project-ref>:<db_password>@<region>.pooler.supabase.com:5432/postgres
    ```
-   Verified working on 2026-08-20 against the live project: PostgreSQL 17.6, full schema present, incremental migrations run cleanly on top. Set `<db_password>` to your actual Supabase DB password (URL-encode any special characters; `!` passes through fine, not URL-encoded).
-   - The backend detects Postgres from the `postgresql://` scheme and uses the asyncpg driver; migrations run at startup.
-   - Optional (only if you use realtime/auth/storage): `SUPABASE_URL=https://ocemkfkrmznpzuydajlq.supabase.co`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
-   - If you skip Supabase, use `DATABASE_URL=sqlite+aiosqlite:///./data/sqlite/jasper_trades.db` and `DATA_DIR=./data` (data wiped on redeploy).
+   URL-encode any special characters in the password. The backend detects Postgres
+   from the `postgresql://` scheme and uses the asyncpg driver; migrations run at
+   startup.
+   - Optional (only if you use realtime/auth/storage): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+   - If you skip Supabase, use `DATABASE_URL=sqlite+aiosqlite:///./data/sqlite/jasper_trades.db` and `DATA_DIR=./data` — data is then wiped on every redeploy.
    - ⚠️ **Auth note:** repeated wrong-password attempts trigger Supabase's circuit breaker (`ECIRCUITBREAKER: too many authentication failures`). Wait several minutes before retrying, and paste the exact dashboard password — do not add `[ ]` brackets around it.
 
    **Note:** Leave API keys blank - configure via Settings page after deployment.
@@ -255,8 +374,10 @@ frontend/.env.local
 3. **Environment Variables:**
    ```
    NODE_ENV=production
-   NEXT_PUBLIC_API_URL=https://jasper-backend.onrender.com
-   NEXT_PUBLIC_WS_URL=wss://jasper-backend.onrender.com
+   # Must match the backend hostname exactly, including the .com TLD, and must
+   # be listed in the backend's CORS_ORIGINS.
+   NEXT_PUBLIC_API_URL=https://jasper-trades.onrender.com
+   NEXT_PUBLIC_WS_URL=wss://jasper-trades.onrender.com
    ```
 
 4. **Deploy** - Click "Deploy" (2-5 minutes)
@@ -270,9 +391,7 @@ frontend/.env.local
 1. **Open Settings:** `https://jasper-trades.vercel.app/settings`
 
 2. **Configure AI:**
-   - **Gemini (primary):** set `GEMINI_API_KEY` in your Render dashboard variables (~3 keys comma-separated, one per Google account). The Settings page reports "Gemini ready" when configured. `GEMINI_API_KEYS` is still read as a deprecated fallback.
-   - **NVIDIA NIM (fallback):** Get API key https://build.nvidia.com/, add as `NVIDIA_API_KEY` in the dashboard. On the advanced settings page, paste into "NVIDIA NIM API" → "Test" → "Save All Settings". NVIDIA is used automatically only if Gemini is down/unset.
-   - The LLM proxy tries Gemini first and falls back to NVIDIA per task (fast tasks → `nemotron-mini-4b`, analysis → `llama-3.1-8b`, portfolio → `nemotron-super-49b-v1`).
+   - **Groq (primary):** set `GROQ_API_KEY` in your Render dashboard variables. The Settings page reports "Groq ready" when configured.
 
 3. **Configure Paper Trading (default, recommended for testing):**
    - Settings → Paper Trading → enable Practice mode
@@ -280,10 +399,12 @@ frontend/.env.local
    - Switch to live only when you are comfortable (cTrader/CCXT/Trove/Tiger)
 
 4. **Configure Notifications (Optional):**
-   - **Telegram** - Bot token + chat ID (primary; two-way chat + trade alerts)
+   - **Telegram** - Bot token + chat ID (primary; two-way chat + trade alerts).
+     Needs `TELEGRAM_BOT_TOKEN` in the environment as well as the Settings entry.
    - **Discord** - Paste webhook URL
    - **Email** - SendGrid configuration
-   - **Slack** - Paste webhook URL
+   - **Slack** - Backend endpoint only (`POST /api/v1/notify/configure/slack`).
+     There is **no Slack field in the Settings UI**.
 
 ---
 
@@ -291,13 +412,31 @@ frontend/.env.local
 
 ### Broker Routing
 
-Jasper auto-routes trades by asset class:
+Jasper routes trades by asset class:
 
 | Asset Class | Broker |
 |-------------|--------|
 | Stocks/Equities (US + Nigerian NGX) | Trove Finance |
-| Crypto | Binance |
-| Solana Tokens | Solana |
+| Crypto | CCXT exchange (Binance / Bybit / OKX, see `CCXT_EXCHANGES`) |
+
+**These brokers are not active on a fresh deployment.** `initialize_brokers()`
+is called at startup with no configuration, and the registry defaults are:
+
+- **CCXT** registers only if Binance credentials are already present at import
+  (`api_key` and `api_secret`), otherwise it logs
+  `CCXT broker not initialized: missing Binance API credentials`.
+- **Trove** and **Solana** default to `enabled: false` and are never registered.
+
+Only `ctrader` and `akshare` register by default. On a fresh install every symbol
+in the table above resolves to `None`, so orders have no broker to route to.
+
+There is also no runtime re-registration: configuring a broker in the Settings
+page persists credentials but does not register the broker for the current
+process. Restart the service after adding broker credentials.
+
+Note also that `backend/.env.example` marks the direct Binance path
+"DEPRECATED for Nigeria - geo-blocked" and routes live crypto through CCXT
+(Bybit/OKX).
 
 ### Configure Multiple Brokers
 
@@ -319,110 +458,112 @@ Jasper auto-routes trades by asset class:
 
 ---
 
-## Part 3.25: Kronos Predictions (Optional)
+## Part 3.25: Kronos Predictions
 
-Kronos is a time-series forecasting model that predicts price movements. It is
-deployed as a **separate Render service** (`kronos-service`) — **no Colab is used**.
-To enable it, deploy `backend/kronos-service` to Render and set `KRONOS_SERVICE_URL`
-to its URL in the main backend. See `backend/kronos-service/README.md`.
+Kronos is a time-series forecasting model. It predicts prices and nothing else:
+it holds no positions, reads no account state, and never decides to trade. This
+backend owns market data, execution, outcomes, calibration, and which model is
+active.
 
-**Replacement fallback:** when `KRONOS_SERVICE_URL` is blank (or the service is
-unreachable), the backend falls back to a built-in tiered forecaster
-(`app/services/forecasting/`, ported from aegis-quant): statsmodels Holt-Winters
-when available, otherwise a dependency-free deterministic trend forecaster
-(`numpy`). It fetches daily closes via Yahoo chart (keyless, `data_connectors`)
-and returns a real `UP`/`DOWN` prediction with confidence — so signal confidence
-scoring keeps a Kronos-style basis even without the separate service deployed.
+It runs on **Modal**, not Render: the model weights are far too large for a free
+Render service, and a CPU container on Modal starts in seconds without a GPU
+budget. See `E:\Projects\modal-kronos`.
 
-| Feature | Local (4GB RAM) | Separate Render service |
-|---------|-----------------|-------------------------|
-| **Models** | Kronos-mini only | Kronos (full) |
-| **Strategies** | Single model | Cascade, Ensemble, Context |
-| **Speed** | ~500-1000ms | ~100-300ms (GPU) |
-| **Memory** | ~500MB RAM | ~1GB VRAM (GPU) |
-| **Context** | 512 tokens | Up to 2048 tokens |
-| **Accuracy** | Good | Better (ensemble) |
+### Configure the backend
 
-### Configure Backend
-
-**Option A: Via `.env` file (quick)**
-
-Edit `backend/.env`:
+Set these in `backend/.env` (or the Render service's environment):
 
 ```env
-# Kronos Service
-KRONOS_SERVICE_URL="https://your-kronos.onrender.com"
-KRONOS_STRATEGY="cascade"
+KRONOS_SERVICE_URL="https://<your-modal-endpoint>.modal.run"
+KRONOS_API_KEY="<the shared key from the Modal service>"
 ```
 
-**Option B: Via Settings page (recommended)**
+`KRONOS_API_KEY` is **required**. The Modal service rejects unauthenticated
+requests, so without it every forecast fails and the backend falls back to the
+local forecaster.
 
-1. Go to http://localhost:3000/settings
-2. Find "Kronos AI Settings"
-3. Enter the Kronos service URL
-4. Select strategy:
-   - **Cascade** - Fast screening (default, best for 100s of pairs)
-   - **Ensemble** - Maximum accuracy (best for final trades)
-   - **Context** - Auto-select model by data length
-5. Click "Save" and "Test Connection"
+**Replacement fallback:** when `KRONOS_SERVICE_URL` is blank, the key is missing,
+or the service is unreachable, the backend falls back to a built-in tiered
+forecaster (`app/services/forecasting/`, ported from aegis-quant): statsmodels
+Holt-Winters when available, otherwise a dependency-free deterministic trend
+forecaster (`numpy`). It fetches daily closes via Yahoo chart (keyless,
+`data_connectors`) and returns a real `UP`/`DOWN` prediction with confidence.
 
-### Prediction Strategies
+The fallback is a **degraded** source, not an equivalent one. It produces no
+sampled trajectories, so `LedgerStore.record_forecast` refuses it and it never
+contributes to calibration. If the fallback is the only thing running, no model
+will ever be promoted and no learned threshold will ever validate.
 
-Configure `KRONOS_STRATEGY` based on your use case:
-
-| Strategy | Description | Best For | Speed |
-|----------|-------------|----------|-------|
-| `cascade` | Filters: mini → small → base | Screening 100s of pairs | ⚡⚡⚡ |
-| `ensemble` | Weighted average (20/30/50) | Final trade decisions | ⚡ |
-| `context` | Auto-select by data length | Mixed timeframes | ⚡⚡⚡ |
-| `mini` | Mini model only | Fastest inference | ⚡⚡⚡ |
-| `small` | Small model only | Balanced | ⚡⚡ |
-| `base` | Base model only | Highest accuracy | ⚡ |
-
-**Recommended:**
-- Day trading/screening: `cascade`
-- Swing trading: `ensemble`
-- Long-term analysis: `context`
-
-### API Endpoints
-
-Once configured, use these endpoints:
+### Endpoints
 
 ```bash
-# Health check
-curl {KRONOS_URL}/health
+# Health, including observed calibration
+curl {KRONOS_SERVICE_URL}/health
 
-# Single prediction (default strategy)
-curl {KRONOS_URL}/predict/AAPL
+# Forecast from a bare close series (the shape this backend uses)
+curl -X POST {KRONOS_SERVICE_URL}/forecast/closes \\
+  -H "X-API-Key: $KRONOS_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"closes": [100.1, 100.4, ...], "horizon": 30, "samples": 10}'
 
-# Specific strategy
-curl "{KRONOS_URL}/predict/AAPL?strategy=ensemble"
+# Forecast from full OHLCV candles
+curl -X POST {KRONOS_SERVICE_URL}/forecast \\
+  -H "X-API-Key: $KRONOS_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"candles": [{"open":100,"high":101,"low":99,"close":100,"volume":12}, ...], "horizon": 30, "sample_count": 10}'
 
-# Batch predictions
-curl -X POST {KRONOS_URL}/predict/batch \
-  -H "Content-Type: application/json" \
-  -d '{"symbols": ["AAPL", "TSLA", "NVDA"], "strategy": "cascade"}'
-
-# List all strategies
-curl {KRONOS_URL}/strategies
+# Batch by symbol; the service fetches the bars itself
+curl -X POST {KRONOS_SERVICE_URL}/forecast/batch \\
+  -H "X-API-Key: $KRONOS_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"symbols": ["AAPL", "TSLA"], "horizon": 24, "sample_count": 10}'
 ```
 
-### Troubleshooting
+Routes are `GET /health`, `GET /`, `GET /forecast`, `POST /forecast`,
+`POST /forecast/closes`, and `POST /forecast/batch`.
 
-**"Kronos: 400" Error:**
-- Check the Kronos service is running
-- Verify the service URL is current
-- Restart the Kronos service if needed
+The two forecast routes use different field names, which is deliberate:
+`/forecast/closes` takes `samples` (default 10) and `/forecast` takes
+`sample_count` (default **1**). `sample_count=1` is accepted by the API, but a
+single path carries no distributional information, so this backend's
+`LedgerStore.record_forecast` refuses to record it and it never reaches
+calibration. Use `samples=10` on `/forecast/closes`, or `sample_count>=2`
+elsewhere.
 
-**Timeout Errors:**
-- Service may be busy
-- Increase timeout to 60 seconds (already configured)
-- Try smaller batch size
+### Calibration and model promotion
 
-**Memory Errors:**
-- Reduce batch size to 1-2 symbols
-- Use `cascade` strategy (filters early)
-- Restart the Kronos service
+Kronos never learns. The prediction ledger in Postgres does:
+
+1. **Record** every real, non-degenerate forecast (`kronos_forecasts`). Refused:
+   fallback/replacement output, and anything with fewer than two trajectories.
+2. **Score** each one against the realised close once its horizon elapses.
+3. **Refit** hourly (`_refit_learned_parameters` in `app/services/scheduler.py`).
+4. **Promote** a model only when its record beats a coin flip with statistical
+   confidence: at least 60 scored forecasts, at least 25 in one confidence
+   bucket, and a one-sided binomial test at `p < 0.05`.
+
+Learned parameters and the active model are **workspace-global**. Kronos is the
+same frozen forecaster for every device, so evidence from any device improves
+the shared estimate. Keying this per device would leave everyone on defaults
+indefinitely. Unvalidated state is persisted but **not applied** -- it is stored
+so you can inspect it before it moves a real threshold.
+
+### Kronos troubleshooting
+
+**Every forecast fails with 403:** `KRONOS_API_KEY` is unset or does not match
+the key configured on the Modal service.
+
+**Every forecast fails with 404 or a connection error:** `KRONOS_SERVICE_URL` is
+wrong. A Modal endpoint URL changes when the deployment is recreated; re-copy it
+from `modal deploy`.
+
+**Rate limited (429):** the Modal service uses a weighted token bucket. Bursting
+requests will produce 429 and the client does not retry automatically.
+
+**No model is ever promoted:** expected until enough evidence exists. Check
+`GET /api/v1/system/kronos/stats` for `calibration.scored` and read the refit log
+line. Promotion requires statistical significance, so a lightly used workspace
+may legitimately never promote anything.
 
 ---
 
@@ -430,30 +571,34 @@ curl {KRONOS_URL}/strategies
 
 ### Overview
 
-Production-ready auto-payout system with flexible destination routing:
+Auto-payout distributes a share of profit to a destination on a schedule.
+
+**Two things must both be true or nothing ever fires.** The scheduler only
+starts when `AUTO_PAYOUTS_ENABLED=true` **and** `ENVIRONMENT=production`
+(`app/main.py`). Both default to off/`development`. With them unset, payout
+settings save successfully and then silently do nothing; the only symptom is a
+`Auto-payout scheduler not started` log line.
 
 **Payout Destinations:**
-1. **Crypto Wallet** - USDT transfers via Tatum (ERC20/SOLANA/BSC)
-
-**Features:**
-- Configurable payout percentage (0-100%)
-- Scheduled execution (hourly, daily at specific time)
-- Minimum threshold (prevent micro-transactions)
-- Real blockchain transfers (no simulated data)
-- Full audit trail in database
+1. **Crypto Wallet** - USDT transfers via Tatum
+2. **Nigerian bank transfer** - NGN via Paystack/Flutterwave + Trove
+   (`POST /api/v1/settings/payout/naira-bank`)
 
 ### Configuration Fields
+
+The request body is **flat** (no `payout_config` wrapper). These are the fields
+`PayoutSettingsRequest` accepts; unknown keys are silently ignored.
 
 ```json
 {
   "payout_enabled": true,
   "payout_percentage": 50.0,
   "payout_schedule_hour": 20,
-  "payout_destination": "crypto_wallet",
+  "payout_schedule_minute": 0,
+  "payout_frequency": "custom_time",
+  "min_payout_threshold": 10.0,
   "crypto_wallet": "0x742d35Cc6634C0532925a3b844Bc9e7595f4bE83",
-  "crypto_chain": "ethereum",
-  "split_ratio": 50,
-  "min_payout_threshold": 10.0
+  "broker_account": 1
 }
 ```
 
@@ -461,149 +606,139 @@ Production-ready auto-payout system with flexible destination routing:
 |-------|------|-------------|
 | `payout_enabled` | boolean | Enable/disable auto-payout |
 | `payout_percentage` | number (0-100) | % of daily profit to distribute |
-| `payout_schedule_hour` | number (0-23) | Hour in ET timezone for execution |
-| `payout_destination` | string | `crypto_wallet` |
-| `crypto_wallet` | string | USDT wallet address (ERC20: 0x..., SOLANA: base58) |
-| `crypto_chain` | string | `ethereum`, `solana`, or `bsc` |
+| `payout_schedule_hour` | number (0-23) | Hour in **WAT (Africa/Lagos)** |
+| `payout_schedule_minute` | number (0-59) | Minute within that hour |
+| `payout_frequency` | string | `custom_time` or `end_of_trade` |
 | `min_payout_threshold` | number | Minimum profit before payout triggers |
+| `crypto_wallet` | string | USDT address (ERC20 `0x...`, or Solana base58) |
+| `broker_account` | integer | Portfolio/broker account to pay from |
+
+Two corrections to older versions of this guide:
+
+- The schedule is evaluated in **WAT (Africa/Lagos)**, not ET
+  (`app/services/payout_scheduler.py`). Configuring "8 PM ET" fires at 8 PM
+  Lagos. The ET-based daily-*profit* window in `withdrawal_service.py` is a
+  separate calculation and does not set the schedule.
+- `crypto_chain` is a **frontend-only** field. It is used to validate the address
+  client-side and is never sent in the save body. Chain selection on the backend
+  is not implemented: a `0x` address is always treated as Ethereum, and
+  wallet validation rejects anything but `ethereum`/`erc20`/`solana`/`spl`.
+  **BSC is not supported** despite the `USDT_CONTRACT_BSC` constant existing.
 
 ### Prerequisites
 
 **Crypto Wallet Payout:**
-- Tatum API key (free tier: https://tatumi.com)
-- USDT wallet address (ERC20, SOLANA, or BSC)
+- Tatum API key (https://tatum.io)
+- USDT wallet address (ERC20 or Solana)
+
+**Tatum key storage:** the key is read **only** from the encrypted
+`DeviceSettings.tatum_api_key` column. There is no `TATUM_API_KEY` environment
+variable and no `.env` fallback. Adding it to `backend/.env` has no effect —
+this is the single most common cause of "Tatum API not configured".
 
 ### Step 1: Configure Tatum API Key (For Crypto Payouts)
 
-1. Go to https://tatumi.com and create account
-2. Generate API key (ETH/SOL/BSC mainnet support)
-3. In Jasper Trades Settings page:
-   - Navigate to "Auto-Payout" tab
-   - Enter Tatum API key in dedicated field (or via backend)
-
-**Backend `.env` alternative:**
-```env
-# Tatum API key for USDT transfers
-TATUM_API_KEY=tat_xxxxx
-```
+1. Go to https://tatum.io and create an account.
+2. Generate an API key with ETH/SOL mainnet permissions.
+3. In Jasper Trades Settings, open the Auto-Payout section and enter the key in
+   the dedicated field. It is saved encrypted and served back to the UI
+   pre-filled.
 
 ### Step 2: Set Payout Configuration
 
-1. Go to Settings → "Auto-Payout"
-
-2. **Enable Auto-Payout:**
-   - Toggle "Enable Auto-Payout" ON
-
-3. **Set Percentage:**
-   - Adjust slider or enter value (e.g., 50%)
-   - This % of daily profit will be distributed
-
-4. **Select Destination:**
-   - **Crypto Wallet** - Enter USDT address, select chain (ERC20/SOLANA/BSC)
-
-5. **Set Schedule:**
-   - Select hour in ET timezone (e.g., 8 PM ET)
-   - Payout executes once daily at this time
-
-6. **Set Minimum Threshold:**
-   - Enter minimum profit before payout triggers (e.g., $10)
-   - Prevents micro-transactions on small profits
-
-7. **Click "Save Configuration"**
-
-8. **Test (Optional):**
-   - Click "Test Payout" button
-   - System will execute payout if profit available
-   - Check transaction status in notification
+1. Go to Settings → Auto-Payout.
+2. Toggle **Enable Auto-Payout** on.
+3. Set the percentage (share of daily profit to distribute).
+4. Set the destination and, for a crypto payout, the USDT address.
+5. Set the schedule hour/minute (WAT) and the minimum threshold.
+6. Click **Save Auto-Payout Settings**. (There is no separate "Test Payout"
+   button; wallet validation has its own control, which calls
+   `POST /api/v1/withdrawal/payout/validate-wallet`.)
 
 ### How It Works - Payout Flow
 
 ```
-Daily Profit Calculation (at scheduled hour)
+At the scheduled hour (WAT)
   ↓
-Check: Profit > $0? → No → Skip (no payout)
+Check: Profit > $0? → No → Skip
   ↓
-Check: Profit > Threshold? → No → Skip (wait for next day)
+Check: Profit > Threshold? → No → Skip
   ↓
 Calculate: Payout Amount = Profit × (Percentage / 100)
   ↓
-Route to destination:
-  └─ crypto_wallet → Tatum API → USDT transfer → Your wallet
+Route to destination
   ↓
 Database audit trail (Withdrawal table)
   ↓
-Notification (Telegram/Discord/Email configured)
+Notification (Telegram/Discord/Email if configured)
 ```
 
-### Real Implementation Details
-
-**Crypto Wallet (Tatum):**
-- Direct USDT transfer on blockchain
-- Supports: Ethereum (ERC20), Solana (SPL), BSC (BEP20)
-- Transaction hash stored in database
-- Network fees paid from payout amount
-- Real API call: `POST https://api.tatum.io/v3/blockchain/transaction`
+**Known limitation — portfolio selection.** The scheduler evaluates every
+device's configuration against the **first** portfolio in the database
+(`payout_scheduler.py`: `select(Portfolio).limit(1)`, annotated "for now, get
+first portfolio"). On a multi-device deployment payouts can therefore be
+computed against the wrong portfolio. Verify this before relying on payouts
+with more than one device.
 
 ### API Endpoints
 
 ```bash
-# Get payout configuration
-GET /api/v1/settings/payout
+# Get payout configuration (fields are flat at the top level)
+GET /api/v1/withdrawal/payout/settings
 Headers: X-Device-ID: {device_id}
 
 Response:
 {
   "configured": true,
-  "payout_config": {
-    "payout_enabled": true,
-    "payout_percentage": 50.0,
-    ...
-  }
+  "payout_enabled": true,
+  "payout_percentage": 50.0,
+  "payout_schedule_hour": 20,
+  ...
 }
 
-# Save configuration
-POST /api/v1/settings/payout
+# Save configuration (flat body, no wrapper)
+POST /api/v1/withdrawal/payout/settings
 Headers: X-Device-ID: {device_id}
-Body: { "payout_config": {...} }
+Body: { "payout_enabled": true, "payout_percentage": 50.0, ... }
 
-# Test payout (immediate execution)
-POST /api/v1/settings/payout/test
-Headers: X-Device-ID: {device_id}
-Body: { "portfolio_id": 1 }
+# Execute a payout immediately
+POST /api/v1/withdrawal/scheduler/execute/{portfolio_id}
+Response: { "success": true, "message": "..." }
 
-Response:
-{
-  "executed": true,
-  "status": "completed",
-  "amount": 25.50,
-  "destination": "crypto_wallet",
-  "tx_hash": "0xabc123..."
-}
+# Validate a payout wallet address
+POST /api/v1/withdrawal/payout/validate-wallet
 ```
+
+The execute endpoint returns only `success` and `message`. It does **not**
+return a `status`, `amount`, `destination`, or `tx_hash`; check the `withdrawal`
+table or `/api/v1/withdrawal/history` for the transaction.
 
 ### Troubleshooting
 
-**"Insufficient balance" error:**
-- Portfolio cash < payout amount
-- Ensure trading profits have been realized (trades filled)
+**"Insufficient balance":**
+- Portfolio cash < payout amount.
+- Ensure trading profits have been realized (trades filled).
 
 **"Tatum API not configured":**
-- Add TATUM_API_KEY to settings
-- Key must have ETH/SOL mainnet permissions
+- Re-enter the key in the Settings UI. Setting `TATUM_API_KEY` in `.env` does
+  nothing — there is no such environment variable.
 
 **"Already paid out today":**
-- System prevents duplicate daily payouts
-- Wait until next scheduled execution
+- The system prevents duplicate daily payouts. Wait for the next window.
 
 **"No profit available":**
-- Daily PnL must be positive for payout
-- Check trading activity in portfolio
+- Daily PnL must be positive. Check trading activity in the portfolio.
+
+**Settings save but nothing ever fires:**
+- `AUTO_PAYOUTS_ENABLED` and `ENVIRONMENT=production` are both required. See the
+  note at the top of this section.
 
 ### Monitoring & Audit
 
 **View Payout History:**
 ```bash
-GET /api/v1/withdrawals?portfolio_id={id}&type=auto_payout
+# portfolio_id is required; the filter parameter is withdrawal_type, not type
+GET /api/v1/withdrawal/history?portfolio_id={id}&withdrawal_type={type}
 ```
 
 **Database Tables:**
@@ -719,12 +854,14 @@ Configure free market data APIs for real-time prices, news, and sentiment analys
    - Enable & Save
 6. Send test email to verify
 
-**Email Templates Included:**
+**Email templates actually implemented** (`app/services/sendgrid_service.py`):
 - 📈 Trade execution confirmations
 - 🔔 Price alert notifications
-- 📊 Daily P&L summary (every morning)
-- 📈 Weekly performance report
-- ⚠️ System alerts
+- 📊 Daily summary
+
+There is **no weekly report** and **no daily-morning email**. The scheduled
+"daily summary" is a Telegram push at 8 PM WAT (7 PM UTC), sent only when the
+user's `TelegramUser.daily_summary_enabled` is true.
 
 **Important:** Verify your "From Email" in SendGrid's Sender Authentication settings, or emails may not be delivered.
 
@@ -842,11 +979,18 @@ When a trade is executed:
 
 **Via Environment Variable:**
 ```env
-# Paper Trading (Default)
-
-# Live Trading
-_PAPER=false
+# Universal paper trading is ON by default. It is what the "Paper Trading Mode"
+# toggle in Settings writes to. Per-portfolio is_paper overrides it.
+UNIVERSAL_PAPER_TRADING=true
+UNIVERSAL_PAPER_CAPITAL=10000
+UNIVERSAL_PAPER_CURRENCY=USD
 ```
+
+There is no `_PAPER` variable. An earlier version of this guide showed
+`_PAPER=false`; that name appears nowhere in the code and setting it switches
+nothing. `backend/.env.example` contains the same broken lines
+(`_API_KEY=`, `_API_SECRET=`, `_PAPER=true`) — treat that file's underscore
+entries as typos.
 
 ### Verification
 
@@ -874,7 +1018,7 @@ Response shows:
 |---------|-----------|--------------|------|
 | **Vercel** | Hobby | Unlimited deployments, 100GB/mo | $0 |
 | **Render** | Free | 500 hours/month, 512MB RAM | $0* |
-| **NVIDIA NIM** | Free tier | $25 credits/month | $0 (testing) |
+| **Groq** | Free tier | generous free tier | $0 (testing) |
 | **Tatum** | Free tier | 100 transactions/month | $0 |
 | **UptimeRobot** | Free | 50 monitors | $0 |
 | **Total** | | | **$0/month** |
@@ -887,7 +1031,6 @@ Response shows:
 |---------|------|---------|
 | **Render Standard** | $7/mo | Always-on, no cold starts |
 | **Railway** | $5/mo | 2GB RAM, no sleep |
-| **NVIDIA Paid** | $0.15-3/1M tokens | Higher rate limits |
 
 ---
 
@@ -899,9 +1042,14 @@ Response shows:
 - Ensure 5-minute interval (not 10)
 
 ### Telegram Not Working
-1. Verify the bot token is configured in Settings → Telegram
-2. Check backend logs for Telegram webhook startup
-3. Test: `curl https://YOUR_BACKEND.onrender.com/api/v1/settings/telegram/test`
+1. Verify the bot token is configured in Settings → Telegram. The backend also
+   reads `TELEGRAM_BOT_TOKEN` from the environment; without either, the bot is
+   disabled at startup (`Telegram bot disabled` in the logs).
+2. Check backend logs for Telegram webhook startup.
+3. Test (this route is **POST**; a bare `curl` sends GET and returns 405):
+   ```bash
+   curl -X POST https://YOUR_BACKEND.onrender.com/api/v1/settings/telegram/test
+   ```
 
 ### Frontend Shows "Disconnected"
 1. Check backend URL in Vercel environment variables
@@ -917,20 +1065,63 @@ Response shows:
 3. Verify X-Device-ID header in requests
 
 ### Trading Caps Not Blocking Trades
-Backend optimized for 4GB RAM:
-- Check Kronos settings
-- Reduce batch size if needed
-- Use `kronos-mini-int8` model
+
+`daily_loss_percentage` and `max_position_percentage` are **accepted and stored
+but never enforced.** Only these caps are actually checked in `trade_gate.py`:
+
+| Cap | Enforced? |
+|-----|-----------|
+| `max_position_amount` | Yes |
+| `hard_limit` / `soft_limit` (trade frequency) | Yes |
+| `daily_loss_limit` | Yes, but **only on `sell`** |
+| `daily_loss_percentage` | **No** |
+| `max_position_percentage` | **No** |
+
+Two consequences worth knowing before you rely on them:
+
+- Setting a daily-loss **percentage** gives no protection. Use the absolute
+  `daily_loss_limit` instead.
+- Because the daily-loss check is gated on `side == "sell"`, an open position can
+  be closed out on a loss without that limit being consulted.
+
+The daily-loss counter resets at **UTC midnight**, not midnight ET.
+
+### Kronos / Memory
+
+An earlier version of this section advised reducing batch size or using a
+`kronos-mini-int8` model to fit in RAM. Both are obsolete: inference runs on the
+separate modal-kronos service, not in this backend, and no `kronos-mini-int8`
+identifier exists anywhere in the codebase. `config.py` says so explicitly — the
+memory/RAM knobs there applied to an in-process torch model this backend no
+longer runs. The models in use are `NeoQuasar/Kronos-mini` and `kronos-mini`.
 
 ---
 
 ## Security Checklist
 
-- [ ] SECRET_KEY changed from default (32+ random chars)
-- [ ] API_AUTH_KEY generated randomly
+- [ ] `SECRET_KEY` set to a real random value of 32+ characters
+- [ ] `ENVIRONMENT=production` and `DEBUG=false`
+- [ ] Device UUID model understood; instance not publicly exposed (see Authentication)
 - [ ] CORS_ORIGINS set to production domain
+- [ ] `DATABASE_URL` points at Postgres (not SQLite on Render)
+- [ ] `TELEGRAM_BOT_TOKEN` set if Telegram alerts are wanted
 - [ ] Paper trading enabled for testing
-- [ ] Database backups configured (optional)
+- [ ] Supabase scheduled backups configured
+
+### Not enforced despite being configurable
+
+These are stored and returned by the API but never checked. Do not treat them as
+risk controls:
+
+- `daily_loss_percentage` — use `daily_loss_limit` instead
+- `max_position_percentage` — use `max_position_amount`
+- Slack notifications have a backend endpoint (`POST /api/v1/notify/configure/slack`)
+  but no Settings UI
+
+Also absent: a weekly performance report and a weekly email. The scheduled
+"daily summary" is a **Telegram push at 8 PM WAT (7 PM UTC)**, sent only when the
+user's `TelegramUser.daily_summary_enabled` is true — it is not an email and not
+a weekly report.
 
 **Generate Secure Keys:**
 ```bash
@@ -962,11 +1153,23 @@ openssl rand -hex 32
 
 ## Backup Strategy
 
-### Database (Render)
-Manual backup (Render free tier has no auto-backup):
-```bash
-curl https://YOUR_BACKEND.onrender.com/api/v1/backup > backup.db
-```
+### Database (Postgres on Supabase)
+
+**There is no backup endpoint on this API.** `/api/v1/backup` does not exist —
+an earlier version of this guide recommended
+`curl .../api/v1/backup > backup.db`, which would have written a 404 JSON body
+into a file named `backup.db`.
+
+Back up the Postgres database instead:
+
+- **Supabase dashboard:** Database → the active project → Backups, and enable
+  scheduled backups. This is the recommended option and needs nothing from this
+  app.
+- **Command line:** `pg_dump "$DATABASE_URL" -Fc -f jasper_backup.dump`, then
+  store the file outside Render. Render free tier has no automatic backups.
+
+Do not use SQLite `backup.db` dumps against a Postgres deployment — they would
+be meaningless.
 
 ### Settings (Encrypted)
 Settings stored encrypted in database - export monthly via Settings page.
@@ -979,7 +1182,7 @@ Your deployment is successful when:
 - [✅] Frontend loads from Vercel
 - [✅] Backend API responds from Render
 - [✅] Telegram notifications work (if configured)
-- [✅] NVIDIA API key configured
+- [?] Groq API key configured
 - [✅] Test trade executed (paper mode)
 - [✅] Mobile access works
 - [✅] Multi-broker routing functional
@@ -990,7 +1193,7 @@ Your deployment is successful when:
 ## Next Steps
 
 1. **Test thoroughly** with paper trading
-2. **Monitor NVIDIA usage** (stay within $25 free tier)
+2. **Monitor Groq usage** (stay within free tier rate limits)
 3. **Configure notifications** (Telegram, Discord, etc.)
 4. **Set up alerts** (UptimeRobot + Sentry)
 5. **Configure trading caps** (protect your portfolio)

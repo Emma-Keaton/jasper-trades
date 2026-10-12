@@ -7,7 +7,7 @@ import { Button } from '@/components/ui';
 import { saveOnboardingPrefs } from '@/lib/preferences';
 
 const STEPS = [
-  { icon: <Bot className="h-6 w-6" />, title: 'Welcome! I am Jasper', body: 'Your AI trader. I watch markets 24\/7 and trade for you, explaining everything in plain English.' },
+  { icon: <Bot className="h-6 w-6" />, title: 'Welcome! I am Jasper', body: 'Your AI trader. I watch markets 24/7 and trade for you, explaining everything in plain English.' },
   { icon: <Rocket className="h-6 w-6" />, title: 'Tap Start', body: 'On Home, press Start and I will begin trading with practice money. Nothing real unless you say so.' },
   { icon: <Radio className="h-6 w-6" />, title: 'Connect sources', body: 'In Signals, connect Telegram, feeds or Reddit so I have more places to look for good ideas.' },
   { icon: <ListChecks className="h-6 w-6" />, title: 'Watch your Trades', body: 'Every move I make shows up on the Trades screen, with reasons you can actually understand.' },

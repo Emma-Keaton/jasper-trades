@@ -765,6 +765,11 @@ class SignalTip(Base):
     confidence = Column(Float, default=0.0)
     rationale = Column(String, nullable=True)
 
+    # Planned levels from LLM extraction (kept separate from fill prices below)
+    planned_entry = Column(Float, nullable=True)
+    stop_loss = Column(Float, nullable=True)
+    take_profit = Column(Float, nullable=True)
+
     text = Column(String, nullable=True)
     url = Column(String, nullable=True)
     source_created_at = Column(DateTime, nullable=True)

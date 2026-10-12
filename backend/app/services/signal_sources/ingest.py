@@ -97,6 +97,9 @@ async def ingest_tip_dict(db: AsyncSession, device_id: str, tip: Dict[str, Any])
         timeframe=tip.get("timeframe"),
         confidence=final_conf,
         rationale=tip.get("rationale"),
+        planned_entry=_opt_float(tip.get("entry")),
+        stop_loss=_opt_float(tip.get("stop_loss")),
+        take_profit=_opt_float(tip.get("take_profit")),
         text=tip.get("text"),
         url=tip.get("url"),
         source_created_at=_coerce_dt(tip.get("created_at")),
@@ -237,6 +240,8 @@ async def _execute_paper(
         asset_class=asset_class,
         agent_name="signal-auto",
         reasoning=(tip.rationale or (tip.text or ""))[:300],
+        stop_loss=tip.stop_loss,
+        take_profit=tip.take_profit,
     )
     if result.get("error"):
         _mark(tip, "failed", f"paper trade rejected: {result['error']}")
@@ -246,9 +251,12 @@ async def _execute_paper(
     tip.executed = True
     tip.entry_price = float(result.get("price", price))
     tip.execution_status = "executed"
+    levels = ""
+    if tip.stop_loss or tip.take_profit:
+        levels = f" [SL {tip.stop_loss or '-'} / TP {tip.take_profit or '-'}]"
     tip.execution_detail = (
         f"Paper {side.upper()} {result.get('quantity', qty):g} {tip.symbol} @ "
-        f"{result.get('price', price):g} (notional {notional:.2f})"
+        f"{result.get('price', price):g} (notional {notional:.2f}){levels}"
     )
     tip.executed_at = datetime.utcnow()
     await db.commit()
@@ -352,10 +360,26 @@ def _mark(tip: SignalTip, status: str, detail: str) -> None:
 
 
 async def _get_portfolio(db: AsyncSession, device_id: str) -> Optional[Portfolio]:
-    rows = (await db.execute(select(Portfolio))).scalars().all()
-    if not rows:
-        return None
-    return next((p for p in rows if (p.device_id or "") == device_id), rows[0])
+    """This device's portfolio, or None.
+
+    The filter is in the query rather than in Python because an unscoped
+    ``select(Portfolio)`` followed by a Python-side match loads every tenant's
+    portfolio into memory to discard most of them - and, more importantly, makes the
+    "no match" case easy to handle wrongly.
+
+    This used to end with ``... else rows[0]``: a device with no portfolio was
+    handed *another device's* portfolio, and the caller then sized the order from
+    its cash (:194) and mutated its positions (:289, :323). One tenant's trading
+    decision could therefore spend another tenant's money. The fallback is gone;
+    callers already handle None by skipping with a reason.
+
+    Returns None when the device has no portfolio, or more than one and none
+    matches - ambiguity must not resolve to "use somebody else's".
+    """
+    result = await db.execute(
+        select(Portfolio).where(Portfolio.device_id == device_id)
+    )
+    return result.scalars().first()
 
 
 async def _apply_caps(db: AsyncSession, portfolio_id: int, equity: float, notional: float) -> float:
@@ -395,6 +419,15 @@ def _asset_class(symbol: str) -> str:
     if 2 <= len(sym) <= 5 and sym.isalpha():
         return "stocks"
     return "crypto"
+
+
+def _opt_float(value: Any) -> Optional[float]:
+    """Coerce an LLM-extracted price level to a positive float, else None."""
+    try:
+        f = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return f if f > 0 else None
 
 
 def _coerce_dt(value: Any) -> Optional[datetime]:

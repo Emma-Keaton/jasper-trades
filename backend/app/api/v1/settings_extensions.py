@@ -637,17 +637,6 @@ async def reset_onboarding_state(
 
 # ============ Trove API Endpoints ============
 
-class TroveSettingsRequest(BaseModel):
-    """Trove API configuration"""
-    trove_api_key: str
-    # No default. The previous default host (sandbox.api.trovefinance.com) cannot
-    # pass TLS verification - the domain serves a *.trovefinance.com wildcard,
-    # which matches one label only - so it is required from the caller instead of
-    # being silently dialled. Leaving it unset keeps Trove inert and reportable.
-    trove_base_url: Optional[str] = None
-    trove_enabled: bool = True
-    trove_sandbox: bool = True
-
 
 class CurrencyPreferenceRequest(BaseModel):
     """Currency preference settings"""
@@ -671,93 +660,6 @@ class PaymentGatewayRequest(BaseModel):
     flutterwave_api_key: Optional[str] = None
     paystack_enabled: bool = False
     flutterwave_enabled: bool = False
-
-
-@router.post("/trove")
-async def save_trove_settings(
-    settings: TroveSettingsRequest,
-    device_id: str = Header(None, alias="X-Device-ID"),
-):
-    """
-    Save Trove API configuration.
-
-    Trove enables trading of:
-    - US stocks (AAPL, TSLA, etc.)
-    - Nigerian NGX stocks (DANGCEM, MTNN, etc.)
-    - Fractional share trading
-    - Multi-currency support (USD/NGN)
-    """
-    if not device_id:
-        raise HTTPException(status_code=400, detail="X-Device-ID header required")
-
-    encryption = get_encryption()
-
-    async with async_session() as session:
-        result = await session.execute(
-            select(DeviceSettings).where(DeviceSettings.device_id == device_id)
-        )
-        row = result.scalar_one_or_none()
-
-        if row:
-            row.trove_api_key = encryption.encrypt(settings.trove_api_key)
-            row.trove_base_url = settings.trove_base_url
-            row.trove_enabled = settings.trove_enabled
-            row.trove_sandbox = settings.trove_sandbox
-        else:
-            row = DeviceSettings(
-                device_id=device_id,
-                trove_api_key=encryption.encrypt(settings.trove_api_key),
-                trove_base_url=settings.trove_base_url,
-                trove_enabled=settings.trove_enabled,
-                trove_sandbox=settings.trove_sandbox,
-            )
-            session.add(row)
-
-        await session.commit()
-
-    logger.info(f"Trove settings saved for {device_id}")
-    return {
-        "success": True,
-        "message": "Trove API settings saved",
-        "trove_enabled": settings.trove_enabled,
-        "sandbox": settings.trove_sandbox,
-    }
-
-
-@router.get("/trove")
-async def get_trove_settings(
-    device_id: str = Header(None, alias="X-Device-ID"),
-):
-    """Get Trove API configuration (API key masked for security)."""
-    if not device_id:
-        return {
-            "trove_enabled": False,
-            "trove_base_url": None,
-            "trove_sandbox": True,
-            "is_connected": False,
-        }
-
-    async with async_session() as session:
-        result = await session.execute(
-            select(DeviceSettings).where(DeviceSettings.device_id == device_id)
-        )
-        row = result.scalar_one_or_none()
-
-        if not row:
-            return {
-                "trove_enabled": False,
-                "trove_base_url": None,
-                "trove_sandbox": True,
-                "is_connected": False,
-            }
-
-        return {
-            "trove_enabled": row.trove_enabled or False,
-            "trove_base_url": row.trove_base_url,
-            "trove_sandbox": row.trove_sandbox if row.trove_sandbox is not None else True,
-            "trove_account_id": row.trove_account_id,
-            "is_connected": bool(row.trove_api_key and row.trove_enabled),
-        }
 
 
 @router.post("/trove/test")

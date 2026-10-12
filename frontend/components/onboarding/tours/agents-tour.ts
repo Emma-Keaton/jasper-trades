@@ -1,4 +1,4 @@
-import { TourStep } from '../useOnboardingEngine';
+import type { TourStep } from '../useOnboardingEngine';
 
 export const agentsTour: TourStep[] = [
   {
@@ -52,7 +52,7 @@ export const agentsTour: TourStep[] = [
     id: 'agent-latency',
     targetElement: '[data-onboarding="agent-latency"]',
     title: 'Latency Badge',
-    description: 'Shows response time from NVIDIA NIM API. Lower is better. Typically 50-600ms depending on model size.',
+    description: 'Shows response time from the Groq API. Lower is better. Typically 50-600ms depending on model size.',
     tip: '3B models ~50ms, 70B models ~300ms, 120B models ~600ms',
     position: 'left',
   },
@@ -68,7 +68,7 @@ export const agentsTour: TourStep[] = [
     id: 'test-connection',
     targetElement: '[data-onboarding="test-connection"]',
     title: 'Test Connection',
-    description: 'Verify your NVIDIA API key is working. Sends a ping to test model responses.',
+    description: 'Verify your Groq API key is working. Sends a ping to test model responses.',
     action: {
       label: 'Run Test',
       onClick: () => {

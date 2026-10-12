@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Shield, Check, DollarSign, Percent, Loader2 } from 'lucide-react';
-import { Toast } from '@/app/types';
-import { API_URL } from '@/lib/constants';
+import type { Toast } from '@/app/types';
 import { apiFetch } from '@/lib/api-client';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 
@@ -42,7 +41,6 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
   const [saving, setSaving] = useState(false);
 
   const fetchCaps = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await apiFetch(`/api/v1/trading-caps?portfolio_id=${portfolioId || 1}`);
       const data = await res.json();
@@ -68,7 +66,7 @@ export default function TradingCapsSection({ portfolioId, triggerToast }: Tradin
   }, [portfolioId]);
 
   useEffect(() => {
-    fetchCaps();
+    void Promise.resolve().then(fetchCaps);
   }, [fetchCaps]);
 
   const saveCaps = async () => {

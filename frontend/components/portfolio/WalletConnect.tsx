@@ -53,12 +53,12 @@ export default function WalletConnect() {
   const [wcUri, setWcUri] = useState<string | null>(null);
   const [wcQrDataUrl, setWcQrDataUrl] = useState<string | null>(null);
 
-  const hasEthereumProvider = typeof window !== 'undefined' && !!(window as any).ethereum;
+  const hasEthereumProvider = typeof window !== 'undefined' && !!(window as unknown as { ethereum?: Record<string, boolean> }).ethereum;
 
   // Best-effort detection of which injected wallet is installed.
   const detectedInjected = React.useMemo(() => {
     if (typeof window === 'undefined') return null;
-    const provider = (window as any).ethereum;
+    const provider = (window as unknown as { ethereum?: Record<string, boolean> }).ethereum;
     if (!provider) return null;
     if (provider.isMetaMask) return 'metaMask';
     if (provider.isCoinbaseWallet) return 'coinbaseWallet';
@@ -225,12 +225,14 @@ export default function WalletConnect() {
     window.open(deepLink || wallet.url || 'https://phantom.app/ul/browse', '_blank', 'noopener,noreferrer');
   }, [chainType, handleConnect]);
 
-  // Reset status when switching chains
-  useEffect(() => {
+  // Reset status when switching chains (render-time adjust, no effect needed)
+  const [prevChainType, setPrevChainType] = useState(chainType);
+  if (prevChainType !== chainType) {
+    setPrevChainType(chainType);
     setConnectionStatus('idle');
     setConnectionError(null);
     clearWc();
-  }, [chainType, clearWc]);
+  }
 
   return (
     <div>
@@ -498,7 +500,7 @@ export default function WalletConnect() {
           </div>
         ) : (
           <div className="mt-5 flex justify-end">
-            <Button variant="ghost" onClick={() => { clearWc(); !connecting && setOpen(false); }} disabled={connecting}>
+            <Button variant="ghost" onClick={() => { clearWc(); if (!connecting) setOpen(false); }} disabled={connecting}>
               Close
             </Button>
           </div>

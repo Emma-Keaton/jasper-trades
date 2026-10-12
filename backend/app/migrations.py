@@ -273,11 +273,14 @@ async def _migrate_withdrawals():
 
 
 async def _migrate_signal_tips():
-    """Add hands-free execution columns to the signal_tips table."""
+    """Add hands-free execution + planned-levels columns to the signal_tips table."""
     expected_columns = [
         ("execution_status", "VARCHAR(32) DEFAULT 'pending'", "VARCHAR(32) DEFAULT 'pending'"),
         ("execution_detail", "TEXT", "TEXT"),
         ("executed_at", "TIMESTAMP", "TIMESTAMP"),
+        ("planned_entry", "REAL", "FLOAT"),
+        ("stop_loss", "REAL", "FLOAT"),
+        ("take_profit", "REAL", "FLOAT"),
     ]
 
     for col, sqlite_ddl, pg_ddl in expected_columns:
