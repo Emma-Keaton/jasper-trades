@@ -15,6 +15,7 @@ interface TradesScreenProps {
   loading?: boolean;
   portfolioInitialized?: boolean;
   onNavigate: (tab: string) => void;
+  triggerToast?: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void;
 }
 
 function trendLine(pnl: number): string {
@@ -24,7 +25,7 @@ function trendLine(pnl: number): string {
 }
 
 export default function TradesScreen({
-  cash, holdings, tradeHistory, watched = [], factorStats, loading = false, onNavigate,
+  cash, holdings, tradeHistory, watched = [], factorStats, loading = false, onNavigate, triggerToast,
 }: TradesScreenProps) {
   const { formatMoney } = useCurrencyFormatter();
 
