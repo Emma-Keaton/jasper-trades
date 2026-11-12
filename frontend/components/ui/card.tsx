@@ -9,15 +9,22 @@ export function Card({
   onClick,
   ...rest
 }: React.HTMLAttributes<HTMLDivElement> & { hover?: boolean; onClick?: () => void }) {
+  // Use native button for accessibility when onClick is provided
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`card ${hover ? 'card-hover' : ''} ${className}`}
+        {...rest}
+      >
+        {children}
+      </button>
+    );
+  }
+
   return (
-    <div
-      onClick={onClick}
-      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      className={`card ${hover ? 'card-hover cursor-pointer' : ''} ${className}`}
-      {...rest}
-    >
+    <div className={`card ${hover ? 'card-hover cursor-pointer' : ''} ${className}`} {...rest}>
       {children}
     </div>
   );

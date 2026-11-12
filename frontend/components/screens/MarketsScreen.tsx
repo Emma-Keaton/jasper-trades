@@ -93,24 +93,6 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const togglingRef = useRef(false);
 
-  const _refreshWatchlist = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/v1/watchlist`, { headers: deviceHeaders() });
-      if (!res.ok) return;
-      const data = await res.json();
-      const items: MarketItem[] = (data.watchlist || []).map((w: RawQuote) => ({
-        symbol: (w.symbol || '').toUpperCase(),
-        name: w.name || w.symbol || '',
-        price_usd: w.price_usd ?? null,
-        asset_class: (w.asset_class === 'stocks' || w.asset_class === 'cn' ? w.asset_class : 'crypto') as MarketItem['asset_class'],
-        change: w.price_change_24h ?? 0,
-      }));
-      setWatchlist(items);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   const toggleWatch = useCallback(
     async (item: MarketItem) => {
       if (togglingRef.current) return;
