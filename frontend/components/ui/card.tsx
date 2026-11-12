@@ -11,12 +11,14 @@ export function Card({
 }: React.HTMLAttributes<HTMLDivElement> & { hover?: boolean; onClick?: () => void }) {
   // Use native button for accessibility when onClick is provided
   if (onClick) {
+    // Filter rest to only include valid button props
+    const buttonRest = rest as React.ButtonHTMLAttributes<HTMLButtonElement>;
     return (
       <button
         type="button"
         onClick={onClick}
         className={`card ${hover ? 'card-hover' : ''} ${className}`}
-        {...rest}
+        {...buttonRest}
       >
         {children}
       </button>
