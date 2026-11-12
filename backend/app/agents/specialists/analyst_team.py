@@ -207,12 +207,13 @@ Provide sentiment score (-1 to +1) and actionable insights."""
     
     async def analyze(self, symbol: str, news: List[str], social_data: Optional[Dict] = None) -> Dict[str, Any]:
         """Analyze sentiment from news and social data."""
+        nl = "\n"
         prompt = f"""Analyze sentiment for {symbol}:
 
 Recent news headlines:
 {self._format_news(news)}
 
-{'Social media data:\n' + str(social_data) if social_data else 'No social data available'}
+{'Social media data:' + nl + str(social_data) if social_data else 'No social data available'}
 
 Assess:
 1. Overall news sentiment (positive/negative/neutral)?
