@@ -72,7 +72,7 @@ class Signal(Base):
     expires_at = Column(DateTime)
 
     # Signal metadata
-    metadata = Column(JSON)
+    signal_metadata = Column("metadata", JSON)
 
     # Copy trading
     is_public = Column(Boolean, default=True)

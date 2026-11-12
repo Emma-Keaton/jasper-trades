@@ -214,7 +214,7 @@ class CopyTradeService:
         )
 
         # Get estimated price
-        estimated_price = signal.metadata.get("price", 100) if signal.metadata else 100
+        estimated_price = signal.signal_metadata.get("price", 100) if signal.signal_metadata else 100
         quantity = position_value / estimated_price if estimated_price > 0 else 0
 
         if quantity <= 0:
@@ -245,7 +245,7 @@ class CopyTradeService:
                     original_signal_id=signal_id,
                     resulting_trade_id=trade.id,
                     copy_percentage=copy_percentage,
-                    original_quantity=signal.metadata.get("quantity", quantity) if signal.metadata else quantity,
+                    original_quantity=signal.signal_metadata.get("quantity", quantity) if signal.signal_metadata else quantity,
                     copied_quantity=quantity,
                 )
                 self.db.add(copy_trade)

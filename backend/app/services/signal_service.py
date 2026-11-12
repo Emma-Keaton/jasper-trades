@@ -69,7 +69,7 @@ class SignalService:
             strength=min(1.0, max(0.0, strength)),
             agent_name=agent_name,
             reasoning=reasoning,
-            metadata=metadata or {},
+            signal_metadata=metadata or {},
             expires_at=expires_at,
             is_public=is_public,
         )
@@ -244,13 +244,13 @@ class SignalService:
         if not signal:
             return None
 
-        if signal.metadata is None:
-            signal.metadata = {}
+        if signal.signal_metadata is None:
+            signal.signal_metadata = {}
 
-        signal.metadata["outcome"] = outcome
-        signal.metadata["pnl"] = pnl
-        signal.metadata["pnl_percent"] = pnl_percent
-        signal.metadata["closed_at"] = datetime.utcnow().isoformat()
+        signal.signal_metadata["outcome"] = outcome
+        signal.signal_metadata["pnl"] = pnl
+        signal.signal_metadata["pnl_percent"] = pnl_percent
+        signal.signal_metadata["closed_at"] = datetime.utcnow().isoformat()
 
         # Update copied_by (increment if win)
         if outcome == "win" and signal.copied_by is not None:
@@ -288,8 +288,8 @@ class SignalService:
             }
 
         # Calculate stats
-        wins = sum(1 for s in signals if s.metadata and s.metadata.get("outcome") == "win")
-        losses = sum(1 for s in signals if s.metadata and s.metadata.get("outcome") == "loss")
+        wins = sum(1 for s in signals if s.signal_metadata and s.signal_metadata.get("outcome") == "win")
+        losses = sum(1 for s in signals if s.signal_metadata and s.signal_metadata.get("outcome") == "loss")
 
         resolved = wins + losses
         win_rate = (wins / resolved * 100) if resolved > 0 else 0
@@ -298,9 +298,9 @@ class SignalService:
 
         # PnL from metadata
         total_pnl = sum(
-            s.metadata.get("pnl", 0)
+            s.signal_metadata.get("pnl", 0)
             for s in signals
-            if s.metadata and s.metadata.get("pnl")
+            if s.signal_metadata and s.signal_metadata.get("pnl")
         )
 
         return {

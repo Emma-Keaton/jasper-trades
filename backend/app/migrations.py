@@ -305,7 +305,10 @@ async def _migrate_trades():
 
 
 async def _migrate_signal_metadata():
-    """Rename signal_data -> metadata on signals table if needed."""
+    """Rename signal_data -> metadata on signals table if needed.
+    
+    The Python attribute is signal_metadata, but the DB column remains 'metadata'.
+    """
     existing = await get_existing_columns("signals")
     if "signal_data" in existing and "metadata" not in existing:
         try:

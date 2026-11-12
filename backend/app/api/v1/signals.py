@@ -57,7 +57,7 @@ async def list_signals(
                 "reasoning": s.reasoning,
                 "created_at": s.created_at.isoformat(),
                 "expires_at": s.expires_at.isoformat(),
-                "metadata": s.metadata,
+                "metadata": s.signal_metadata,
                 "is_public": s.is_public,
                 "copied_by": s.copied_by,
             }
@@ -97,7 +97,7 @@ async def get_active_signals(
                 "reasoning": s.reasoning,
                 "created_at": s.created_at.isoformat() if s.created_at else None,
                 "expires_at": s.expires_at.isoformat() if s.expires_at else None,
-                "metadata": s.metadata,
+                "metadata": s.signal_metadata,
             }
             for s in signals
         ],
@@ -121,9 +121,9 @@ async def acknowledge_signal(
     if not signal:
         raise HTTPException(status_code=404, detail="Signal not found")
 
-    metadata = dict(signal.metadata or {})
+    metadata = dict(signal.signal_metadata or {})
     metadata["acknowledged_at"] = datetime.utcnow().isoformat()
-    signal.metadata = metadata
+    signal.signal_metadata = metadata
     await db.commit()
     await db.refresh(signal)
 
