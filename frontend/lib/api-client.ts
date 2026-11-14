@@ -652,4 +652,4 @@ export const kronosAPI = {
   getHealth: () => apiRequest<unknown>('/api/v1/kronos/health'),
 };
 
-export { API_URL, KRONOS_URL };
+export { API_URL };
