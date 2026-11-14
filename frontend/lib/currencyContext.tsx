@@ -166,7 +166,11 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
         }));
       }
     } catch (e) {
-      console.error('[CurrencyContext] Failed to load currency preference:', e);
+      // Backend may be unavailable during local dev or before first start;
+      // silently fall back to defaults already set in initialState.
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[CurrencyContext] Backend unavailable, using default currency preference');
+      }
     }
   };
 
@@ -183,24 +187,20 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
         fetch(`${API_URL}/api/v1/forex/rate/USD/CNY`, { headers: { 'X-Device-ID': deviceId } }),
       ];
 
-      const results = await Promise.all(promises);
+      const results = await Promise.allSettled(promises);
       const newRates: Record<string, number> = {};
 
-      if (results[0].ok) {
-        const data = await results[0].json();
-        newRates['NGN/USD'] = data.data?.rate || 0;
-      }
-      if (results[1].ok) {
-        const data = await results[1].json();
-        newRates['USD/NGN'] = data.data?.rate || 0;
-      }
-      if (results[2].ok) {
-        const data = await results[2].json();
-        newRates['CNY/USD'] = data.data?.rate || 0;
-      }
-      if (results[3].ok) {
-        const data = await results[3].json();
-        newRates['USD/CNY'] = data.data?.rate || 0;
+      const pairs = ['NGN/USD', 'USD/NGN', 'CNY/USD', 'USD/CNY'];
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result.status === 'fulfilled' && result.value.ok) {
+          try {
+            const data = await result.value.json();
+            newRates[pairs[i]] = data.data?.rate || 0;
+          } catch {
+            // ignore parse errors for individual pairs
+          }
+        }
       }
 
       setState(prev => ({
@@ -211,11 +211,11 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
         isLoading: false,
       }));
     } catch (e) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: e instanceof Error ? e.message : 'Failed to fetch rate',
-      }));
+      // Backend may be unavailable; fall back to default rates already in state.
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[CurrencyContext] Backend unavailable, using default rates');
+      }
+      setState(prev => ({ ...prev, isLoading: false }));
     }
   }, []);
 
