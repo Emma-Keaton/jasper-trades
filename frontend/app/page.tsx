@@ -11,6 +11,7 @@ import { usePortfolioHistory } from '@/hooks/usePortfolioHistory';
 
 import { useCurrency } from '@/lib/currencyContext';
 import { fetchTradingMode } from '@/lib/preferences';
+import { API_URL } from '@/lib/constants';
 import { useTheme } from '@/lib/theme';
 import type { Holding, TradeHistoryItem, Toast, WatchedEntry } from '@/app/types';
 import { Badge } from '@/components/ui';
@@ -62,6 +63,7 @@ const [cash, setCash] = useState<number>(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 const [, setWsStatus] = useState<string>('disconnected');
+const [backendConnected, setBackendConnected] = useState<boolean>(false);
   const [selectedAlphaFactors, setSelectedAlphaFactors] = useState<{id: string; name: string}[]>([]);
   const [portfolioId, setPortfolioId] = useState<number | null>(null);
 
@@ -75,6 +77,37 @@ const [, setWsStatus] = useState<string>('disconnected');
     },
     onStatusChange: setWsStatus,
   });
+
+  // HTTP health check for backend REST API availability
+  useEffect(() => {
+    let cancelled = false;
+    let interval: NodeJS.Timeout;
+
+    const checkHealth = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/v1/status`, {
+          headers: { 'X-Device-ID': 'default-device' },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!cancelled) {
+          setBackendConnected(res.ok);
+        }
+      } catch {
+        if (!cancelled) {
+          setBackendConnected(false);
+        }
+      }
+    };
+
+    checkHealth();
+    interval = setInterval(checkHealth, 5000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data: portfolioHistory } = usePortfolioHistory({ portfolioId: portfolioId || 1, period: '1m', refreshInterval: 30000 });
 
@@ -450,8 +483,8 @@ case 'trades':
               </div>
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                  <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                  {isConnected ? 'Connected' : 'Offline'}
+                  <span className={`h-1.5 w-1.5 rounded-full ${backendConnected && isConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  {backendConnected && isConnected ? 'Connected' : 'Offline'}
                 </span>
                 <Badge tone={tradingMode === 'live' ? 'accent' : 'up'}>
                   {tradingMode === 'live' ? 'Live' : 'Practice'}
