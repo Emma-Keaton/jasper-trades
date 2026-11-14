@@ -49,7 +49,17 @@ export function ThemeInit() {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => getInitialTheme());
+  // Always initialise to 'light' so SSR and the first client render match,
+  // preventing a hydration mismatch. The stored / OS theme is applied in
+  // useEffect after mount (the inline <script> in layout.tsx already sets the
+  // <html class="dark"> class before first paint, so there is no flash).
+  const [theme, setThemeState] = useState<Theme>('light');
+
+  useEffect(() => {
+    const stored = getInitialTheme();
+    setThemeState(stored);
+    applyTheme(stored);
+  }, []);
 
   useEffect(() => {
     applyTheme(theme);
