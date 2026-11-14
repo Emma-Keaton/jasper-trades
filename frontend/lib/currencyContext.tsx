@@ -128,7 +128,12 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
         };
 
         ws.onerror = (error) => {
-          console.error('[CurrencyContext] WebSocket error:', error);
+          // WebSocket error events carry an empty {} object in browsers;
+          // the onclose handler already manages reconnection, so only log
+          // when there's meaningful detail to avoid console spam.
+          if (process.env.NODE_ENV === 'development' && error) {
+            console.warn('[CurrencyContext] WebSocket error (reconnecting):', error);
+          }
           setWsConnected(false);
         };
       } catch (e) {
