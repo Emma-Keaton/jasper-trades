@@ -60,13 +60,12 @@ const [cash, setCash] = useState<number>(0);
   const [factorStats, setFactorStats] = useState<{ traded: number; watching: number }>({ traded: 0, watching: 0 });
   const [portfolioInitialized, setPortfolioInitialized] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [backendConnected, setBackendConnected] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 const [, setWsStatus] = useState<string>('disconnected');
   const [selectedAlphaFactors, setSelectedAlphaFactors] = useState<{id: string; name: string}[]>([]);
   const [portfolioId, setPortfolioId] = useState<number | null>(null);
 
-  usePriceStream({
+  const { isConnected } = usePriceStream({
     onPriceUpdate: (update) => {
       setHoldings(prev => prev.map(h =>
         h.symbol === update.symbol
@@ -451,8 +450,8 @@ case 'trades':
               </div>
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                  <span className={`h-1.5 w-1.5 rounded-full ${backendConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                  {backendConnected ? 'Connected' : 'Offline'}
+                  <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  {isConnected ? 'Connected' : 'Offline'}
                 </span>
                 <Badge tone={tradingMode === 'live' ? 'accent' : 'up'}>
                   {tradingMode === 'live' ? 'Live' : 'Practice'}

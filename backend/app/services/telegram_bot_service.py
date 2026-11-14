@@ -58,7 +58,13 @@ class TelegramBotService:
 
             logger.info("Telegram Bot handlers registered")
         except Exception as e:
-            logger.error(f"Failed to initialize Telegram Bot: {e}")
+            # 'cannot create weak reference' can occur in some async contexts;
+            # degrade gracefully rather than crashing the backend.
+            msg = str(e)
+            if "weak reference" in msg:
+                logger.warning(f"Telegram Bot unavailable in this context: {e}")
+            else:
+                logger.error(f"Failed to initialize Telegram Bot: {e}")
             raise
 
     def _register_handlers(self):

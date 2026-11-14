@@ -712,7 +712,13 @@ class MarketDataService:
             }
 
         except Exception as e:
-            logger.error(f"Trove forex error: {e}")
+            # Trove sandbox URL has a known SSL hostname mismatch (wildcard cert
+            # for *.trovefinance.com doesn't match sandbox.api.trovefinance.com).
+            # Fallback to Alpha Vantage / ExchangeRate-API handles this gracefully.
+            if "CERTIFICATE_VERIFY_FAILED" in str(e) or "SSL" in str(e):
+                logger.debug(f"Trove forex SSL error (expected for sandbox): {e}")
+            else:
+                logger.warning(f"Trove forex error: {e}")
             return {'success': False, 'error': str(e), 'provider': 'trove'}
 
     def get_available_providers(self) -> Dict[str, bool]:
