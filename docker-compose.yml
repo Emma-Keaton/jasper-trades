@@ -40,6 +40,34 @@ services:
       start_period: 40s
 
   # ===========================================
+  # Kronos Forecast Service (Local + Cloud)
+  # ===========================================
+  kronos:
+    build:
+      context: ./kronos
+      dockerfile: Dockerfile.kronos
+    container_name: jasper-kronos
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - KRONOS_SERVICE_URL=http://kronos:8001
+      - KRONOS_API_KEY=${KRONOS_API_KEY:-}
+      - KRONOS_MODEL=NeoQuasar/Kronos-mini
+      - KRONOS_LOCAL_PORT=8001
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - kronos_cache:/root/.cache/huggingface
+    networks:
+      - jasper-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ===========================================
   # Backend (FastAPI - Jasper Trades)
   # ===========================================
   backend:
@@ -106,6 +134,8 @@ services:
     depends_on:
       whatsapp:
         condition: service_healthy
+      kronos:
+        condition: service_healthy
     networks:
       - jasper-network
     healthcheck:
@@ -152,4 +182,6 @@ volumes:
   whatsapp_data:
     driver: local
   backend_data:
+    driver: local
+  kronos_cache:
     driver: local

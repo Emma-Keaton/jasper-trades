@@ -11,6 +11,10 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000
 // Backend WebSocket base (converted to ws/wss by clients)
 export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
 
+// Kronos forecast service URL (local or cloud Modal)
+// Local: http://localhost:8001  |  Cloud: https://jasper-kronos--web-xxx.modal.run
+export const KRONOS_URL = process.env.NEXT_PUBLIC_KRONOS_URL || 'http://localhost:8001';
+
 // ---------------------------------------------------------------------------
 // Market data: Nigeria-accessible CEX set (priority-ordered). The backend
 // geo-probe prunes these to whatever actually works from the deployment region.

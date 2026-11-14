@@ -634,4 +634,22 @@ export const systemAPI = {
   getMarketData: () => apiRequest<unknown>('/api/v1/system/market-data'),
 };
 
-export { API_URL };
+// ============ KRONOS APIs (forecast/prediction) ============
+// These route through the backend, which proxies to the Kronos service
+// (localhost:8001 for local, Modal cloud URL for production).
+export const kronosAPI = {
+  getStats: () => apiRequest<unknown>('/api/v1/system/kronos/stats'),
+  predictDirection: (symbol: string, horizon?: number) =>
+    apiRequest<unknown>('/api/v1/kronos/predict', {
+      method: 'POST',
+      body: JSON.stringify({ symbol, horizon: horizon || 24 }),
+    }),
+  predictBatch: (symbols: string[], horizon?: number) =>
+    apiRequest<unknown>('/api/v1/kronos/predict/batch', {
+      method: 'POST',
+      body: JSON.stringify({ symbols, horizon: horizon || 24 }),
+    }),
+  getHealth: () => apiRequest<unknown>('/api/v1/kronos/health'),
+};
+
+export { API_URL, KRONOS_URL };

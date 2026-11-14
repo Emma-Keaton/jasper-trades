@@ -73,6 +73,7 @@ from app.api.v1 import memecoin  # Solana memecoin discovery (DexScreener)
 from app.api.v1 import market_data  # Unified market-data router (trending/prices/providers)
 from app.api.v1 import watchlist  # Per-device durable symbol watchlist
 from app.api.v1 import factor_trading  # Factor-sweep results (traded + watching)
+from app.api.v1 import kronos  # Kronos forecast service proxy
 
 # cTrader OAuth token refresh scheduler
 try:
@@ -587,7 +588,8 @@ app.include_router(memecoin.router, prefix="/api/v1", tags=["memecoin"])  # Sola
 app.include_router(dex_chains.router, prefix="/api/v1", tags=["dex-chains"])  # Dex chain watchers
 app.include_router(market_data.router, prefix="/api/v1", tags=["market-data"])  # unified market data
 app.include_router(watchlist.router, prefix="/api/v1", tags=["watchlist"])  # durable watchlist
-app.include_router(factor_trading.router, prefix="/api/v1", tags=["factor-trading"])  # factor results
+app.include_router(factor_trading.router, prefix="/api/v1", tags=["factor-trading"])
+app.include_router(kronos.router, prefix="/api/v1", tags=["kronos"])  # factor results
 
 
 @app.get("/")

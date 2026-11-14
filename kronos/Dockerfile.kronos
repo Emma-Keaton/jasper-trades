@@ -1,0 +1,31 @@
+# Dockerfile.kronos — Kronos Forecast Service container
+# CPU-only, optimised for 2GB RAM laptops and cloud deployment
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    wget \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies (CPU-only torch)
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install torch --no-cache-dir --index-url https://download.pytorch.org/whl/cpu
+
+# Copy application code
+COPY kronos_service/ ./kronos_service/
+COPY kronos_lib/ ./kronos_lib/
+COPY start_kronos.py ./
+
+# Create cache directory for Hugging Face weights
+RUN mkdir -p /root/.cache/huggingface
+
+# Expose port
+EXPOSE 8001
+
+# Run the local service
+CMD ["python", "start_kronos.py"]
