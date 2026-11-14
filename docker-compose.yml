@@ -51,7 +51,6 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - KRONOS_SERVICE_URL=http://kronos:8001
       - KRONOS_API_KEY=${KRONOS_API_KEY:-}
       - KRONOS_MODEL=NeoQuasar/Kronos-mini
       - KRONOS_LOCAL_PORT=8001
@@ -123,8 +122,10 @@ services:
       - LOG_LEVEL=INFO
       - LOG_FORMAT=json
       
-      # Kronos (4GB RAM optimized)
-      - KRONOS_MODEL=kronos-mini
+      # Kronos - connects to kronos service via Docker service name
+      - KRONOS_SERVICE_URL=http://kronos:8001
+      - KRONOS_API_KEY=${KRONOS_API_KEY:-}
+      - KRONOS_MODEL=NeoQuasar/Kronos-mini
       - KRONOS_FORECAST_HORIZON=50
       - KRONOS_BATCH_SIZE=3
       - KRONOS_MEMORY_THRESHOLD=85.0
