@@ -1,18 +1,4 @@
 #!/usr/bin/env pwsh
-#===============================================================================
-# Jasper Trades — Start All Servers (PowerShell)
-#===============================================================================
-# Checks/installs all dependencies (Python, Node.js, pip packages, npm packages,
-# Kronos-mini model from Hugging Face), configures .env files, and launches all
-# three servers in separate PowerShell windows:
-#
-#   Frontend:  http://localhost:3000
-#   Backend:   http://localhost:8000
-#   Kronos:    http://localhost:8001
-#
-# Press Ctrl+C in THIS window to stop all servers.
-#===============================================================================
-
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
@@ -23,7 +9,6 @@ $KRONOS   = "$ROOT\kronos"
 
 $KRONOS_API_KEY = [System.Web.Security.Membership]::GeneratePassword(32, 0)
 
-# Colours
 Write-Host @"
 ================================================================================
    Jasper Trades — Setup & Launcher (PowerShell)
@@ -31,9 +16,6 @@ Write-Host @"
 ================================================================================
 "@ -ForegroundColor Cyan
 
-#-------------------------------------------------------------------------------
-# Helper functions
-#-------------------------------------------------------------------------------
 function Test-Command($cmd) {
     return (Get-Command $cmd -ErrorAction SilentlyContinue) -ne $null
 }
@@ -56,7 +38,6 @@ function Start-PowerShellWindow($Title, $ScriptBlock) {
 #-------------------------------------------------------------------------------
 Write-STEP "Checking prerequisites..."
 
-# Python
 if (-not (Test-Command python)) {
     Write-ERR "Python not found. Install Python 3.11+ from https://python.org/"
     exit 1
@@ -64,18 +45,6 @@ if (-not (Test-Command python)) {
 $pyVer = (python --version 2>&1).Trim()
 Write-OK "$pyVer detected"
 
-# Validate Python 3.11+
-$pyVersionMatch = $pyVer -match 'Python (\d+)\.(\d+)'
-if ($pyVersionMatch) {
-    $pyMajor = [int]$Matches[1]
-    $pyMinor = [int]$Matches[2]
-    if ($pyMajor -lt 3 -or ($pyMajor -eq 3 -and $pyMinor -lt 11)) {
-        Write-ERR "Python 3.11+ required, found $pyVer"
-        exit 1
-    }
-}
-
-# Node.js
 if (-not (Test-Command node)) {
     Write-ERR "Node.js not found. Install Node.js 20+ from https://nodejs.org/"
     exit 1
@@ -83,29 +52,27 @@ if (-not (Test-Command node)) {
 $nodeVer = (node --version 2>&1).Trim()
 Write-OK "$nodeVer detected"
 
-# npm
+if (-not (Test-Command npm)) {
+    Write-ERR "npm not found."
+    exit 1
+}
+$npmVer = (npm --version 2>&1).Trim()
+Write-OK "npm $npmVer detected"
 
 #-------------------------------------------------------------------------------
 # 1b. Install missing Python packages
 #-------------------------------------------------------------------------------
 Write-STEP "Checking/installing missing Python packages..."
 
-# Ensure pip is available
 if (-not (Test-Command pip)) {
-    Write-INF "pip not found directly, trying python -m pip"
     $pipCmd = "python -m pip"
 } else {
     $pipCmd = "pip"
 }
 
-# Upgrade pip first
 Write-INF "Upgrading pip..."
 & $pipCmd install --upgrade pip -q 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-WARN "pip upgrade failed, continuing with existing version"
-}
 
-# Install core Python packages needed across the project
 $requiredPyPkgs = @("fastapi", "uvicorn", "pydantic", "pydantic-settings", "httpx", "python-dotenv", "psutil", "huggingface_hub", "safetensors")
 
 foreach ($pkg in $requiredPyPkgs) {
@@ -124,7 +91,6 @@ foreach ($pkg in $requiredPyPkgs) {
     }
 }
 
-# Install PyTorch CPU (2GB RAM friendly)
 Write-STEP "Installing PyTorch CPU (2GB RAM friendly)..."
 $torchCheck = python -c "import torch; print(torch.__version__)" 2>$null
 if ($LASTEXITCODE -ne 0) {
@@ -140,15 +106,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 #-------------------------------------------------------------------------------
-# 1c. Install missing npm packages
-#-------------------------------------------------------------------------------
-Write-STEP "Checking/installing npm packages..."
-if (Test-Path "$FRONTEND\package.json") {
-    Write-INF "Running npm install in frontend..."
-    cd $FRONTEND
-    npm install --no-audit --no-fund
-    if ($LASTEXITCODE -eq 0) {
-        Write-OK "Frontend npm packages installed"
 
 #-------------------------------------------------------------------------------
 # 2. Python virtual environments & dependencies
@@ -192,7 +149,6 @@ function Setup-PythonVenv($Dir, $RequirementsFile, $ExtraPkgs, $InstallTorchCpu)
     return $py
 }
 
-# Backend
 if (Test-Path "$BACKEND\requirements.txt") {
     $backendPy = Setup-PythonVenv -Dir $BACKEND `
         -RequirementsFile "$BACKEND\requirements.txt" `
@@ -203,25 +159,19 @@ if (Test-Path "$BACKEND\requirements.txt") {
     $backendPy = Join-Path (Join-Path $BACKEND ".venv") "Scripts\python.exe"
 }
 
-# Kronos
 $kronosPy = $null
 if (Test-Path $KRONOS) {
-
-#-------------------------------------------------------------------------------
-# 3. Frontend npm dependencies
-#-------------------------------------------------------------------------------
-if (Test-Path "$FRONTEND\package.json") {
-    Write-STEP "Installing frontend npm dependencies..."
-    cd $FRONTEND
-    npm install | Out-Null
-    Write-OK "Frontend npm dependencies installed"
-    cd $ROOT
-} else {
-    Write-WARN "No frontend package.json found"
+    if (Test-Path "$KRONOS\requirements.txt") {
+        $kronosPy = Setup-PythonVenv -Dir $KRONOS `
+            -RequirementsFile "$KRONOS\requirements.txt" `
+            -ExtraPkgs @() `
+            -InstallTorchCpu $true
+    } else {
+        Write-WARN "No kronos requirements.txt found"
+    }
 }
 
 #-------------------------------------------------------------------------------
-# 4. Download Kronos-mini model from Hugging Face (~16 MB, fits 2GB RAM)
 #-------------------------------------------------------------------------------
 if ($kronosPy -and (Test-Path "$KRONOS\start_kronos.py")) {
     Write-STEP "Downloading Kronos-mini model from Hugging Face (~16 MB, fits 2GB RAM)..."
@@ -262,6 +212,11 @@ for attempt in range(1, max_retries + 1):
 '@
     & $kronosPy -c $dlScript
     if ($LASTEXITCODE -eq 0) {
+        Write-OK "Kronos-mini model and tokenizer downloaded successfully"
+    } else {
+        Write-WARN "Kronos model download had issues - will use fallback forecaster"
+    }
+}
 
 #-------------------------------------------------------------------------------
 # 5. Environment files
@@ -290,7 +245,6 @@ function Ensure-EnvFile($ExamplePath, $TargetPath, $Replacements) {
     }
 }
 
-# Backend .env
 $backendReplacements = @{
     "KRONOS_SERVICE_URL" = "http://localhost:8001"
     "KRONOS_API_KEY"     = $KRONOS_API_KEY
@@ -299,7 +253,6 @@ $backendReplacements = @{
 }
 Ensure-EnvFile -ExamplePath "$BACKEND\.env.example" -TargetPath "$BACKEND\.env" -Replacements $backendReplacements
 
-# Frontend .env
 $frontendReplacements = @{
     "NEXT_PUBLIC_API_URL"     = "http://localhost:8000"
     "NEXT_PUBLIC_WS_URL"      = "ws://localhost:8000"
@@ -307,7 +260,6 @@ $frontendReplacements = @{
 }
 Ensure-EnvFile -ExamplePath "$FRONTEND\.env.example" -TargetPath "$FRONTEND\.env" -Replacements $frontendReplacements
 
-# Kronos .env
 $kronosReplacements = @{
     "KRONOS_SERVICE_URL" = "http://localhost:8001"
     "KRONOS_API_KEY"     = $KRONOS_API_KEY
@@ -396,30 +348,20 @@ try {
 } catch {
     Cleanup
 }
-        $kronosPy = Setup-PythonVenv -Dir $KRONOS `
-            -RequirementsFile "$KRONOS\requirements.txt" `
-            -ExtraPkgs @() `
-            -InstallTorchCpu $true
-    } else {
-        Write-WARN "No kronos requirements.txt found"
-    }
-}
+# 1c. Install npm packages
+#-------------------------------------------------------------------------------
+Write-STEP "Checking/installing npm packages..."
+if (Test-Path "$FRONTEND\package.json") {
+    Write-INF "Running npm install in frontend..."
+    cd $FRONTEND
+    npm install --no-audit --no-fund
+    if ($LASTEXITCODE -eq 0) {
+        Write-OK "Frontend npm packages installed"
     } else {
         Write-WARN "npm install had warnings (may be non-fatal)"
     }
     cd $ROOT
 } else {
     Write-WARN "No frontend package.json found, skipping npm install"
-}
-if (-not (Test-Command npm)) {
-    Write-ERR "npm not found."
-    exit 1
-}
-$npmVer = (npm --version 2>&1).Trim()
-Write-OK "npm $npmVer detected"
-    Write-INF "Opening new PowerShell window: $Title"
-    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
-    $psArgs  = "-NoExit -EncodedCommand $encoded"
-    Start-Process powershell.exe -ArgumentList $psArgs -WindowTitle $Title
 }
 ﻿
