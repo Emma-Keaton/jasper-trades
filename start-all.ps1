@@ -44,6 +44,12 @@ function Write-ERR($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red }
 function Write-INF($msg) { Write-Host "[INFO] $msg" -ForegroundColor Cyan }
 function Write-STEP($msg) { Write-Host "`n>> $msg" -ForegroundColor Blue }
 
+function Start-PowerShellWindow($Title, $ScriptBlock) {
+    Write-INF "Opening new PowerShell window: $Title"
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
+    $psArgs  = "-NoExit -EncodedCommand $encoded"
+    Start-Process powershell.exe -ArgumentList $psArgs -WindowTitle $Title
+}
 
 #-------------------------------------------------------------------------------
 # 1. Prerequisites
@@ -78,12 +84,6 @@ $nodeVer = (node --version 2>&1).Trim()
 Write-OK "$nodeVer detected"
 
 # npm
-if (-not (Test-Command npm)) {
-    Write-ERR "npm not found."
-    exit 1
-}
-$npmVer = (npm --version 2>&1).Trim()
-Write-OK "npm $npmVer detected"
 
 #-------------------------------------------------------------------------------
 # 1b. Install missing Python packages
@@ -143,6 +143,12 @@ if ($LASTEXITCODE -ne 0) {
 # 1c. Install missing npm packages
 #-------------------------------------------------------------------------------
 Write-STEP "Checking/installing npm packages..."
+if (Test-Path "$FRONTEND\package.json") {
+    Write-INF "Running npm install in frontend..."
+    cd $FRONTEND
+    npm install --no-audit --no-fund
+    if ($LASTEXITCODE -eq 0) {
+        Write-OK "Frontend npm packages installed"
 
 #-------------------------------------------------------------------------------
 # 2. Python virtual environments & dependencies
@@ -200,15 +206,6 @@ if (Test-Path "$BACKEND\requirements.txt") {
 # Kronos
 $kronosPy = $null
 if (Test-Path $KRONOS) {
-    if (Test-Path "$KRONOS\requirements.txt") {
-        $kronosPy = Setup-PythonVenv -Dir $KRONOS `
-            -RequirementsFile "$KRONOS\requirements.txt" `
-            -ExtraPkgs @() `
-            -InstallTorchCpu $true
-    } else {
-        Write-WARN "No kronos requirements.txt found"
-    }
-}
 
 #-------------------------------------------------------------------------------
 # 3. Frontend npm dependencies
@@ -265,10 +262,6 @@ for attempt in range(1, max_retries + 1):
 '@
     & $kronosPy -c $dlScript
     if ($LASTEXITCODE -eq 0) {
-        Write-OK "Kronos-mini model and tokenizer downloaded successfully"
-    } else {
-        Write-WARN "Kronos model download had issues - will use fallback forecaster"
-    }
 
 #-------------------------------------------------------------------------------
 # 5. Environment files
@@ -321,11 +314,6 @@ $kronosReplacements = @{
     "KRONOS_MODEL"       = "NeoQuasar/Kronos-mini"
     "KRONOS_LOCAL_PORT"  = "8001"
 }
-Ensure-EnvFile -ExamplePath "$KRONOS\.env.example" -TargetPath "$KRONOS\.env" -Replacements $kronosReplacements
-
-Write-OK "Environment files configured"
-Write-INF "Kronos API key: $KRONOS_API_KEY"
-
 #-------------------------------------------------------------------------------
 # 6. Start all three servers in separate PowerShell windows
 #-------------------------------------------------------------------------------
@@ -408,8 +396,14 @@ try {
 } catch {
     Cleanup
 }
-    if ($LASTEXITCODE -eq 0) {
-        Write-OK "Frontend npm packages installed"
+        $kronosPy = Setup-PythonVenv -Dir $KRONOS `
+            -RequirementsFile "$KRONOS\requirements.txt" `
+            -ExtraPkgs @() `
+            -InstallTorchCpu $true
+    } else {
+        Write-WARN "No kronos requirements.txt found"
+    }
+}
     } else {
         Write-WARN "npm install had warnings (may be non-fatal)"
     }
@@ -417,7 +411,12 @@ try {
 } else {
     Write-WARN "No frontend package.json found, skipping npm install"
 }
-function Start-PowerShellWindow($Title, $ScriptBlock) {
+if (-not (Test-Command npm)) {
+    Write-ERR "npm not found."
+    exit 1
+}
+$npmVer = (npm --version 2>&1).Trim()
+Write-OK "npm $npmVer detected"
     Write-INF "Opening new PowerShell window: $Title"
     $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
     $psArgs  = "-NoExit -EncodedCommand $encoded"
