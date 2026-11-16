@@ -152,23 +152,36 @@ if (Test-Path "$FRONTEND\package.json") {
 }
 
 #-------------------------------------------------------------------------------
-# 4. Download Kronos model from Hugging Face
+# 4. Download Kronos-mini model from Hugging Face (~16 MB, fits 2GB RAM)
 #-------------------------------------------------------------------------------
 if ($kronosPy -and (Test-Path "$KRONOS\start_kronos.py")) {
     Write-STEP "Downloading Kronos-mini model from Hugging Face (~16 MB, fits 2GB RAM)..."
     $dlScript = @'
-from huggingface_hub import hf_hub_download
-repo_id = "NeoQuasar/Kronos"
-files = ["kronos-mini.safetensors", "kronos-mini-tokenizer.json"]
-for f in files:
-    try:
-        p = hf_hub_download(repo_id=repo_id, filename=f)
-        print(f"Downloaded {f} -> {p}")
-    except Exception as e:
-        print(f"Failed to download {f}: {e}")
+from huggingface_hub import snapshot_download
+import os
+
+# Download Kronos-mini model weights
+model_dir = snapshot_download(
+    repo_id="NeoQuasar/Kronos-mini",
+    local_dir="./models/kronos-mini",
+    local_dir_use_symlinks=False,
+)
+print(f"Model downloaded to: {model_dir}")
+
+# Download Kronos tokenizer
+tok_dir = snapshot_download(
+    repo_id="NeoQuasar/Kronos-Tokenizer-2k",
+    local_dir="./models/kronos-tokenizer-2k",
+    local_dir_use_symlinks=False,
+)
+print(f"Tokenizer downloaded to: {tok_dir}")
 '@
     & $kronosPy -c $dlScript
-    Write-OK "Kronos model download attempted"
+    if ($LASTEXITCODE -eq 0) {
+        Write-OK "Kronos-mini model and tokenizer downloaded successfully"
+    } else {
+        Write-WARN "Kronos model download had issues - will use fallback forecaster"
+    }
 }
 
 #-------------------------------------------------------------------------------

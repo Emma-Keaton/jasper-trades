@@ -62,8 +62,8 @@ const [cash, setCash] = useState<number>(0);
   const [portfolioInitialized, setPortfolioInitialized] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-const [, setWsStatus] = useState<string>('disconnected');
-const [backendConnected, setBackendConnected] = useState<boolean>(false);
+  const [, setWsStatus] = useState<string>('disconnected');
+  const [backendConnected, setBackendConnected] = useState<boolean>(false);
   const [selectedAlphaFactors, setSelectedAlphaFactors] = useState<{id: string; name: string}[]>([]);
   const [portfolioId, setPortfolioId] = useState<number | null>(null);
 
@@ -186,7 +186,7 @@ const fetchBackendData = useCallback(async () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setBackendConnected]);
 
   const refreshBackendData = useCallback(async () => {
     try {
@@ -223,7 +223,7 @@ const fetchBackendData = useCallback(async () => {
     } catch {
       /* silent */
     }
-  }, [portfolioId]);
+  }, [portfolioId, setBackendConnected]);
 
   useEffect(() => {
     fetchBackendData();
