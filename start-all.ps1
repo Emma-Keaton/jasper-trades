@@ -44,12 +44,6 @@ function Write-ERR($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red }
 function Write-INF($msg) { Write-Host "[INFO] $msg" -ForegroundColor Cyan }
 function Write-STEP($msg) { Write-Host "`n>> $msg" -ForegroundColor Blue }
 
-function Start-PowerShellWindow($Title, $ScriptBlock) {
-    Write-INF "Opening new PowerShell window: $Title"
-    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
-    $psArgs  = "-NoExit -EncodedCommand $encoded"
-    Start-Process powershell.exe -ArgumentList $psArgs -WindowTitle $Title
-}
 
 #-------------------------------------------------------------------------------
 # 1. Prerequisites
@@ -64,6 +58,17 @@ if (-not (Test-Command python)) {
 $pyVer = (python --version 2>&1).Trim()
 Write-OK "$pyVer detected"
 
+# Validate Python 3.11+
+$pyVersionMatch = $pyVer -match 'Python (\d+)\.(\d+)'
+if ($pyVersionMatch) {
+    $pyMajor = [int]$Matches[1]
+    $pyMinor = [int]$Matches[2]
+    if ($pyMajor -lt 3 -or ($pyMajor -eq 3 -and $pyMinor -lt 11)) {
+        Write-ERR "Python 3.11+ required, found $pyVer"
+        exit 1
+    }
+}
+
 # Node.js
 if (-not (Test-Command node)) {
     Write-ERR "Node.js not found. Install Node.js 20+ from https://nodejs.org/"
@@ -71,6 +76,73 @@ if (-not (Test-Command node)) {
 }
 $nodeVer = (node --version 2>&1).Trim()
 Write-OK "$nodeVer detected"
+
+# npm
+if (-not (Test-Command npm)) {
+    Write-ERR "npm not found."
+    exit 1
+}
+$npmVer = (npm --version 2>&1).Trim()
+Write-OK "npm $npmVer detected"
+
+#-------------------------------------------------------------------------------
+# 1b. Install missing Python packages
+#-------------------------------------------------------------------------------
+Write-STEP "Checking/installing missing Python packages..."
+
+# Ensure pip is available
+if (-not (Test-Command pip)) {
+    Write-INF "pip not found directly, trying python -m pip"
+    $pipCmd = "python -m pip"
+} else {
+    $pipCmd = "pip"
+}
+
+# Upgrade pip first
+Write-INF "Upgrading pip..."
+& $pipCmd install --upgrade pip -q 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-WARN "pip upgrade failed, continuing with existing version"
+}
+
+# Install core Python packages needed across the project
+$requiredPyPkgs = @("fastapi", "uvicorn", "pydantic", "pydantic-settings", "httpx", "python-dotenv", "psutil", "huggingface_hub", "safetensors")
+
+foreach ($pkg in $requiredPyPkgs) {
+    Write-INF "Checking $pkg..."
+    $check = python -c "import $pkg" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-INF "Installing $pkg..."
+        & $pipCmd install $pkg -q
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "$pkg installed"
+        } else {
+            Write-WARN "Failed to install $pkg"
+        }
+    } else {
+        Write-OK "$pkg already installed"
+    }
+}
+
+# Install PyTorch CPU (2GB RAM friendly)
+Write-STEP "Installing PyTorch CPU (2GB RAM friendly)..."
+$torchCheck = python -c "import torch; print(torch.__version__)" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-INF "Installing torch (CPU-only)..."
+    & $pipCmd install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu -q
+    if ($LASTEXITCODE -eq 0) {
+        Write-OK "PyTorch CPU installed"
+    } else {
+        Write-WARN "PyTorch CPU install failed - Kronos may not work"
+    }
+} else {
+    Write-OK "PyTorch already installed ($torchCheck)"
+}
+
+#-------------------------------------------------------------------------------
+# 1c. Install missing npm packages
+#-------------------------------------------------------------------------------
+Write-STEP "Checking/installing npm packages..."
 
 #-------------------------------------------------------------------------------
 # 2. Python virtual environments & dependencies
@@ -159,22 +231,37 @@ if ($kronosPy -and (Test-Path "$KRONOS\start_kronos.py")) {
     $dlScript = @'
 from huggingface_hub import snapshot_download
 import os
+import time
 
-# Download Kronos-mini model weights
-model_dir = snapshot_download(
-    repo_id="NeoQuasar/Kronos-mini",
-    local_dir="./models/kronos-mini",
-    local_dir_use_symlinks=False,
-)
-print(f"Model downloaded to: {model_dir}")
+max_retries = 3
+retry_delay = 5
 
-# Download Kronos tokenizer
-tok_dir = snapshot_download(
-    repo_id="NeoQuasar/Kronos-Tokenizer-2k",
-    local_dir="./models/kronos-tokenizer-2k",
-    local_dir_use_symlinks=False,
-)
-print(f"Tokenizer downloaded to: {tok_dir}")
+for attempt in range(1, max_retries + 1):
+    try:
+        model_dir = snapshot_download(
+            repo_id="NeoQuasar/Kronos-mini",
+            local_dir="./models/kronos-mini",
+            local_dir_use_symlinks=False,
+            resume_download=True,
+        )
+        print("Model downloaded to: " + model_dir)
+
+        tok_dir = snapshot_download(
+            repo_id="NeoQuasar/Kronos-Tokenizer-2k",
+            local_dir="./models/kronos-tokenizer-2k",
+            local_dir_use_symlinks=False,
+            resume_download=True,
+        )
+        print("Tokenizer downloaded to: " + tok_dir)
+        break
+    except Exception as e:
+        print("Attempt " + str(attempt) + "/" + str(max_retries) + " failed: " + str(e))
+        if attempt < max_retries:
+            print("Retrying in " + str(retry_delay) + "s...")
+            time.sleep(retry_delay)
+            retry_delay *= 2
+        else:
+            print("All download attempts failed.")
 '@
     & $kronosPy -c $dlScript
     if ($LASTEXITCODE -eq 0) {
@@ -182,7 +269,6 @@ print(f"Tokenizer downloaded to: {tok_dir}")
     } else {
         Write-WARN "Kronos model download had issues - will use fallback forecaster"
     }
-}
 
 #-------------------------------------------------------------------------------
 # 5. Environment files
@@ -258,8 +344,8 @@ trap { Cleanup }
 # Backend
 $backendScript = @"
 cd '$BACKEND'
-\$env:KRONOS_SERVICE_URL='http://localhost:8001'
-\$env:KRONOS_API_KEY='$KRONOS_API_KEY'
+`$env:KRONOS_SERVICE_URL='http://localhost:8001'
+`$env:KRONOS_API_KEY='$KRONOS_API_KEY'
 & '$backendPy' -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 "@
 $p = Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $backendScript -WindowTitle "Backend (:8000)" -PassThru
@@ -272,9 +358,9 @@ Start-Sleep -Seconds 3
 # Frontend
 $frontendScript = @"
 cd '$FRONTEND'
-\$env:NEXT_PUBLIC_API_URL='http://localhost:8000'
-\$env:NEXT_PUBLIC_WS_URL='ws://localhost:8000'
-\$env:NEXT_PUBLIC_KRONOS_URL='http://localhost:8001'
+`$env:NEXT_PUBLIC_API_URL='http://localhost:8000'
+`$env:NEXT_PUBLIC_WS_URL='ws://localhost:8000'
+`$env:NEXT_PUBLIC_KRONOS_URL='http://localhost:8001'
 npm run dev
 "@
 $p = Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $frontendScript -WindowTitle "Frontend (:3000)" -PassThru
@@ -285,8 +371,8 @@ Write-OK "Frontend window started (PID $($p.Id))"
 if ($kronosPy -and (Test-Path "$KRONOS\start_kronos.py")) {
     $kronosScript = @"
 cd '$KRONOS'
-\$env:KRONOS_SERVICE_URL='http://localhost:8001'
-\$env:KRONOS_API_KEY='$KRONOS_API_KEY'
+`$env:KRONOS_SERVICE_URL='http://localhost:8001'
+`$env:KRONOS_API_KEY='$KRONOS_API_KEY'
 & '$kronosPy' start_kronos.py
 "@
     $p = Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $kronosScript -WindowTitle "Kronos (:8001)" -PassThru
@@ -322,3 +408,19 @@ try {
 } catch {
     Cleanup
 }
+    if ($LASTEXITCODE -eq 0) {
+        Write-OK "Frontend npm packages installed"
+    } else {
+        Write-WARN "npm install had warnings (may be non-fatal)"
+    }
+    cd $ROOT
+} else {
+    Write-WARN "No frontend package.json found, skipping npm install"
+}
+function Start-PowerShellWindow($Title, $ScriptBlock) {
+    Write-INF "Opening new PowerShell window: $Title"
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
+    $psArgs  = "-NoExit -EncodedCommand $encoded"
+    Start-Process powershell.exe -ArgumentList $psArgs -WindowTitle $Title
+}
+﻿
