@@ -57,6 +57,10 @@ class BrokerConnection(Base):
     encrypted_api_key = Column(Text)
     encrypted_api_secret = Column(Text)
 
+    # MetaTrader (MT5/MT4 bridge) account details
+    mt5_server = Column(String(100))  # e.g. "Exness-MT5-Real6" / "ExnessMT4"
+    account_type = Column(String(10), default="demo")  # "demo" (sandbox) or "live" (real)
+
     # Status
     is_active = Column(Boolean, default=True)  # Auto-trading enabled
     is_connected = Column(Boolean, default=False)  # Auth successful

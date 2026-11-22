@@ -379,14 +379,14 @@ function BrokerConnections({ triggerToast }: { triggerToast: (t: 'success' | 'er
       ),
     },
     {
-      id: 'ctrader',
-      name: 'cTrader',
-      desc: 'OAuth2 auto-trading for FX and CFDs.',
-      badge: 'OAuth2',
+      id: 'mt5',
+      name: 'MetaTrader (MT5 / MT4)',
+      desc: 'FX, CFDs, metals & indices via MT5 bridge with MT4 fallback. Demo (sandbox) or live.',
+      badge: 'MT5 · MT4',
       icon: <Globe className="h-4 w-4" />,
       render: ({ triggerToast: tt }) => (
-        <div className="rounded-control border border-slate-200 p-4 dark:border-slate-700">
-          <CTraderBroker triggerToast={tt} />
+        <div className="rounded-control border border-slate-200 p-4 dark:border-slate-700" data-tour="exness-section">
+          <MT5Broker triggerToast={tt} />
         </div>
       ),
     },
@@ -674,52 +674,111 @@ function TigerBroker({
   );
 }
 
-function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error' | 'info', title: string, message: string) => void }) {
+interface MTAccount {
+  id: number;
+  broker_name?: string;
+  broker_type?: string;
+  account_id?: string;
+  mt5_server?: string;
+  account_type?: 'demo' | 'live';
+  account_currency?: string;
+  account_balance?: number;
+}
+
+function MT5Broker({ triggerToast }: { triggerToast: (t: 'success' | 'error' | 'info', title: string, message: string) => void }) {
   const [connecting, setConnecting] = useState(false);
-  const [accounts, setAccounts] = useState<{ id: number; broker_name?: string; broker_type?: string; account_currency?: string; account_balance?: number }[]>([]);
+  const [accounts, setAccounts] = useState<MTAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [platform, setPlatform] = useState<'mt5' | 'mt4'>('mt5');
+  const [brokerName, setBrokerName] = useState('');
+  const [server, setServer] = useState('');
+  const [login, setLogin] = useState('');
+  const [password, setPassword] = useState('');
+  const [accountType, setAccountType] = useState<'demo' | 'live'>('demo');
   const deviceId = getOrCreateDeviceId();
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await apiFetch(`${API_URL}/api/v1/brokers/accounts`, { headers: { 'X-Device-ID': deviceId } });
-        if (res.ok) {
-          const data = await res.json();
-          setAccounts(data.accounts || []);
-        } else {
-          setError(`Failed to load accounts (HTTP ${res.status})`);
-        }
-      } catch (e) {
-        console.error('Failed to fetch cTrader accounts:', e);
-      } finally {
-        setLoading(false);
+  const loadAccounts = async () => {
+    try {
+      const res = await apiFetch(`${API_URL}/api/v1/brokers/accounts`, { headers: { 'X-Device-ID': deviceId } });
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts((data.accounts || []).filter((a: MTAccount) => a.broker_type === 'mt5' || a.broker_type === 'mt4'));
+      } else {
+        setError(`Failed to load accounts (HTTP ${res.status})`);
       }
-    })();
+    } catch (e) {
+      console.error('Failed to fetch MT broker accounts:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAccounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId]);
 
   const connect = async () => {
+    if (!login || !password || !server) {
+      setError('Login, password and server are required.');
+      return;
+    }
     setConnecting(true);
     setError(null);
     try {
-      const res = await apiFetch(`${API_URL}/api/v1/brokers/connect?mode=live`, { headers: { 'X-Device-ID': deviceId } });
+      const res = await apiFetch(`${API_URL}/api/v1/brokers/mt5/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
+        body: JSON.stringify({
+          platform,
+          login,
+          password,
+          server,
+          broker_name: brokerName || undefined,
+          account_type: accountType,
+        }),
+      });
       const data = await res.json();
-      if (data.authorization_url) {
-        window.location.href = data.authorization_url;
+      if (res.ok && data.success) {
+        triggerToast('success', 'MT Broker Connected', `${platform.toUpperCase()} ${accountType === 'demo' ? 'demo (sandbox)' : 'LIVE'} account connected on ${server}`);
+        setPassword('');
+        await loadAccounts();
       } else {
-        setError(data.detail || 'Failed to get authorization URL');
+        setError(data.detail || 'Failed to connect MT broker account');
       }
     } catch (e) {
-      console.error('cTrader connect failed:', e);
+      console.error('MT5 connect failed:', e);
       setError('Connection failed. Please try again.');
     } finally {
       setConnecting(false);
     }
   };
 
+  const toggleMode = async (a: MTAccount) => {
+    const next = a.account_type === 'demo' ? 'live' : 'demo';
+    if (next === 'live' && !confirm('Switch this MT account to LIVE (real money)?')) return;
+    try {
+      const res = await apiFetch(`${API_URL}/api/v1/brokers/mt5/${a.id}/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
+        body: JSON.stringify({ account_type: next }),
+      });
+      if (res.ok) {
+        setAccounts((prev) => prev.map((x) => (x.id === a.id ? { ...x, account_type: next } : x)));
+        triggerToast('success', 'Mode Updated', `Account is now ${next === 'demo' ? 'DEMO (sandbox)' : 'LIVE (real money)'}`);
+      } else {
+        setError('Failed to switch account mode.');
+      }
+    } catch (e) {
+      console.error(e);
+      setError('Failed to switch account mode.');
+    }
+  };
+
   const disconnect = async (id: number) => {
-    if (!confirm('Disconnect this cTrader account? Auto-trading will stop.')) return;
+    if (!confirm('Disconnect this MT broker account? Auto-trading will stop.')) return;
     try {
       const res = await apiFetch(`${API_URL}/api/v1/brokers/disconnect/${id}`, { method: 'POST', headers: { 'X-Device-ID': deviceId } });
       if (res.ok) {
@@ -737,9 +796,10 @@ function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error'
   return (
     <div className="space-y-3">
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        cTrader uses high-security OAuth2. You will log in on cTrader&apos;s secure site — no secrets stored on device.
+        Connect an MT5 account (MT4 falls back automatically) for FX/CFD trading. Demo uses the broker&apos;s sandbox account; live uses real money. Credentials are encrypted at rest.
       </p>
       {error && <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+
       {loading ? (
         <p className="text-xs text-slate-400 dark:text-slate-500">Loading accounts…</p>
       ) : accounts.length > 0 ? (
@@ -748,24 +808,48 @@ function CTraderBroker({ triggerToast }: { triggerToast: (t: 'success' | 'error'
             <li key={a.id} className="rounded-control border border-slate-200 p-3 text-sm dark:border-slate-700">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <p className="font-semibold text-slate-900 dark:text-slate-100">{a.broker_name || 'cTrader account'}</p>
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">{a.broker_name || `${a.broker_type?.toUpperCase()} account`}</p>
                   <p className="text-xs text-slate-400 dark:text-slate-500">
-                    {a.broker_type} · {a.account_currency} · {a.account_balance?.toFixed?.(2)}
+                    {a.broker_type?.toUpperCase()} · login {a.account_id} · {a.mt5_server} · {a.account_currency}
                   </p>
                 </div>
-                <button onClick={() => disconnect(a.id)} className="rounded-full p-1.5 text-slate-400 hover:text-rose-600" aria-label="Disconnect account">
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => toggleMode(a)}
+                    className={`rounded-full px-2 py-1 text-[10px] font-semibold ${a.account_type === 'live' ? 'bg-rose-500/15 text-rose-500' : 'bg-emerald-500/15 text-emerald-500'}`}
+                    title="Toggle demo / live"
+                  >
+                    {a.account_type === 'live' ? 'LIVE' : 'DEMO'}
+                  </button>
+                  <button onClick={() => disconnect(a.id)} className="rounded-full p-1.5 text-slate-400 hover:text-rose-600" aria-label="Disconnect account">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-slate-400 dark:text-slate-500">No cTrader accounts connected yet.</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500">No MetaTrader accounts connected yet.</p>
       )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <select value={platform} onChange={(e) => setPlatform(e.target.value as 'mt5' | 'mt4')} className={inputCls}>
+          <option value="mt5">MetaTrader 5</option>
+          <option value="mt4">MetaTrader 4 (fallback)</option>
+        </select>
+        <input type="text" value={brokerName} onChange={(e) => setBrokerName(e.target.value)} placeholder="Broker name (e.g. Exness)" className={inputCls} />
+        <input type="text" value={server} onChange={(e) => setServer(e.target.value)} placeholder="Server (e.g. Exness-MT5-Real6)" className={inputCls} />
+        <input type="text" value={login} onChange={(e) => setLogin(e.target.value)} placeholder="Login ID" className={inputCls} />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Trading password" className={inputCls} />
+        <select value={accountType} onChange={(e) => setAccountType(e.target.value as 'demo' | 'live')} className={inputCls}>
+          <option value="demo">Demo (sandbox)</option>
+          <option value="live">Live (real money)</option>
+        </select>
+      </div>
       <Button variant="secondary" onClick={connect} disabled={connecting}>
         {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LinkIcon className="h-4 w-4" />}
-        {connecting ? 'Redirecting…' : 'Connect cTrader account'}
+        {connecting ? 'Connecting…' : `Connect ${platform.toUpperCase()} ${accountType === 'demo' ? 'demo' : 'live'} account`}
       </Button>
     </div>
   );

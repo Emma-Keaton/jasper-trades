@@ -225,6 +225,9 @@ async def _migrate_broker_connections():
         ("token_expires_at", "DATETIME", "TIMESTAMP"),
         ("encrypted_api_key", "TEXT", "TEXT"),
         ("encrypted_api_secret", "TEXT", "TEXT"),
+        # MT5/MT4 bridge account details (demo/live toggle per connection)
+        ("mt5_server", "TEXT", "VARCHAR(100)"),
+        ("account_type", "TEXT DEFAULT 'demo'", "VARCHAR(10) DEFAULT 'demo'"),
         ("is_active", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
         ("is_connected", "BOOLEAN DEFAULT 0", "BOOLEAN DEFAULT false"),
         ("connection_status", "TEXT", "VARCHAR(50)"),

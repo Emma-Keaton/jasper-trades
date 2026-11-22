@@ -76,6 +76,8 @@ CREATE TABLE IF NOT EXISTS broker_connections (
 	token_expires_at TIMESTAMP WITHOUT TIME ZONE, 
 	encrypted_api_key TEXT, 
 	encrypted_api_secret TEXT, 
+	mt5_server VARCHAR(100),
+	account_type VARCHAR(10) DEFAULT 'demo',
 		is_active BOOLEAN DEFAULT TRUE,
 		is_connected BOOLEAN DEFAULT FALSE,
 	connection_status VARCHAR(50), 

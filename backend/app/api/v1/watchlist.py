@@ -87,20 +87,20 @@ async def add_watchlist_item(
     device_id: str = Depends(_device_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Pin a symbol to the watchlist (idempotent per device, max 12)."""
+    """Pin a symbol to the watchlist (idempotent per device, max 15)."""
     symbol = req.symbol.strip().upper()
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
 
-    # Enforce 12-item cap
+    # Enforce 15-item cap
     count_result = await db.execute(
         select(WatchlistItem).where(WatchlistItem.device_id == device_id)
     )
     current_count = len(count_result.scalars().all())
-    if current_count >= 12:
+    if current_count >= 15:
         raise HTTPException(
             status_code=409,
-            detail="Watchlist is full. Remove an item first (max 12).",
+            detail="Watchlist is full. Remove an item first (max 15).",
         )
 
     existing = await db.execute(
@@ -133,6 +133,26 @@ async def add_watchlist_item(
             pass
 
     return {"success": True, "already_watched": False, "item": row_to_dict(item)}
+
+
+@router.post("/sync-top-performers")
+async def sync_top_performers(
+    limit: int = 15,
+    force: bool = False,
+    device_id: str = Depends(_device_id),
+):
+    """Populate this device's watchlist with the top 15 performing assets.
+
+    Called when the user presses Start on the dashboard with an empty
+    watchlist: the agent then watches and trades the top performers.
+    Existing (user-starred) items are kept unless `force=true`.
+    """
+    from app.services.auto_executor import populate_device_watchlist
+
+    if limit < 1 or limit > 15:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 15")
+    result = await populate_device_watchlist(device_id, limit=limit, only_if_empty=not force)
+    return result
 
 
 @router.delete("/{symbol}")

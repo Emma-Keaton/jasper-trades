@@ -4,6 +4,7 @@ Brokers Module - Unified interface for all trading brokers.
 from app.brokers.base import BaseBrokerService, OrderResult, PositionData, AccountData
 from app.brokers.ccxt_service import CCXTBrokerService
 from app.brokers.solana_service import SolanaBrokerService
+from app.brokers.mt5_service import MT5BridgeService, get_mt5_bridge
 from app.brokers.registry import (
     BrokerRegistry,
     broker_registry,
@@ -19,6 +20,8 @@ __all__ = [
     "AccountData",
     "CCXTBrokerService",
     "SolanaBrokerService",
+    "MT5BridgeService",
+    "get_mt5_bridge",
     "BrokerRegistry",
     "broker_registry",
     "initialize_brokers",

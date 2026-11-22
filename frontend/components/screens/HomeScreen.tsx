@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Bot, Play, Pause, Sparkles, ArrowRight, Activity } from 'lucide-react';
 import type { Holding, TradeHistoryItem } from '@/app/types';
 import type { EquityDataPoint } from '@/hooks/usePortfolioHistory';
-import { apiFetch, apiRequest } from '@/lib/api-client';
+import { apiFetch, apiRequest, kronosAPI } from '@/lib/api-client';
 import { Card, Stat, Button, Badge, EmptyState, RowLink } from '@/components/ui';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 import type { StepId } from '@/components/screens/SettingsScreen';
@@ -23,6 +23,131 @@ interface HomeScreenProps {
 }
 
 const actionText: Record<string, string> = { BUY: 'Bought', SELL: 'Sold' };
+
+// Kronos forecast widget: calls backend /api/v1/kronos/predict -> Kronos service.
+interface KronosForecastResult {
+  model?: string;
+  last_close?: number;
+  mean_path?: number[];
+  predicted_change?: number;
+  direction?: 'UP' | 'DOWN' | 'FLAT';
+  confidence?: number;
+  probability_up?: number;
+}
+
+function KronosForecastPanel() {
+  const [symbol, setSymbol] = useState<string>('AAPL');
+  const [horizon, setHorizon] = useState<number>(24);
+  const [result, setResult] = useState<KronosForecastResult | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleForecast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await kronosAPI.predictDirection(symbol, horizon);
+      const data = (res as { data?: unknown }).data ?? res;
+      setResult(data as KronosForecastResult);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Forecast request failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const directionColor = (dir: string | undefined) =>
+    dir === 'UP' ? 'text-emerald-600 dark:text-emerald-400' :
+    dir === 'DOWN' ? 'text-rose-600 dark:text-rose-400' :
+    'text-slate-500 dark:text-slate-400';
+
+  return (
+    <Card className="border border-slate-200 dark:border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-slate-100 dark:border-slate-800">
+        <h2 className="text-lg font-display font-bold text-slate-900 dark:text-slate-50" data-onboarding="kronos-forecast">
+          Kronos Forecast
+        </h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Powered by Kronos-mini (NeoQuasar) via local forecast service (:8001)
+        </p>
+      </div>
+      <div className="p-4 space-y-3">
+        <form onSubmit={handleForecast} className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Symbol</label>
+            <input
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+              className="h-9 w-24 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-50 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              placeholder="AAPL"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Horizon (bars)</label>
+            <input
+              type="number"
+              value={horizon}
+              onChange={(e) => setHorizon(Math.max(1, Math.min(512, Number(e.target.value) || 24)))}
+              className="h-9 w-20 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-50 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={loading}
+            className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Forecasting…' : 'Forecast'}
+          </Button>
+        </form>
+
+        {error && (
+          <div className="rounded bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-700">
+            {error}
+          </div>
+        )}
+
+        {result && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded bg-slate-50 dark:bg-slate-800/50 p-3">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Last close</div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">
+                {result.last_close?.toFixed(2) ?? '—'}
+              </div>
+            </div>
+            <div className="rounded bg-slate-50 dark:bg-slate-800/50 p-3">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Direction</div>
+              <div className={`text-sm font-semibold ${directionColor(result.direction)}`}>
+                {result.direction ?? '—'}
+              </div>
+            </div>
+            <div className="rounded bg-slate-50 dark:bg-slate-800/50 p-3">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Confidence</div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">
+                {result.confidence != null ? `${result.confidence}%` : '—'}
+              </div>
+            </div>
+            {result.predicted_change != null && (
+              <div className="rounded bg-slate-50 dark:bg-slate-800/50 p-3 col-span-3 md:col-span-3">
+                <div className="text-xs text-slate-500 dark:text-slate-400">Predicted change ({result.model ?? 'Kronos-mini'})</div>
+                <div className={`text-sm font-semibold ${result.predicted_change >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                  {result.predicted_change >= 0 ? '+' : ''}{result.predicted_change.toFixed(2)}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!result && !error && !loading && (
+          <div className="text-center py-6 text-xs text-slate-500 dark:text-slate-400">
+            Enter a symbol and press Forecast to run a Kronos-mini prediction.
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 // Shared helper: run-state read persisted in the DB (per device).
 export async function isAiRunning(): Promise<boolean> {
@@ -115,11 +240,22 @@ export default function HomeScreen({
       return;
     }
 
-    // Guard: must have watched assets before starting.
+    // Empty watchlist is fine: populate it from the top 15 performers so the
+    // agent starts watching and trading them right away.
     if (watchlist.length === 0) {
-      triggerToast('info', 'Add assets first', 'Star some assets in Markets for Jasper to watch and trade.');
-      onNavigate('markets');
-      return;
+      try {
+        const syncRes = await apiRequest<{ populated?: boolean; symbols?: string[] }>(
+          '/api/v1/watchlist/sync-top-performers?limit=15&force=false',
+          { method: 'POST' }
+        );
+        const syms = syncRes.data?.symbols || [];
+        if (syms.length > 0) {
+          setWatchlist(syms.slice(0, 12));
+          triggerToast('info', 'Watching top performers', `Added the top ${syms.length} performing assets to your watchlist.`);
+        }
+      } catch {
+        // Non-fatal: agents can still start; the backend also populates on start.
+      }
     }
 
     // Live-mode guard: confirm before trading with real money.
@@ -251,6 +387,9 @@ export default function HomeScreen({
           </div>
         )}
       </div>
+
+      {/* KRONOS FORECAST */ }
+      <KronosForecastPanel />
 
       {!running && (
         <Card className="flex items-start gap-3 p-4">

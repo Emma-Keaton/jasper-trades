@@ -146,6 +146,22 @@ async def start_agent(
     # Persist the "started" flag so the scheduler respects it too
     await _set_agents_started(db, device_id, True)
 
+    # Start works even with an empty watchlist: pin the top 15 performers so
+    # the agent immediately has assets to watch and trade (confidence/prediction
+    # gated). Existing user-starred assets are never overwritten.
+    try:
+        from app.services.auto_executor import populate_device_watchlist
+
+        pop = await populate_device_watchlist(device_id, limit=15, only_if_empty=True)
+        if pop.get("populated"):
+            logger.info(
+                "Watchlist populated from top performers on Start",
+                device=device_id,
+                count=pop.get("count"),
+            )
+    except Exception as exc:
+        logger.warning("Top-performers watchlist populate failed on start", error=str(exc))
+
     # Flip the in-memory flag
     await agent.start()
 

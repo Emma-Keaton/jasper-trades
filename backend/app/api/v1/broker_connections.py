@@ -23,8 +23,14 @@ import os
 import uuid
 import structlog
 
+from pydantic import BaseModel
+from typing import Literal
+
 from app.database import get_db
 from app.services.ctrader_oauth import CTraderOAuthService
+from app.services.token_encryption import encrypt_token, decrypt_token
+from app.brokers.mt5_service import get_mt5_bridge
+from app.brokers import broker_registry
 
 import_structlog_logger = structlog.get_logger(__name__)
 logger = import_structlog_logger
@@ -240,6 +246,138 @@ async def disconnect_ctrader(
     return {"message": "cTrader account disconnected"}
 
 
+class MT5ConnectRequest(BaseModel):
+    platform: Literal["mt5", "mt4"] = "mt5"
+    login: str
+    password: str
+    server: str
+    broker_name: Optional[str] = None
+    account_type: Literal["demo", "live"] = "demo"  # demo = broker sandbox, live = real
+
+
+class MT5ModeRequest(BaseModel):
+    account_type: Literal["demo", "live"]
+
+
+@router.post("/mt5/connect")
+async def connect_mt5(
+    req: MT5ConnectRequest,
+    db: Session = Depends(get_db),
+    device_id: str = Depends(get_device_id),
+):
+    """Connect an MT5 (or MT4 fallback) broker account for real or demo trading.
+
+    Credentials are encrypted at rest. The MT5 bridge is test-connected on
+    save; demo accounts always succeed via the sandbox demo book, live
+    accounts require a reachable terminal/bridge transport (fail-closed).
+    """
+    login = req.login.strip()
+    if not login or not req.password.strip() or not req.server.strip():
+        raise HTTPException(status_code=400, detail="login, password and server are required")
+
+    demo = req.account_type == "demo"
+    bridge = get_mt5_bridge(
+        platform=req.platform,
+        login=login,
+        password=req.password,
+        server=req.server.strip(),
+        broker_name=req.broker_name,
+        demo=demo,
+    )
+    connected = await bridge.connect()
+    if not connected:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Could not reach the MT5/MT4 terminal for a LIVE account. "
+                "Run the MetaTrader terminal on this host (Windows) or set "
+                "MT5_BRIDGE_URL/MT4_BRIDGE_URL. Use account_type='demo' for the sandbox demo book."
+            ),
+        )
+
+    # Attach the connected bridge to the registry so routing picks it up.
+    broker_registry.register(req.platform, bridge)
+    try:
+        await bridge.disconnect()
+    except Exception:  # noqa: BLE001
+        pass
+    bridge.is_connected = True  # registry placeholder stays "connected"
+
+    existing = db.query(BrokerConnection).filter(
+        BrokerConnection.device_id == device_id,
+        BrokerConnection.broker_type == req.platform,
+        BrokerConnection.account_id == login,
+    ).first()
+
+    if existing:
+        existing.encrypted_api_key = encrypt_token(login)
+        existing.encrypted_api_secret = encrypt_token(req.password)
+        existing.mt5_server = req.server.strip()
+        existing.account_type = req.account_type
+        existing.broker_name = req.broker_name or req.server.strip()
+        existing.is_connected = True
+        existing.is_active = True
+        existing.connection_status = "connected"
+        db.commit()
+        connection_id = existing.id
+    else:
+        connection = BrokerConnection(
+            device_id=device_id,
+            broker_type=req.platform,
+            account_id=login,
+            encrypted_api_key=encrypt_token(login),
+            encrypted_api_secret=encrypt_token(req.password),
+            mt5_server=req.server.strip(),
+            account_type=req.account_type,
+            broker_name=req.broker_name or req.server.strip(),
+            account_currency="USD",
+            is_connected=True,
+            is_active=True,
+            connection_status="connected",
+        )
+        db.add(connection)
+        db.commit()
+        db.refresh(connection)
+        connection_id = connection.id
+
+    return {
+        "success": True,
+        "id": connection_id,
+        "broker_type": req.platform,
+        "server": req.server,
+        "account_type": req.account_type,
+        "mode": "demo (sandbox)" if demo else "live (real money)",
+    }
+
+
+@router.post("/mt5/{connection_id}/mode")
+async def set_mt5_account_mode(
+    connection_id: int,
+    req: MT5ModeRequest,
+    db: Session = Depends(get_db),
+    device_id: str = Depends(get_device_id),
+):
+    """Toggle a connected MT broker account between demo (sandbox) and live."""
+    connection = db.query(BrokerConnection).filter(
+        BrokerConnection.id == connection_id,
+        BrokerConnection.device_id == device_id,
+        BrokerConnection.broker_type.in_(["mt5", "mt4"]),
+    ).first()
+    if not connection:
+        raise HTTPException(status_code=404, detail="MT broker connection not found")
+
+    connection.account_type = req.account_type
+    db.commit()
+
+    # Keep the in-registry bridge's paper flag in sync with the toggle.
+    bridge = broker_registry.get(connection.broker_type)
+    if bridge is not None and hasattr(bridge, "demo"):
+        bridge.demo = req.account_type == "demo"
+        bridge.is_paper_trading = bridge.demo
+
+    return {"success": True, "id": connection_id, "account_type": req.account_type}
+
+
 @router.get("/accounts")
 async def get_ctrader_accounts(
     db: Session = Depends(get_db),
@@ -257,6 +395,9 @@ async def get_ctrader_accounts(
                     "id": conn.id,
                     "broker_name": conn.broker_name or conn.broker_type,
                     "broker_type": conn.broker_type,
+                    "account_id": conn.account_id,
+                    "mt5_server": getattr(conn, "mt5_server", None),
+                    "account_type": getattr(conn, "account_type", None) or "demo",
                     "account_balance": conn.account_balance or 0.0,
                     "account_currency": conn.account_currency or "USD",
                     "is_connected": conn.is_connected,

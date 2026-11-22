@@ -30,11 +30,13 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
     total_pnl: 0,
     currency: 'USD'
   });
+  const [envMode, setEnvMode] = useState<'sandbox' | 'demo' | 'live'>('sandbox');
 
   const deviceId = getOrCreateDeviceId();
 
   useEffect(() => {
     loadConfig();
+    loadEnvironment();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -43,7 +45,7 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
       const response = await apiFetch(`${API_URL}/api/v1/settings/universal-paper-trading`, {
         headers: { 'X-Device-ID': deviceId }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setConfig(data);
@@ -52,6 +54,40 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
       console.error('Failed to load universal paper trading config:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadEnvironment = async () => {
+    try {
+      const response = await apiFetch(`${API_URL}/api/v1/settings/environment`, {
+        headers: { 'X-Device-ID': deviceId }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const mode = data.environment_mode;
+        setEnvMode(mode === 'demo' || mode === 'live' ? mode : 'sandbox');
+      }
+    } catch (error) {
+      console.error('Failed to load environment mode:', error);
+    }
+  };
+
+  const saveEnvironment = async (mode: 'sandbox' | 'demo' | 'live') => {
+    setEnvMode(mode);
+    try {
+      const response = await apiFetch(`${API_URL}/api/v1/settings/environment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-ID': deviceId },
+        body: JSON.stringify({ environment_mode: mode })
+      });
+      if (response.ok) {
+        triggerToast('success', 'Environment Updated', mode === 'demo' ? 'Demo — trades route to your connected MT broker sandbox account' : mode === 'live' ? 'Live — real money via connected brokers' : 'Sandbox — universal paper trading for all assets');
+      } else {
+        const data = await response.json().catch(() => ({}));
+        triggerToast('error', 'Save Failed', data.detail || 'Failed to save environment mode');
+      }
+    } catch {
+      triggerToast('error', 'Save Failed', 'Failed to save environment mode');
     }
   };
 
@@ -126,6 +162,37 @@ export default function BrokerSettings({ triggerToast, onSave }: BrokerSettingsP
             } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
           />
         </button>
+      </div>
+
+      {/* Broker environment: Sandbox (paper) / Demo (MT sandbox) / Live toggle */}
+      <div className="p-3 bg-[#0F172A] rounded-lg border border-[#475569] space-y-2">
+        <p className="text-sm font-semibold text-white">Broker Environment</p>
+        <p className="text-xs text-gray-400">
+          {envMode === 'demo'
+            ? 'Demo — trades execute on your connected MT5/MT4 broker sandbox account'
+            : envMode === 'live'
+              ? '⚠️ Live — real trades with real money on connected brokers'
+              : 'Sandbox — universal paper trading for all assets'}
+        </p>
+        <div className="flex gap-2">
+          {(['sandbox', 'demo', 'live'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => saveEnvironment(m)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                envMode === m
+                  ? m === 'live'
+                    ? 'bg-[#EF4444] text-white'
+                    : m === 'demo'
+                      ? 'bg-[#F59E0B] text-white'
+                      : 'bg-[#10B981] text-white'
+                  : 'bg-[#1E293B] text-gray-400 hover:text-white'
+              }`}
+            >
+              {m === 'sandbox' ? 'Sandbox (Paper)' : m === 'demo' ? 'Demo' : 'Live'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Capital Input (only when enabled) */}

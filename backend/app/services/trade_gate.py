@@ -29,6 +29,7 @@ logger = structlog.get_logger(__name__)
 
 PAPER = "paper"
 LIVE = "live"
+DEMO = "demo"  # MT5/MT4 broker sandbox demo account (not universal paper)
 
 
 # ---------------------------------------------------------------------------
@@ -36,16 +37,24 @@ LIVE = "live"
 # ---------------------------------------------------------------------------
 
 async def resolve_mode(db: AsyncSession, device_id: str) -> str:
-    """Return 'paper' or 'live' based on the device's persisted config."""
+    """Return 'paper', 'demo' or 'live' based on the device's persisted config.
+
+    - 'live'   -> trading_mode=live AND environment_mode=live (real money)
+    - 'demo'   -> environment_mode=demo: route to the connected MT broker's
+                  sandbox demo account when one is connected, else paper
+    - 'paper'  -> everything else (universal paper trading, all assets)
+    """
     res = await db.execute(select(DeviceSettings).where(DeviceSettings.device_id == device_id))
     ds = res.scalar_one_or_none()
     if ds is None:
         return PAPER
     mode = (ds.trading_mode or "practice").lower()
     env = (ds.environment_mode or "sandbox").lower()
-    if mode != "live" or env != "live":
-        return PAPER
-    return LIVE
+    if env == "live" and mode == "live":
+        return LIVE
+    if env == "demo":
+        return DEMO if await mt_demo_connected() else PAPER
+    return PAPER
 
 
 async def get_device_settings(db: AsyncSession, device_id: str) -> Optional[DeviceSettings]:
@@ -55,6 +64,20 @@ async def get_device_settings(db: AsyncSession, device_id: str) -> Optional[Devi
 
 async def broker_live_connected() -> bool:
     """True if at least one non-paper broker is connected."""
+    return await _mt_or_any_live_connected(demo=False)
+
+
+async def mt_demo_connected() -> bool:
+    """True if a connected MT5/MT4 broker is in demo (sandbox) mode."""
+    return await _mt_or_any_live_connected(demo=True, mt_only=True)
+
+
+async def _mt_or_any_live_connected(demo: bool, mt_only: bool = False) -> bool:
+    """Check the registry for a connected broker matching the paper flag.
+
+    MT5/MT4 bridges flag demo accounts as paper (sandbox) and live accounts
+    as non-paper, so the demo/live distinction falls out of `is_paper_trading`.
+    """
     try:
         from app.brokers import broker_registry
     except Exception:  # noqa: BLE001
@@ -63,9 +86,12 @@ async def broker_live_connected() -> bool:
         stats = broker_registry.get_stats()
     except Exception:  # noqa: BLE001
         return False
-    return any(
-        (info.get("connected") and not info.get("paper_trading")) for info in stats.values()
-    )
+    for name, info in stats.items():
+        if mt_only and name not in ("mt5", "mt4"):
+            continue
+        if info.get("connected") and bool(info.get("paper_trading")) == demo:
+            return True
+    return False
 
 
 async def solana_wallet_configured(db: AsyncSession, device_id: str) -> bool:
@@ -143,14 +169,23 @@ async def check_prerequisites(
     _add(checks, "valid_quantity", qty > 0, "quantity must be positive")
     _add(checks, "valid_price", price > 0, "price must be positive")
 
-    # 3. Live eligibility (live intent requires a live-configured device)
+    # 3. Live eligibility (live intent requires a live- or demo-configured device)
     if intent == LIVE:
         _add(
             checks,
             "live_enabled",
-            mode == LIVE,
-            "live trading requires trading_mode=live and environment_mode=live",
+            mode in (LIVE, DEMO),
+            "live trading requires trading_mode=live and environment_mode=live (or demo with an MT demo account connected)",
         )
+        if mode == DEMO:
+            # Demo environment: the connected MT5/MT4 broker's sandbox demo
+            # account is the execution venue instead of universal paper.
+            _add(
+                checks,
+                "mt_demo_broker_connected",
+                await mt_demo_connected(),
+                "environment_mode=demo requires a connected MT5/MT4 demo account",
+            )
         if mode == LIVE:
             if broker in ("tiger",) or route in ("tiger",):
                 _add(checks, "tiger_configured", await _tiger_configured(db, device_id),

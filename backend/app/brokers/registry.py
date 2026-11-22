@@ -16,6 +16,7 @@ from app.brokers.base import BaseBrokerService
 from app.brokers.ccxt_service import CCXTBrokerService
 from app.brokers.solana_service import SolanaBrokerService
 from app.brokers.ctrader_service import CTraderBrokerService
+from app.brokers.mt5_service import MT5BridgeService
 from app.brokers.trove_service import TroveBrokerService
 from app.brokers.akshare_service import AKShareBrokerService
 
@@ -196,10 +197,34 @@ def initialize_brokers(config: Optional[Dict[str, Any]] = None) -> BrokerRegistr
         except Exception as e:
             logger.warning(f"Failed to initialize Solana: {e}")
 
-    # Initialize cTrader (OAuth copy-trading)
-    if config.get("ctrader", {}).get("enabled", True):  # Enable by default
+    # Initialize MT5 bridge (MT4 fallback) — replaces cTrader for real/demo
+    # forex, CFD, metals and indices trading. Enabled by default; the actual
+    # account credentials are attached when a device connects via
+    # POST /api/v1/brokers/mt5/connect.
+    if config.get("mt5", {}).get("enabled", True):  # Enable by default
         try:
-            # Create a placeholder cTrader broker instance (will be updated with user tokens on connect)
+            mt5 = MT5BridgeService(
+                platform="mt5",
+                demo=config.get("mt5", {}).get("demo", True),
+                config=config.get("mt5", {}),
+            )
+            registry.register("mt5", mt5)
+            # MT4 fallback registered under its own name so routing can fall
+            # back to it when no MT5 account is connected.
+            mt4 = MT5BridgeService(
+                platform="mt4",
+                demo=config.get("mt5", {}).get("demo", True),
+                config=config.get("mt5", {}),
+            )
+            registry.register("mt4", mt4)
+            logger.info("Initialized MT5 bridge (MT4 fallback) broker service")
+        except Exception as e:
+            logger.warning(f"Failed to initialize MT5 bridge: {e}")
+
+    # cTrader (OAuth copy-trading) — legacy, disabled by default now that the
+    # MT5 bridge handles real/demo forex execution.
+    if config.get("ctrader", {}).get("enabled", False):
+        try:
             ctrader = CTraderBrokerService(sandbox=config.get("ctrader", {}).get("sandbox", True))
             registry.register("ctrader", ctrader)
             logger.info("Initialized cTrader broker service placeholder")
@@ -264,8 +289,7 @@ def get_broker_for_asset(asset_class: str) -> Optional[BaseBrokerService]:
     |---------------------|------------|---------------------------------------------|
     | Stocks/Equities     | Trove      | US + Nigerian (NGX) stocks, fractional      |
     | Options             | Trove      | US options via Trove                        |
-    | Forex/CFD           | cTrader    | Multi-broker OAuth (FxPro, etc.)        |
-    | Futures             | cTrader    | CFD futures via cTrader brokers             |
+    | Forex/CFD/Futures   | MT5→MT4    | MT5 bridge, MT4 fallback (real + demo)      |
     | Crypto              | Binance    | Spot and futures via CCXT                   |
     | DeFi/Solana         | Solana     | SPL tokens, DeFi protocols                  |
 
@@ -283,17 +307,19 @@ def get_broker_for_asset(asset_class: str) -> Optional[BaseBrokerService]:
         "us-stocks": "trove",
         "ngx": "trove",  # Nigerian Stock Exchange
         "options": "trove",  # US options via Trove
-        
-        # cTrader - Forex, CFDs, Futures
-        "forex": "ctrader",
-        "fx": "ctrader",
-        "futures": "ctrader",  # CFD futures
-        "cfds": "ctrader",
-        
+
+        # MT5 bridge (MT4 fallback) - Forex, CFDs, Futures, metals, indices
+        "forex": "mt5",
+        "fx": "mt5",
+        "futures": "mt5",  # CFD futures
+        "cfds": "mt5",
+        "metals": "mt5",
+        "indices": "mt5",
+
         # Binance - Crypto
         "crypto": "binance",
         "cryptocurrency": "binance",
-        
+
         # Solana - DeFi, SPL tokens
         "defi": "solana",
         "solana": "solana",
@@ -302,7 +328,11 @@ def get_broker_for_asset(asset_class: str) -> Optional[BaseBrokerService]:
 
     broker_name = asset_to_broker.get(asset_class.lower())
     if broker_name:
-        return broker_registry.get(broker_name)
+        broker = broker_registry.get(broker_name)
+        # MT5 bridge with MT4 fallback for FX-like asset classes.
+        if broker is None and broker_name == "mt5":
+            broker = broker_registry.get("mt4")
+        return broker
 
     return None
 
@@ -338,9 +368,9 @@ def get_broker_for_symbol(symbol: str) -> Optional[BaseBrokerService]:
         elif symbol.startswith(("200",)):  # SZSE B-shares
             return broker_registry.get("akshare")
 
-    # Forex pairs (6 characters, e.g., GBPUSD)
+    # Forex pairs (6 characters, e.g., GBPUSD) -> MT5 bridge, MT4 fallback
     if len(symbol_upper) == 6 and symbol_upper.endswith(("USD", "NGN", "EUR", "GBP", "JPY")):
-        return broker_registry.get("ctrader")
+        return broker_registry.get("mt5") or broker_registry.get("mt4")
 
     # Crypto symbols
     if any(x in symbol_upper for x in ["BTC", "ETH", "USDT", "USDC", "BNB"]):

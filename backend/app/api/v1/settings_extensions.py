@@ -54,7 +54,7 @@ class DiscordBotSettings(BaseModel):
 
 class EnvironmentModeRequest(BaseModel):
     """Environment mode toggle request"""
-    environment_mode: Literal["sandbox", "live"] = Field(..., description="Trading mode: 'sandbox' or 'live'")
+    environment_mode: Literal["sandbox", "demo", "live"] = Field(..., description="Trading environment: 'sandbox' (universal paper), 'demo' (MT broker sandbox account), or 'live' (real money)")
 
 
 # ============ Helper ============
@@ -333,16 +333,18 @@ async def save_environment_mode(
     request: EnvironmentModeRequest,
     device_id: str = Header(None, alias="X-Device-ID"),
 ):
-    """Save environment mode (sandbox/live) for device.
-    
-    This setting controls whether cTrader connections execute real trades or demo trades.
-    The mode is stored per-device via X-Device-ID header.
+    """Save environment mode (sandbox/demo/live) for device.
+
+    This setting controls whether broker connections execute real trades or
+    demo trades: 'sandbox' routes everything to the universal paper engine,
+    'demo' routes to the connected MT5/MT4 broker's sandbox demo account, and
+    'live' executes real trades. Stored per-device via X-Device-ID header.
     """
     if not device_id:
         raise HTTPException(status_code=400, detail="X-Device-ID header required")
 
-    if request.environment_mode not in ["sandbox", "live"]:
-        raise HTTPException(status_code=400, detail="environment_mode must be 'sandbox' or 'live'")
+    if request.environment_mode not in ["sandbox", "demo", "live"]:
+        raise HTTPException(status_code=400, detail="environment_mode must be 'sandbox', 'demo' or 'live'")
 
     async with async_session() as session:
         result = await session.execute(

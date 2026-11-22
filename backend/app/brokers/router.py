@@ -40,21 +40,33 @@ class BrokerRouter:
         r"^So11111111111111111111111111111111111111112$",  # Wrapped SOL
     ]
 
-    # Asset class to broker mapping
+    # Asset class to broker mapping (MT5 bridge replaces cTrader for FX/CFDs;
+    # MT4 is the fallback when no MT5 account is connected).
     ASSET_BROKER_MAP = {
         "crypto": "binance",
         "cryptospot": "binance",
-        "futures": "ctrader",
-        "forex": "ctrader",
+        "futures": "mt5",
+        "forex": "mt5",
+        "fx": "mt5",
+        "cfds": "mt5",
+        "metals": "mt5",
+        "indices": "mt5",
         "solana": "solana",
         "defi": "solana",
+    }
+
+    # Fallback broker per primary broker name (mt5 -> mt4).
+    BROKER_FALLBACK = {
+        "mt5": "mt4",
     }
 
     # Broker capabilities
     BROKER_CAPABILITIES = {
         "binance": ["crypto", "cryptospot", "futures"],  # Binance handles futures too
         "solana": ["solana", "defi"],
-        "ctrader": ["forex", "futures"],  # cTrader handles forex and futures
+        "mt5": ["forex", "fx", "futures", "cfds", "metals", "indices"],
+        "mt4": ["forex", "fx", "futures", "cfds", "metals", "indices"],  # MT4 fallback
+        "ctrader": ["forex", "futures"],  # legacy, only when explicitly enabled
     }
 
     def __init__(self):
@@ -128,16 +140,16 @@ class BrokerRouter:
             logger.warning(f"No broker mapping for asset class: {asset_class}")
             return None
 
-        broker = broker_registry.get(broker_name)
-        if not broker:
-            logger.warning(f"Broker {broker_name} not registered")
-            return None
+        # Try the primary broker, then its fallback (mt5 -> mt4).
+        for name in (broker_name, self.BROKER_FALLBACK.get(broker_name)):
+            if not name:
+                continue
+            broker = broker_registry.get(name)
+            if broker and broker.is_connected:
+                return broker
+            logger.warning(f"Broker {name} not registered or not connected")
 
-        if not broker.is_connected:
-            logger.warning(f"Broker {broker_name} not connected")
-            return None
-
-        return broker
+        return None
 
     def get_broker_for_symbol(self, symbol: str) -> Optional[BaseBrokerService]:
         """
