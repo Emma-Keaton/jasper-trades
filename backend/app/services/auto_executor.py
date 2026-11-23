@@ -76,6 +76,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "top_performers_enabled": True,
     "top_performers_limit": 15,
     "watchlist_sync_interval_seconds": 3600,
+    # Rotation: "gradual" replaces only the entries that fell out of the top
+    # list (typically 1-2 per hour); "full" always replaces everything. A full
+    # replace also triggers automatically in gradual mode when the overlap
+    # with the top list drops below the threshold (regime shift).
+    "watchlist_rotation_mode": "gradual",
+    "watchlist_rotation_full_replace_threshold": 0.5,
 }
 
 
@@ -142,6 +148,7 @@ class AutoExecutor:
         self._last_summary_date: Optional[str] = None
         self._last_watchlist_sync = 0.0
         self._watchlist_source = "top-performers"
+        self._last_rotation: Optional[Dict[str, Any]] = None
 
     @property
     def running(self) -> bool:
@@ -201,6 +208,7 @@ class AutoExecutor:
             "resolved_forecasts": len(self._resolved),
             "learner_sample_size": self._learner_sample_size,
             "config": self.config,
+            "last_watchlist_rotation": self._last_rotation,
             "positions": [p.__dict__ for p in self._positions.values()],
         }
 
@@ -304,48 +312,113 @@ class AutoExecutor:
             top = await build_top_performers(limit)
             if not top:
                 return
-            await self._apply_watchlist({"crypto": top})
+            rotated, rotation = self._rotate_watchlist(top, is_empty)
+            current_symbols = [
+                s for syms in (self.config.get("watchlist") or {}).values() for s in syms
+            ]
+            if rotated == current_symbols and not is_empty:
+                logger.info("Top-performers rotation: no changes", overlap=rotation["overlap"])
+                return
+            await self._apply_watchlist({"crypto": rotated}, rotation=rotation)
             logger.info(
-                "Auto executor watchlist synced from top performers",
-                count=len(top),
-                symbols=top,
+                "Auto executor watchlist rotated from top performers",
+                mode=rotation["mode"],
+                added=rotation["added"],
+                removed=rotation["removed"],
+                count=len(rotated),
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("Top-performers watchlist sync failed", error=str(e))
 
-    async def _apply_watchlist(self, watchlist: Dict[str, List[str]]) -> None:
-        """Swap the traded watchlist and persist it as the device watchlist."""
+    def _rotate_watchlist(
+        self, top: List[str], is_empty: bool
+    ) -> Tuple[List[str], Dict[str, Any]]:
+        """Blend the current watchlist with the fresh top performers.
+
+        gradual: keep current members still in the top list, backfill with the
+                 best newcomers (usually replaces just 1-2 assets per hour).
+        full:    replace the whole list. Also forced in gradual mode when the
+                 overlap drops below `watchlist_rotation_full_replace_threshold`.
+        """
+        current: List[str] = []
+        for syms in (self.config.get("watchlist") or {}).values():
+            for s in syms:
+                if s not in current:
+                    current.append(s)
+
+        if is_empty or not current:
+            rotation = {"mode": "full", "added": list(top), "removed": [], "overlap": 0.0}
+            return list(top), rotation
+
+        top_set = set(top)
+        kept = [s for s in current if s in top_set]
+        overlap = len(kept) / len(current)
+        mode = str(self.config.get("watchlist_rotation_mode", "gradual")).lower()
+        threshold = float(self.config.get("watchlist_rotation_full_replace_threshold", 0.5))
+
+        if mode == "full" or overlap < threshold:
+            rotation = {
+                "mode": "full",
+                "added": [s for s in top if s not in kept],
+                "removed": [s for s in current if s not in top_set],
+                "overlap": overlap,
+            }
+            return list(top), rotation
+
+        rotated = kept + [s for s in top if s not in kept]
+        rotated = rotated[: len(top)]
+        rotation = {
+            "mode": "gradual",
+            "added": [s for s in rotated if s not in current],
+            "removed": [s for s in current if s not in rotated],
+            "overlap": overlap,
+        }
+        return rotated, rotation
+
+    async def _apply_watchlist(
+        self, watchlist: Dict[str, List[str]], rotation: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Swap the traded watchlist and persist the diff as the device watchlist."""
+        new_symbols = {s for syms in watchlist.values() for s in syms}
         self.config["watchlist"] = watchlist
-        # Drop positions/forecasts for symbols that left the universe.
+        self._last_rotation = rotation or self._last_rotation
+        # Positions on departed symbols stay open and are managed by TP/SL.
         for symbol in list(self._positions.keys()):
-            if symbol not in {s for syms in watchlist.values() for s in syms}:
+            if symbol not in new_symbols:
                 logger.info("Symbol left top-performers universe; leaving position", symbol=symbol)
         self._forecast_cache = {
-            s: v for s, v in self._forecast_cache.items()
-            if s in {x for syms in watchlist.values() for x in syms}
+            s: v for s, v in self._forecast_cache.items() if s in new_symbols
         }
 
-        # Persist to the durable per-device watchlist (max 15, source-tagged).
+        # Persist only the diff (max 15, source-tagged) so gradual rotations
+        # touch one or two rows instead of rewriting the whole watchlist.
         try:
-            from sqlalchemy import delete
-
             async with async_session() as db:
-                await db.execute(
-                    delete(WatchlistItem).where(
-                        WatchlistItem.device_id == AUTO_EXECUTOR_DEVICE_ID,
-                        WatchlistItem.source == self._watchlist_source,
+                existing = (
+                    await db.execute(
+                        select(WatchlistItem).where(
+                            WatchlistItem.device_id == AUTO_EXECUTOR_DEVICE_ID,
+                            WatchlistItem.source == self._watchlist_source,
+                        )
                     )
-                )
+                ).scalars().all()
+                existing_syms = {r.symbol for r in existing}
+                removed = existing_syms - new_symbols
+                added = new_symbols - existing_syms
+                for row in existing:
+                    if row.symbol in removed:
+                        await db.delete(row)
                 for asset_class, symbols in watchlist.items():
                     for symbol in symbols[:15]:
-                        db.add(
-                            WatchlistItem(
-                                device_id=AUTO_EXECUTOR_DEVICE_ID,
-                                symbol=symbol,
-                                asset_class=asset_class,
-                                source=self._watchlist_source,
+                        if symbol in added:
+                            db.add(
+                                WatchlistItem(
+                                    device_id=AUTO_EXECUTOR_DEVICE_ID,
+                                    symbol=symbol,
+                                    asset_class=asset_class,
+                                    source=self._watchlist_source,
+                                )
                             )
-                        )
                 await db.commit()
         except Exception as e:  # noqa: BLE001
             logger.debug("Watchlist persistence failed", error=str(e))
