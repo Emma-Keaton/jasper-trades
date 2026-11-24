@@ -66,7 +66,7 @@ AGENT_TASKS: Dict[str, Dict[str, Any]] = {
         "recommended": {
             "groq": ("openai/gpt-oss-120b", "Best Groq reasoning model for strategy decisions"),
             "gemini": ("gemini-2.5-pro", "Strongest Gemini reasoning (free tier)"),
-            "nvidia": ("nvidia/llama-3.1-nemotron-ultra-253b-v1", "Best NIM reasoning model for strategy & promotion"),
+            "nvidia": ("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "Reasoning-optimized NIM model for strategy & promotion (verified authorized)"),
         },
         "default": {"provider": "groq", "model": "openai/gpt-oss-120b"},
     },
@@ -76,7 +76,7 @@ AGENT_TASKS: Dict[str, Dict[str, Any]] = {
         "recommended": {
             "groq": ("openai/gpt-oss-120b", "Balanced Groq model for analysis"),
             "gemini": ("gemini-2.5-flash", "Fast, accurate Gemini analysis"),
-            "nvidia": ("meta/llama-3.3-70b-instruct", "Strong NIM analysis at good speed"),
+            "nvidia": ("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "Strong NIM analysis at good speed (verified authorized)"),
         },
         "default": {"provider": "groq", "model": "openai/gpt-oss-120b"},
     },
@@ -86,7 +86,7 @@ AGENT_TASKS: Dict[str, Dict[str, Any]] = {
         "recommended": {
             "groq": ("qwen/qwen3.8-27b", "Fastest Groq model — ideal for pre-trade risk gates"),
             "gemini": ("gemini-2.0-flash", "Lowest-latency Gemini model"),
-            "nvidia": ("meta/llama-3.1-8b-instruct", "Smallest NIM model — lightning fast risk checks"),
+            "nvidia": ("nvidia/nemotron-3.5-lightning-30b-a3b", "Speed-optimized NIM model — lightning fast risk checks (verified authorized)"),
         },
         "default": {"provider": "groq", "model": "qwen/qwen3.8-27b"},
     },
@@ -96,7 +96,7 @@ AGENT_TASKS: Dict[str, Dict[str, Any]] = {
         "recommended": {
             "groq": ("qwen/qwen3.8-27b", "Fastest Groq model for execution commentary"),
             "gemini": ("gemini-2.0-flash-lite", "Fastest Gemini model for execution"),
-            "nvidia": ("meta/llama-3.1-8b-instruct", "Fastest NIM model — keeps execution snappy"),
+            "nvidia": ("nvidia/nemotron-3.5-lightning-30b-a3b", "Speed-optimized NIM model — keeps execution snappy (verified authorized)"),
         },
         "default": {"provider": "groq", "model": "qwen/qwen3.8-27b"},
     },
@@ -106,7 +106,7 @@ AGENT_TASKS: Dict[str, Dict[str, Any]] = {
         "recommended": {
             "groq": ("openai/gpt-oss-20b", "Light Groq model for chat"),
             "gemini": ("gemini-2.0-flash", "Fast conversational Gemini"),
-            "nvidia": ("meta/llama-3.1-8b-instruct", "Small NIM model for chat"),
+            "nvidia": ("z-ai/glm-5.3-flash", "Fast NIM model for chat (verified authorized)"),
         },
         "default": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     },
@@ -187,7 +187,8 @@ async def ping_provider(provider: str, key: str) -> Dict[str, Any]:
     }
     models = raw["models"]
     models.sort(key=lambda m: (0 if m in recommended_ids else 1, m))
-    raw["recommended"] = sorted(recommended_ids)
+    raw["recommended"] = sorted(recommended_ids & set(models))  # only authorized ones
+    raw["recommended_unavailable"] = sorted(recommended_ids - set(models))  # stale/EOL picks
     raw["provider"] = provider
     return raw
 
