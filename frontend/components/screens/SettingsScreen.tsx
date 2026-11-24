@@ -13,7 +13,6 @@ import ConnectionsPanel from '@/components/settings/ConnectionsPanel';
 import PaperTradingPanel from '@/components/settings/PaperTradingPanel';
 import TelegramSettings from '@/components/settings/TelegramSettings';
 import LLMProvidersPanel from '@/components/settings/LLMProvidersPanel';
-import WhaleWatchPanel from '@/components/settings/WhaleWatchPanel';
 
 interface SettingsScreenProps {
   triggerToast: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void;
@@ -77,7 +76,7 @@ export default function SettingsScreen({ triggerToast, onNavigate, defaultOpen, 
     { id: 'wallet', icon: <Wallet className="h-5 w-5" />, title: 'Connect wallet & brokers', desc: 'MetaMask, Phantom, CCXT, cTrader, Trove, AKShare.', optional: true },
     { id: 'telegram', icon: <MessageCircle className="h-5 w-5" />, title: 'Telegram alerts', desc: 'Trade alerts and 2-way chat on your phone.', optional: true },
     { id: 'ai', icon: <BrainCircuit className="h-5 w-5" />, title: 'AI engine', desc: groqConfigured ? 'Groq is connected and ready.' : 'Groq needs an API key to trade.' },
-    { id: 'whales', icon: <Eye className="h-5 w-5" />, title: 'Whale watch (Solana)', desc: 'Watch top whales; their swaps become trades via Helius + safety filters.', optional: true },
+    { id: 'whales', icon: <Eye className="h-5 w-5" />, title: 'Whale watch config', desc: 'Helius/Birdeye/RugCheck keys & thresholds; the live panel is on Markets.', optional: true },
     { id: 'appearance', icon: <Palette className="h-5 w-5" />,
 title: 'Appearance', desc: `${theme === 'dark' ? 'Dark' : 'Light'} mode · ${currency} currency` },
   ];
@@ -219,9 +218,15 @@ title: 'Appearance', desc: `${theme === 'dark' ? 'Dark' : 'Light'} mode · ${cur
         </div>
       </Modal>
 
-      <Modal open={open === 'whales'} onClose={() => setOpen(null)} size="lg" title="Whale watch (Solana)" description="Watch top whale wallets — their swaps become trades after safety checks.">
-        <WhaleWatchPanel triggerToast={triggerToast} />
-        <div className="mt-4 flex justify-end"><Button variant="secondary" onClick={() => setOpen(null)}>Done</Button></div>
+      <Modal open={open === 'whales'} onClose={() => setOpen(null)} size="sm" title="Whale watch config" description="Keys and thresholds live in env; the live whale panel is on the Markets screen.">
+        <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+          <p>Configure in <code>.env</code> / Render env vars: <code>HELIUS_API_KEY</code>, <code>HELIUS_WHALE_WALLETS</code>, <code>HELIUS_TOP_WHALES</code>, <code>BIRDEYE_API_KEY</code>, <code>SOLANA_WHALE_MIN_SOL</code>, <code>SOLANA_MIN_LIQUIDITY_USD</code>, <code>SOLANA_MAX_RISK_SCORE</code>.</p>
+          <p>The live whale-watch panel (add/remove whales, safety checks, webhook) is on the <strong>Markets</strong> screen.</p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setOpen(null)}>Close</Button>
+            <Button onClick={() => { setOpen(null); onNavigate('markets'); }}>Open Markets</Button>
+          </div>
+        </div>
       </Modal>
 
       <Modal open={open === 'appearance'} onClose={() => setOpen(null)} title="Appearance" description="Make Jasper comfortable to use.">

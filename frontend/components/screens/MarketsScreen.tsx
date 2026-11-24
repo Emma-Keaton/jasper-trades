@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { TrendingUp, Compass, Microscope, Star, Sparkles, Search, X, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { TrendingUp, Compass, Microscope, Star, Sparkles, Search, X, ArrowUpRight, ArrowDownRight, Minus, Eye } from 'lucide-react';
 import { Card } from '@/components/ui';
+import WhaleWatchPanel from '@/components/settings/WhaleWatchPanel';
 import { deviceHeaders } from '@/lib/deviceFingerprint';
 import { useCurrencyFormatter } from '@/lib/currencyContext';
 import { API_URL } from '@/lib/constants';
+import { kronosAPI } from '@/lib/api-client';
 
 interface MarketItem {
   symbol: string;
@@ -82,6 +84,7 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
   const [trending, setTrending] = useState<MarketItem[]>([]);
   const [watchlist, setWatchlist] = useState<MarketItem[]>([]);
   const [topMovers, setTopMovers] = useState<MarketItem[]>([]);
+  const [kronosForecasts, setKronosForecasts] = useState<Record<string, { direction: string; confidence: number; predicted_change: number; last_close: number }>>({});
   const [dexSnapshot, setDexSnapshot] = useState<{ per_chain?: Record<string, DexChainBuckets>; fetched_at?: number; total_rows?: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const mounted = useRef(true);
@@ -108,6 +111,34 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
       setWatchlist(items);
     } catch {
       /* ignore */
+    }
+  }, []);
+
+  // Fetch Kronos forecasts for given symbols (connects Kronos to markets).
+  const refreshKronos = useCallback(async (symbols: string[]) => {
+    const syms = symbols.filter(Boolean);
+    if (!syms.length) return;
+    try {
+      const res = await kronosAPI.predictBatch(syms, 12);
+      const data = (res as { data?: unknown; error?: unknown }).data;
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        const results = (data as { results?: Record<string, unknown> }).results || {};
+        const next: Record<string, { direction: string; confidence: number; predicted_change: number; last_close: number }> = {};
+        for (const [sym, val] of Object.entries(results)) {
+          const r = val as { direction?: string; confidence?: number; predicted_change?: number; last_close?: number; error?: unknown } | null;
+          if (r && !r.error) {
+            next[sym] = {
+              direction: r.direction ?? 'FLAT',
+              confidence: r.confidence ?? 0,
+              predicted_change: r.predicted_change ?? 0,
+              last_close: r.last_close ?? 0,
+            };
+          }
+        }
+        setKronosForecasts(next);
+      }
+    } catch {
+      /* ignore - Kronos forecasts are additive, never block markets */
     }
   }, []);
 
@@ -206,6 +237,7 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
             change: w.price_change_24h ?? 0,
           }));
           setWatchlist(items);
+          await refreshKronos(items.map((w) => w.symbol));
         }
         if (moversRes && moversRes.ok) {
           const data = await moversRes.json();
@@ -346,6 +378,24 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
       )}
       {typeof item.price_usd === 'number' && item.price_usd > 0 && (
         <p className="tnum mt-1 text-xs text-slate-400 dark:text-slate-500">{formatMoney(item.price_usd)}</p>
+      )}
+      {kronosForecasts[item.symbol] && (
+        <p className="mt-1 flex items-center gap-1 text-xs font-semibold">
+          <span
+            className={
+              kronosForecasts[item.symbol].direction === 'UP'
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : kronosForecasts[item.symbol].direction === 'DOWN'
+                ? 'text-rose-600 dark:text-rose-400'
+                : 'text-slate-500 dark:text-slate-400'
+            }
+          >
+            {kronosForecasts[item.symbol].direction === 'UP' ? <ArrowUpRight className="h-3 w-3" /> : kronosForecasts[item.symbol].direction === 'DOWN' ? <ArrowDownRight className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
+          </span>
+          <span>Kronos {kronosForecasts[item.symbol].direction}</span>
+          <span className="text-slate-400">({(kronosForecasts[item.symbol].confidence * 100).toFixed(0)}%)</span>
+          <span className="ml-auto tnum text-slate-400">{kronosForecasts[item.symbol].predicted_change >= 0 ? '+' : ''}{kronosForecasts[item.symbol].predicted_change.toFixed(2)}</span>
+        </p>
       )}
     </Card>
   );
@@ -517,6 +567,17 @@ export default function MarketsScreen({ onNavigate, triggerToast }: { onNavigate
                 {newTokens.map(renderCard)}
               </div>
             )}
+          </section>
+
+          {/* Whale watch (Helius) — live panel; config lives in Settings */}
+          <section>
+            <div className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-brand-500" />
+              <h2 className="text-lg font-display font-bold text-slate-900 dark:text-slate-50" data-onboarding="whale-watch">Whale watch (Solana)</h2>
+            </div>
+            <div className="mt-4 rounded-card border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <WhaleWatchPanel triggerToast={triggerToast ?? (() => {})} />
+            </div>
           </section>
 
           {/* Dex chain watchers: hot, top performers, whales, spikes */}
