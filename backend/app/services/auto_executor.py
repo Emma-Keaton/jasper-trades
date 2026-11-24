@@ -149,6 +149,7 @@ class AutoExecutor:
         self._last_watchlist_sync = 0.0
         self._watchlist_source = "top-performers"
         self._last_rotation: Optional[Dict[str, Any]] = None
+        self._whale_last: Dict[str, Any] = {}
 
     @property
     def running(self) -> bool:
@@ -209,6 +210,7 @@ class AutoExecutor:
             "learner_sample_size": self._learner_sample_size,
             "config": self.config,
             "last_watchlist_rotation": self._last_rotation,
+            "whale_pipeline": self._whale_last,
             "positions": [p.__dict__ for p in self._positions.values()],
         }
 
@@ -289,8 +291,23 @@ class AutoExecutor:
             await self._refit_learner()
             self._last_refit = now
 
-        # 6. Send daily summary (once per UTC day).
+        # 6. Whale pipeline maintenance: TP/SL exits on whale-watched mints +
+        #    surface recent whale events (webhook dispatches the trades).
+        await self._whale_maint()
+
+        # 7. Send daily summary (once per UTC day).
         await self._send_daily_summary()
+
+    async def _whale_maint(self) -> None:
+        """Keep the Solana whale pipeline attached to the running executor:
+        manage TP/SL exits on whale-watched positions and count new events."""
+        try:
+            from app.services.solana_whale_service import last_events, manage_whale_exits
+
+            stats = await manage_whale_exits()
+            self._whale_last = {"exits": stats, "events": len(last_events(100))}
+        except Exception as e:  # noqa: BLE001
+            logger.debug("whale maintenance failed", error=str(e))
 
     # ------------------------------------------------------------------
     # Top-performers watchlist sync (top 15 assets to watch and trade)

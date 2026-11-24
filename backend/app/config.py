@@ -101,6 +101,7 @@ class Settings(BaseSettings):
     HELIUS_API_KEY: Optional[str] = None          # Helius API key (webhooks + RPC)
     HELIUS_RPC_URL: Optional[str] = None          # defaults to https://mainnet.helius-rpc.com/?api-key=...
     HELIUS_WHALE_WALLETS: Optional[str] = None    # comma-separated tracked whale pubkeys (fallback list)
+    HELIUS_TOP_WHALES: Optional[str] = None        # curated suggested top-whale pubkeys shown in the UI
     BIRDEYE_API_KEY: Optional[str] = None         # Birdeye overview/security (X-API-KEY)
     RUGCHECK_BASE_URL: str = "https://api.rugcheck.xyz"
     SOLANA_WHALE_MIN_SOL: float = 2.0             # min SOL a tracked whale must spend to count

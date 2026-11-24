@@ -141,6 +141,30 @@ async def evaluate_mint(req: EvaluateRequest):
     return {"mint": req.mint, "context": ctx, "verdict": verdict}
 
 
+@router.get("/top")
+async def top_whales(
+    device_id: str = Depends(_device_id_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    """View top whales to watch: curated seed list + currently tracked +
+    whale wallets seen in recent events. Users add any of them with one call."""
+    seed = []
+    if settings.HELIUS_TOP_WHALES:
+        seed = [w.strip() for w in settings.HELIUS_TOP_WHALES.split(",") if w.strip()]
+    tracked = await get_device_whales(db, device_id)
+    seen = []
+    for ev in last_events(100):
+        w = ev.get("whale")
+        if w and w not in seen and w not in tracked and w not in seed:
+            seen.append(w)
+    return {
+        "suggested": seed,
+        "tracked": tracked,
+        "seen_recently": seen,
+        "last_events": last_events(10),
+    }
+
+
 @router.get("/status")
 async def whale_status(
     device_id: str = Depends(_device_id_dep),
