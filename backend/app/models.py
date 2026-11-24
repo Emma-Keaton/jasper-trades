@@ -999,3 +999,30 @@ class ModelAssignment(Base):
     __table_args__ = (
         UniqueConstraint("device_id", "scope", "symbol", name="ux_model_assignments_scope"),
     )
+
+
+class StrategyRecord(Base):
+    """A self-learning strategy proposed by the Strategy Architect.
+
+    Lifecycle: draft (proposed, backtested, not yet significant) -> active
+    (backtest hit-rate beat coin-flip with enough samples and it meets the
+    device's confidence target) -> retired (underperforming in live/paper
+    scoring). Spec is JSON: {name, factor_ids, min_confidence, take_profit_pct,
+    stop_loss_pct, position_size_usd, timeframe}.
+    """
+
+    __tablename__ = "strategy_records"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(255), nullable=False, default=GLOBAL_KEY, index=True)
+    name = Column(String(128), nullable=False)
+    spec = Column(Text, nullable=False)  # JSON strategy spec
+    status = Column(String(16), nullable=False, default="draft")  # draft | active | retired
+    backtest = Column(Text)  # JSON backtest result
+    confidence = Column(Float, default=0.0)
+    hit_rate = Column(Float)
+    sample_size = Column(Integer, default=0)
+    proposed_by = Column(String(64), default="architect")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    promoted_at = Column(DateTime)
+    retired_at = Column(DateTime)

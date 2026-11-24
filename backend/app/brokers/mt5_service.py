@@ -57,6 +57,7 @@ class MT5BridgeService(BaseBrokerService):
         broker_name: Optional[str] = None,
         demo: bool = True,
         config: Optional[Dict[str, Any]] = None,
+        access_token: Optional[str] = None,
     ):
         platform = (platform or "mt5").lower()
         if platform not in ("mt5", "mt4"):
@@ -66,6 +67,8 @@ class MT5BridgeService(BaseBrokerService):
         self.login = str(login) if login else None
         self.password = password
         self.server = server
+        # OAuth link: opaque broker-issued token, never the account password.
+        self.access_token = access_token
         self.broker_name = broker_name or server or platform.upper()
         self.demo = bool(demo)
         # Demo accounts are sandbox/paper; live accounts are real money.
@@ -83,6 +86,32 @@ class MT5BridgeService(BaseBrokerService):
     # Connection
     # ------------------------------------------------------------------
     async def connect(self) -> bool:
+        # OAuth-linked account: token-only auth (no password handled).
+        if self.access_token:
+            if self.bridge_url:
+                try:
+                    import httpx
+
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.post(
+                            f"{self.bridge_url.rstrip('/')}/connect",
+                            json={"platform": self.platform, "token": self.access_token},
+                            headers={"Authorization": f"Bearer {self.access_token}"},
+                        )
+                    if resp.status_code == 200 and resp.json().get("success"):
+                        self._transport = "bridge"
+                        self.is_connected = True
+                        return True
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("MT5 oauth bridge failed", error=str(e))
+            if self.demo:
+                self._transport = "sandbox"
+                self.is_connected = True
+                logger.info("MT5 oauth demo link using sandbox demo book", server=self.server)
+                return True
+            logger.error("MT5 oauth live link requires MT5_BRIDGE_URL transport")
+            return False
+
         if not self.login or not self.password or not self.server:
             logger.error("MT5 bridge: login/password/server required")
             return False
@@ -227,6 +256,7 @@ class MT5BridgeService(BaseBrokerService):
         import httpx
 
         async with httpx.AsyncClient(timeout=15.0) as client:
+            headers = {"Authorization": f"Bearer {self.access_token}"} if self.access_token else {}
             resp = await client.post(
                 f"{self.bridge_url.rstrip('/')}/order",
                 json={
@@ -234,6 +264,7 @@ class MT5BridgeService(BaseBrokerService):
                     "symbol": symbol, "side": side, "volume": quantity,
                     "order_type": order_type, "limit_price": limit_price, "client_order_id": order_id,
                 },
+                headers=headers,
             )
         data = resp.json()
         return OrderResult(

@@ -378,6 +378,139 @@ async def set_mt5_account_mode(
     return {"success": True, "id": connection_id, "account_type": req.account_type}
 
 
+@router.get("/oauth/connect")
+async def oauth_connect(
+    broker: str = Query(default="mt5", description="Broker to link: mt5 (mt4 fallback)"),
+    mode: str = Query(default="demo", description="demo (sandbox) or live"),
+    device_id: str = Depends(get_device_id),
+):
+    """Start a broker OAuth link — the broker's own app handles the login.
+
+    We never see or store the account password: the user authorizes on the
+    broker's page and we receive only an opaque access token. Requires
+    MT5_OAUTH_CLIENT_ID / MT5_OAUTH_AUTH_URL / MT5_OAUTH_REDIRECT_URI in env.
+    """
+    from app.config import settings as app_settings
+
+    if broker not in ("mt5", "mt4"):
+        raise HTTPException(status_code=400, detail="broker must be 'mt5' or 'mt4'")
+    if mode not in ("demo", "live"):
+        raise HTTPException(status_code=400, detail="mode must be 'demo' or 'live'")
+    if not (app_settings.MT5_OAUTH_CLIENT_ID and app_settings.MT5_OAUTH_AUTH_URL):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Broker OAuth is not configured on this deployment "
+                "(set MT5_OAUTH_CLIENT_ID / MT5_OAUTH_AUTH_URL / MT5_OAUTH_REDIRECT_URI). "
+                "Use manual MT5/MT4 credentials instead."
+            ),
+        )
+
+    state = str(uuid.uuid4().hex)
+    _oauth_states[state] = f"{device_id}:{broker}:{mode}"
+    params = {
+        "response_type": "code",
+        "client_id": app_settings.MT5_OAUTH_CLIENT_ID,
+        "redirect_uri": app_settings.MT5_OAUTH_REDIRECT_URI or "",
+        "state": state,
+        "scope": "trading",
+    }
+    from urllib.parse import urlencode
+
+    return {
+        "authorization_url": f"{app_settings.MT5_OAUTH_AUTH_URL}?{urlencode(params)}",
+        "state": state,
+        "broker": broker,
+        "mode": mode,
+    }
+
+
+@router.get("/oauth/callback")
+async def oauth_callback(
+    request: Request,
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Broker OAuth callback: exchange the code for an opaque token only."""
+    from app.config import settings as app_settings
+
+    resolved = _oauth_states.pop(state, None) if state else None
+    if not resolved:
+        return RedirectResponse(url="/?broker_error=Invalid+state", status_code=302)
+    device_id, broker, mode = resolved.split(":", 2)
+
+    if error or not code:
+        return RedirectResponse(url="/?broker_error=Authorization+failed", status_code=302)
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                app_settings.MT5_OAUTH_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "client_id": app_settings.MT5_OAUTH_CLIENT_ID,
+                    "client_secret": app_settings.MT5_OAUTH_CLIENT_SECRET or "",
+                    "redirect_uri": app_settings.MT5_OAUTH_REDIRECT_URI or "",
+                },
+            )
+        if resp.status_code != 200:
+            return RedirectResponse(url="/?broker_error=Token+exchange+failed", status_code=302)
+        token_data = resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return RedirectResponse(url="/?broker_error=No+token", status_code=302)
+
+        encrypted_access = encrypt_token(access_token)
+        encrypted_refresh = encrypt_token(token_data.get("refresh_token") or "")
+
+        existing = db.query(BrokerConnection).filter(
+            BrokerConnection.device_id == device_id,
+            BrokerConnection.broker_type == broker,
+            BrokerConnection.connection_status == "connected",
+        ).first()
+        if existing:
+            existing.encrypted_access_token = encrypted_access
+            existing.encrypted_refresh_token = encrypted_refresh
+            existing.account_type = mode
+            existing.is_connected = True
+            existing.connection_status = "connected"
+            db.commit()
+            connection_id = existing.id
+        else:
+            conn = BrokerConnection(
+                device_id=device_id,
+                broker_type=broker,
+                broker_name=f"{broker.upper()} OAuth",
+                account_id=f"oauth-{broker}",
+                encrypted_access_token=encrypted_access,
+                encrypted_refresh_token=encrypted_refresh,
+                account_type=mode,
+                is_connected=True,
+                is_active=True,
+                connection_status="connected",
+            )
+            db.add(conn)
+            db.commit()
+            db.refresh(conn)
+            connection_id = conn.id
+
+        # Register the token-authenticated bridge so routing can use it.
+        bridge = get_mt5_bridge(platform=broker, demo=(mode == "demo"))
+        bridge.access_token = access_token
+        bridge.is_connected = True
+        broker_registry.register(broker, bridge)
+
+        return RedirectResponse(url=f"/?broker_connected=true&id={connection_id}", status_code=302)
+    except Exception as e:  # noqa: BLE001
+        logger.error("Broker OAuth callback failed", error=str(e))
+        return RedirectResponse(url="/?broker_error=Connection+failed", status_code=302)
+
+
 @router.get("/accounts")
 async def get_ctrader_accounts(
     db: Session = Depends(get_db),

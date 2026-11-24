@@ -221,7 +221,7 @@ export default function HomeScreen({
       setStarting(true);
       try {
         await Promise.allSettled(
-          ['director', 'quant', 'risk', 'execution'].map(name =>
+          ['director', 'quant', 'risk', 'execution', 'architect'].map(name =>
             apiFetch(`${API_URL}/api/v1/agents/${name}/stop`, { method: 'POST' })
           )
         );
@@ -269,7 +269,7 @@ export default function HomeScreen({
     setStarting(true);
     try {
       const results = await Promise.allSettled(
-        ['director', 'quant', 'risk', 'execution'].map(name =>
+        ['director', 'quant', 'risk', 'execution', 'architect'].map(name =>
           apiFetch(`${API_URL}/api/v1/agents/${name}/start`, { method: 'POST' })
         )
       );
@@ -279,8 +279,8 @@ export default function HomeScreen({
         setStarting(false);
         return;
       }
-      if (succeeded < 4) {
-        triggerToast('info', 'Partial start', `${succeeded} of 4 agents started. The others may not be registered yet.`);
+      if (succeeded < 5) {
+        triggerToast('info', 'Partial start', `${succeeded} of 5 agents started. The others may not be registered yet.`);
       }
       setRunState(true);
     } finally {

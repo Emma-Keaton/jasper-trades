@@ -165,6 +165,17 @@ async def start_agent(
     # Flip the in-memory flag
     await agent.start()
 
+    # The Strategy Architect proposes/evolves a backtest-gated strategy on start.
+    if agent_name.lower() == "architect":
+        try:
+            from app.services.strategy_suite import StrategySuiteService
+
+            suite = StrategySuiteService(db)
+            proposal = await suite.propose_strategy(device_id)
+            logger.info("Architect proposal on start", device=device_id, proposal=proposal.get("success"))
+        except Exception as exc:
+            logger.warning("Architect proposal failed on start", error=str(exc))
+
     # Trigger an immediate factor sweep for THIS device only. An unscoped sweep here
     # would open positions for every other tenant whose agents are running.
     try:

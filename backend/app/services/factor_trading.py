@@ -256,4 +256,15 @@ async def run_factor_sweep(db, *, device_id: Optional[str] = None) -> Dict[str, 
             traded=stats["traded"],
             skipped=stats["skipped"],
         )
+
+    # Strategy suite runs hand in hand with the factor sweep: active
+    # self-learning strategies evaluate the same (rotating) watchlist.
+    try:
+        from app.services.strategy_suite import run_suite_cycle
+
+        suite_stats = await run_suite_cycle(db, device_id=device_id)
+        stats["suite"] = suite_stats
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("strategy suite cycle failed", error=str(exc))
+        stats["suite"] = {"error": str(exc)}
     return stats

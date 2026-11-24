@@ -22,7 +22,7 @@ except ImportError:
 from app.config import settings
 from app.database import get_db, init_db, close_db, async_session
 from app.models import Trade, Signal, Portfolio
-from app.agents import DirectorAgent, QuantAgent, RiskAgent, ExecutionAgent, agent_registry
+from app.agents import DirectorAgent, QuantAgent, RiskAgent, ExecutionAgent, StrategyArchitectAgent, agent_registry
 from app.services.llm_service import groq_client
 from app.brokers import broker_registry, initialize_brokers
 from app.services import init_scheduler, get_scheduler
@@ -54,6 +54,7 @@ from app.api.v1 import heartbeat, polymarket, debate, ensemble, swarm, quantlib,
 from app.api.v1 import trading_caps
 from app.api.v1 import settings_extensions
 from app.api.v1 import llm_providers
+from app.api.v1 import strategy_suite
 from app.api.v1 import crypto_connector
 from app.api.v1 import telegram_settings
 from app.api.v1 import telegram_webhook
@@ -134,11 +135,13 @@ async def lifespan(app: FastAPI):
         quant = QuantAgent()
         risk = RiskAgent()
         execution = ExecutionAgent()
+        architect = StrategyArchitectAgent()
 
         agent_registry.register(director)
         agent_registry.register(quant)
         agent_registry.register(risk)
         agent_registry.register(execution)
+        agent_registry.register(architect)
         return list(agent_registry._agents.keys())
 
     names = await run_boot_step("agents", register_agents, required=True)
@@ -578,6 +581,7 @@ app.include_router(notify.router, tags=["notify"])
 app.include_router(trading_caps.router, prefix="/api/v1", tags=["trading-caps"])
 app.include_router(settings_extensions.router, prefix="/api/v1", tags=["settings-extensions"])
 app.include_router(llm_providers.router, prefix="/api/v1", tags=["llm-providers"])
+app.include_router(strategy_suite.router, prefix="/api/v1", tags=["strategy-suite"])
 app.include_router(exchanges.router, prefix="/api/v1", tags=["exchanges"])
 app.include_router(crypto_connector.router, prefix="/api/v1", tags=["crypto-connector"])
 app.include_router(broker_connections.router, prefix="/api/v1", tags=["brokers"])

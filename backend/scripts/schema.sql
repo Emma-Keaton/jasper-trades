@@ -406,6 +406,25 @@ CREATE TABLE IF NOT EXISTS model_assignments (
 	CONSTRAINT ux_model_assignments_scope UNIQUE (device_id, scope, symbol)
 );
 
+CREATE TABLE IF NOT EXISTS strategy_records (
+	id SERIAL NOT NULL,
+	device_id VARCHAR(255) NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+	name VARCHAR(128) NOT NULL,
+	spec TEXT NOT NULL,
+	status VARCHAR(16) NOT NULL DEFAULT 'draft',
+	backtest TEXT,
+	confidence FLOAT DEFAULT 0.0,
+	hit_rate FLOAT,
+	sample_size INTEGER DEFAULT 0,
+	proposed_by VARCHAR(64) DEFAULT 'architect',
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
+	promoted_at TIMESTAMP WITHOUT TIME ZONE,
+	retired_at TIMESTAMP WITHOUT TIME ZONE,
+	PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_strategy_records_device_id ON strategy_records (device_id);
+
 CREATE TABLE IF NOT EXISTS polymarket_accounts (
 	id SERIAL NOT NULL, 
 	device_id VARCHAR(255) NOT NULL, 

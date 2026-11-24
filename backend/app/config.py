@@ -71,6 +71,15 @@ class Settings(BaseSettings):
     NVIDIA_API_KEY: Optional[str] = None  # NVIDIA NIM (build.nvidia.com), free tier
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
 
+    # Broker OAuth (link MT-supported brokers without handling their secrets).
+    # When set, "Connect via broker OAuth" redirects to the broker's own
+    # authorize page; we only ever store the returned opaque tokens.
+    MT5_OAUTH_CLIENT_ID: Optional[str] = None
+    MT5_OAUTH_CLIENT_SECRET: Optional[str] = None
+    MT5_OAUTH_AUTH_URL: Optional[str] = None    # e.g. https://broker.example/oauth/authorize
+    MT5_OAUTH_TOKEN_URL: Optional[str] = None   # e.g. https://broker.example/oauth/token
+    MT5_OAUTH_REDIRECT_URI: Optional[str] = None
+
     # Binance - Use database settings if available
     BINANCE_API_KEY: Optional[str] = None  # Set via Settings page
     BINANCE_API_SECRET: Optional[str] = None  # Set via Settings page

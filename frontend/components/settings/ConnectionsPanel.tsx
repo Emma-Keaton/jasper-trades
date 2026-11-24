@@ -851,6 +851,25 @@ function MT5Broker({ triggerToast }: { triggerToast: (t: 'success' | 'error' | '
         {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LinkIcon className="h-4 w-4" />}
         {connecting ? 'Connecting…' : `Connect ${platform.toUpperCase()} ${accountType === 'demo' ? 'demo' : 'live'} account`}
       </Button>
+      <button
+        onClick={async () => {
+          try {
+            const res = await apiFetch(`${API_URL}/api/v1/brokers/oauth/connect?broker=${platform}&mode=${accountType}`, { headers: { 'X-Device-ID': deviceId } });
+            const d = await res.json();
+            if (d.authorization_url) {
+              window.location.href = d.authorization_url; // broker's own app handles login; we never see the password
+            } else {
+              setError(d.detail || 'OAuth link not available on this deployment — use manual credentials above.');
+            }
+          } catch {
+            setError('OAuth link failed.');
+          }
+        }}
+        className="w-full rounded-control border border-dashed border-slate-300 py-2 text-xs text-slate-500 hover:border-brand-400 hover:text-brand-500 dark:border-slate-600 dark:text-slate-400"
+        title="Link via the broker's own OAuth — no password is entered or stored here"
+      >
+        🔗 Link {platform.toUpperCase()} via broker OAuth ({accountType === 'demo' ? 'demo' : 'live'}) — no secrets handled
+      </button>
     </div>
   );
 }
