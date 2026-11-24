@@ -55,6 +55,7 @@ from app.api.v1 import trading_caps
 from app.api.v1 import settings_extensions
 from app.api.v1 import llm_providers
 from app.api.v1 import strategy_suite
+from app.api.v1 import solana_whales
 from app.api.v1 import crypto_connector
 from app.api.v1 import telegram_settings
 from app.api.v1 import telegram_webhook
@@ -190,6 +191,7 @@ async def lifespan(app: FastAPI):
             ("auto-executor", start_auto_executor),
             ("telegram-listeners", _start_telegram_listeners),
             ("dexchain-watcher", _start_dexchain_watcher),
+            ("solana-whale-watch", _start_whale_watcher),
             ("signal-exits", _start_signal_exit_monitor),
         ]
     )
@@ -382,6 +384,12 @@ async def _start_dexchain_watcher():
     from app.services.dex_chain_autotrade import start_dexchain_watch
 
     asyncio.create_task(start_dexchain_watch())
+
+
+async def _start_whale_watcher():
+    from app.services.solana_whale_service import start_whale_watcher
+
+    asyncio.create_task(start_whale_watcher())
 
 
 async def _start_signal_exit_monitor():
@@ -582,6 +590,7 @@ app.include_router(trading_caps.router, prefix="/api/v1", tags=["trading-caps"])
 app.include_router(settings_extensions.router, prefix="/api/v1", tags=["settings-extensions"])
 app.include_router(llm_providers.router, prefix="/api/v1", tags=["llm-providers"])
 app.include_router(strategy_suite.router, prefix="/api/v1", tags=["strategy-suite"])
+app.include_router(solana_whales.router, prefix="/api/v1", tags=["solana-whales"])
 app.include_router(exchanges.router, prefix="/api/v1", tags=["exchanges"])
 app.include_router(crypto_connector.router, prefix="/api/v1", tags=["crypto-connector"])
 app.include_router(broker_connections.router, prefix="/api/v1", tags=["brokers"])

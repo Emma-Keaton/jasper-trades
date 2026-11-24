@@ -95,6 +95,18 @@ class Settings(BaseSettings):
     CCXT_EXCHANGES: str = "bybit,okx,kucoin,gate,htx,bingx,bitget,mexc,kraken,coinbase,bitfinex,bitstamp"
     CCXT_BINANCE_OPT_IN: bool = False  # Binance only if its public market-data API works from the region
 
+    # Solana whale/top-performer pipeline (hype.gg-style: Helius + Birdeye +
+    # RugCheck + Jupiter). Webhook receiver + safety filters + exits; actual
+    # swaps route through the existing Solana/Jupiter broker and trade gate.
+    HELIUS_API_KEY: Optional[str] = None          # Helius API key (webhooks + RPC)
+    HELIUS_RPC_URL: Optional[str] = None          # defaults to https://mainnet.helius-rpc.com/?api-key=...
+    HELIUS_WHALE_WALLETS: Optional[str] = None    # comma-separated tracked whale pubkeys (fallback list)
+    BIRDEYE_API_KEY: Optional[str] = None         # Birdeye overview/security (X-API-KEY)
+    RUGCHECK_BASE_URL: str = "https://api.rugcheck.xyz"
+    SOLANA_WHALE_MIN_SOL: float = 2.0             # min SOL a tracked whale must spend to count
+    SOLANA_MIN_LIQUIDITY_USD: float = 15000.0     # min Birdeye liquidity to trade
+    SOLANA_MAX_RISK_SCORE: int = 500              # max RugCheck score (lower = safer)
+
     # Solana memecoin market data (DexScreener discovery + Jupiter execution)
     DEXSCREENER_API: str = "https://api.dexscreener.com"
     JUPITER_LITE_API: str = "https://lite-api.jup.ag"
