@@ -347,6 +347,7 @@ class AlphaFactorService:
         limit_to_zoos: Optional[List[str]] = None,
         top: int = 10,
         universe: Optional[str] = None,
+        factor_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Advise on the best factor-driven strategy for a pending trade.
@@ -365,6 +366,9 @@ class AlphaFactorService:
         candidates = self.alpha_factors
         if limit_to_zoos:
             candidates = [f for f in candidates if f.get("zoo") in limit_to_zoos]
+        if factor_ids:
+            wanted = {str(f).strip() for f in factor_ids if f}
+            candidates = [f for f in candidates if f.get("id") in wanted]
 
         for factor in candidates:
             if not factor.get("has_compute"):

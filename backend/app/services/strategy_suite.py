@@ -103,12 +103,20 @@ class StrategySuiteService:
             {"name": r["name"], "status": r["status"], "hit_rate": r.get("hit_rate"), "confidence": r.get("confidence")}
             for r in recent
         ]
+        # Ground the proposal in REAL catalog ids so factor_ids always resolve.
+        from app.services.alpha_factor_service import AlphaFactorService
+
+        catalog = AlphaFactorService(self.db).alpha_factors
+        catalog_ids = [f["id"] for f in catalog]
+        sample_ids = catalog_ids[:60]
         prompt = (
             "Design ONE trading strategy as JSON with keys: name, factor_ids (list of alpha factor ids), "
             "min_confidence (0-100), take_profit_pct, stop_loss_pct, position_size_usd, timeframe. "
+            f"The alpha factor catalog has {len(catalog_ids)} factors; pick 3-6 REAL ids from this list only: "
+            f"{json.dumps(sample_ids)} (plus any of the other {len(catalog_ids) - len(sample_ids)} catalog ids if relevant). "
             f"Learner summary: {json.dumps(learner_summary)[:800]}. "
             f"Recent strategies: {json.dumps(recent_desc)}. "
-            f"Target confidence {target_confidence}. Use 3-6 well-known factor ids like momentum, volatility, volume, trend."
+            f"Target confidence {target_confidence}."
         )
         try:
             spec = await self._llm_json(device_id, "director", prompt)
@@ -117,6 +125,14 @@ class StrategySuiteService:
             return {"success": False, "error": f"llm propose failed: {e}"}
         if not spec.get("name") or not spec.get("factor_ids"):
             return {"success": False, "error": "architect returned no usable spec", "raw": spec}
+
+        # Keep only factor ids that exist in the real catalog.
+        from app.services.alpha_factor_service import AlphaFactorService
+
+        catalog_ids = {f["id"] for f in AlphaFactorService(self.db).alpha_factors}
+        spec["factor_ids"] = [fid for fid in spec.get("factor_ids", []) if fid in catalog_ids]
+        if not spec["factor_ids"]:
+            return {"success": False, "error": "architect picked no valid catalog factor ids", "raw": spec}
 
         # Backtest the proposal on real OHLCV before it can go active.
         bt = BacktestService(self.db)
@@ -248,6 +264,7 @@ async def run_suite_cycle(db: AsyncSession, *, device_id: Optional[str] = None) 
                 spec = best["spec"]
                 advise = await factor_service.advise_for_trade(
                     symbol=symbol, panel=panel, side="auto", top=10,
+                    factor_ids=(spec.get("factor_ids") or None),
                 )
                 strategy = advise.get("strategy") or {}
                 direction = advise.get("recommended_direction")
