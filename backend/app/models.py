@@ -189,8 +189,14 @@ class DeviceSettings(Base):
 
     # Broker API keys (encrypted)
     groq_key = Column(String, nullable=True)  # Encrypted
+    gemini_key = Column(String, nullable=True)  # Encrypted (Google Gemini)
+    nvidia_key = Column(String, nullable=True)  # Encrypted (NVIDIA NIM)
     binance_key = Column(String, nullable=True)  # Encrypted
     binance_secret = Column(String, nullable=True)  # Encrypted
+
+    # Per-agent-task LLM model selections, JSON:
+    # {task: {"provider": "groq|gemini|nvidia", "model": "..."}}
+    llm_model_selections = Column(String, nullable=True)
 
     # Solana/Jupiter
     solana_rpc_url = Column(String, nullable=True)

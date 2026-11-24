@@ -26,6 +26,7 @@ from app.agents import DirectorAgent, QuantAgent, RiskAgent, ExecutionAgent, age
 from app.services.llm_service import groq_client
 from app.brokers import broker_registry, initialize_brokers
 from app.services import init_scheduler, get_scheduler
+from app.services.auto_executor import start_auto_executor, stop_auto_executor
 from app.services.market_data_service import market_data_service
 from app.services.forex_polling_service import start_forex_polling, stop_forex_polling
 from app import device_identity
@@ -52,6 +53,7 @@ from app.api.v1 import alpha_factors, backtest, withdrawal, symbols
 from app.api.v1 import heartbeat, polymarket, debate, ensemble, swarm, quantlib, checkpoint, notify
 from app.api.v1 import trading_caps
 from app.api.v1 import settings_extensions
+from app.api.v1 import llm_providers
 from app.api.v1 import crypto_connector
 from app.api.v1 import telegram_settings
 from app.api.v1 import telegram_webhook
@@ -74,6 +76,7 @@ from app.api.v1 import market_data  # Unified market-data router (trending/price
 from app.api.v1 import watchlist  # Per-device durable symbol watchlist
 from app.api.v1 import factor_trading  # Factor-sweep results (traded + watching)
 from app.api.v1 import kronos  # Kronos forecast service proxy
+from app.api.v1 import auto_trading  # Keyless market sourcing + auto executor
 
 # cTrader OAuth token refresh scheduler
 try:
@@ -181,6 +184,7 @@ async def lifespan(app: FastAPI):
             ("payout-scheduler", _start_payout_scheduler),
             ("ctrader-token-refresh", _start_ctrader_scheduler),
             ("forex-polling", start_forex_polling),
+            ("auto-executor", start_auto_executor),
             ("telegram-listeners", _start_telegram_listeners),
             ("dexchain-watcher", _start_dexchain_watcher),
             ("signal-exits", _start_signal_exit_monitor),
@@ -208,6 +212,7 @@ async def lifespan(app: FastAPI):
         await shutdown_step("market-data", _stop_market_data)
         await shutdown_step("payout-scheduler", _stop_payout_scheduler)
         await shutdown_step("forex-polling", stop_forex_polling)
+        await shutdown_step("auto-executor", stop_auto_executor)
         await shutdown_step("telegram-listeners", _stop_telegram_listeners)
         await shutdown_step("agents", agent_registry.stop_all)
         await shutdown_step("brokers", broker_registry.disconnect_all)
@@ -572,6 +577,7 @@ app.include_router(checkpoint.router, tags=["checkpoint"])
 app.include_router(notify.router, tags=["notify"])
 app.include_router(trading_caps.router, prefix="/api/v1", tags=["trading-caps"])
 app.include_router(settings_extensions.router, prefix="/api/v1", tags=["settings-extensions"])
+app.include_router(llm_providers.router, prefix="/api/v1", tags=["llm-providers"])
 app.include_router(exchanges.router, prefix="/api/v1", tags=["exchanges"])
 app.include_router(crypto_connector.router, prefix="/api/v1", tags=["crypto-connector"])
 app.include_router(broker_connections.router, prefix="/api/v1", tags=["brokers"])
@@ -586,6 +592,7 @@ app.include_router(geo.router, prefix="/api/v1", tags=["geo"])  # geo-availabili
 app.include_router(paper_trading.router, prefix="/api/v1", tags=["paper-trading"])  # paper engine
 app.include_router(memecoin.router, prefix="/api/v1", tags=["memecoin"])  # Solana memecoins
 app.include_router(dex_chains.router, prefix="/api/v1", tags=["dex-chains"])  # Dex chain watchers
+app.include_router(auto_trading.router, prefix="/api/v1", tags=["auto-trading"])  # Keyless market sourcing + auto executor
 app.include_router(market_data.router, prefix="/api/v1", tags=["market-data"])  # unified market data
 app.include_router(watchlist.router, prefix="/api/v1", tags=["watchlist"])  # durable watchlist
 app.include_router(factor_trading.router, prefix="/api/v1", tags=["factor-trading"])

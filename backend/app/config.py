@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     MODEL_DEEP: str = "openai/gpt-oss-120b"
     MODEL_ALTERNATIVE: str = "openai/gpt-oss-20b"
 
+    # Side-by-side LLM providers (in addition to Groq). Keys can also be
+    # plugged per-device in Settings; env values are the deployment default.
+    GEMINI_API_KEY: Optional[str] = None  # Google AI Studio, free tier
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    NVIDIA_API_KEY: Optional[str] = None  # NVIDIA NIM (build.nvidia.com), free tier
+    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+
     # Binance - Use database settings if available
     BINANCE_API_KEY: Optional[str] = None  # Set via Settings page
     BINANCE_API_SECRET: Optional[str] = None  # Set via Settings page

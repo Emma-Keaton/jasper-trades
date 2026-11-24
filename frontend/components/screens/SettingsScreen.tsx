@@ -12,6 +12,7 @@ import SettingsTab from '@/components/SettingsTab';
 import ConnectionsPanel from '@/components/settings/ConnectionsPanel';
 import PaperTradingPanel from '@/components/settings/PaperTradingPanel';
 import TelegramSettings from '@/components/settings/TelegramSettings';
+import LLMProvidersPanel from '@/components/settings/LLMProvidersPanel';
 
 interface SettingsScreenProps {
   triggerToast: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void;
@@ -188,8 +189,9 @@ export default function SettingsScreen({ triggerToast, onNavigate, defaultOpen, 
         <div className="mt-4 flex justify-end"><Button variant="secondary" onClick={() => setOpen(null)}>Done</Button></div>
       </Modal>
 
-      <Modal open={open === 'ai'} onClose={() => setOpen(null)} title="AI engine" description="The brain behind Jasper.">
+      <Modal open={open === 'ai'} onClose={() => setOpen(null)} size="lg" title="AI engine" description="The brain behind Jasper.">
         <div className="space-y-4">
+          <LLMProvidersPanel triggerToast={triggerToast} />
           <div className="flex items-center gap-3 rounded-control border border-slate-200 p-4 dark:border-slate-700">
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300"><BrainCircuit className="h-5 w-5" /></span>
             <div>

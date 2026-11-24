@@ -164,6 +164,10 @@ async def _migrate_device_settings():
         # AI model selection + LLM key
         ("groq_model", "TEXT", "TEXT"),
         ("groq_key", "TEXT", "TEXT"),
+        # Side-by-side LLM providers (Gemini / NVIDIA NIM) + per-task model picks
+        ("gemini_key", "TEXT", "TEXT"),
+        ("nvidia_key", "TEXT", "TEXT"),
+        ("llm_model_selections", "TEXT", "TEXT"),
 
         # Multi-broker routing
         ("default_brokers", "TEXT", "TEXT"),

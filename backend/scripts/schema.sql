@@ -924,6 +924,9 @@ ALTER TABLE device_settings ADD COLUMN IF NOT EXISTS "trading_mode" TEXT DEFAULT
 ALTER TABLE device_settings ADD COLUMN IF NOT EXISTS "preferences" TEXT;
 ALTER TABLE device_settings ADD COLUMN IF NOT EXISTS "groq_model" TEXT;
 ALTER TABLE device_settings ADD COLUMN IF NOT EXISTS "groq_key" TEXT;
+ALTER TABLE device_settings ADD COLUMN IF NOT EXISTS "gemini_key" TEXT;
+ALTER TABLE device_settings ADD COLUMN IF NOT EXISTS "nvidia_key" TEXT;
+ALTER TABLE device_settings ADD COLUMN IF NOT EXISTS "llm_model_selections" TEXT;
 ALTER TABLE device_settings ADD COLUMN IF NOT EXISTS "default_brokers" TEXT;
 ALTER TABLE device_settings ADD COLUMN IF NOT EXISTS "routing_mode" TEXT;
 

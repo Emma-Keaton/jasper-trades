@@ -199,15 +199,15 @@ class TestEnvExampleMatchesSettings:
         fields = _settings_fields() | _env_reads_in_source()
         assert not [name for name in dead if name in fields]
 
-    def test_migrated_llm_variables_are_gone(self):
-        """Gemini and NVIDIA were replaced by Groq; their variables were left
-        behind and would send an operator to a provider the app no longer calls."""
+    def test_side_by_side_llm_variables_are_used(self):
+        """Gemini and NVIDIA NIM are side-by-side providers again (not fallbacks):
+        their env keys must be read by the app, so they must not be dead vars."""
         source = _all_source_text()
-        assert "GEMINI_API_KEY" not in source
-        assert "NVIDIA_API_KEY" not in source
-        documented = _declared_in_env_example()
-        assert "GEMINI_API_KEY" not in documented
-        assert "NVIDIA_API_KEY" not in documented
+        assert "GEMINI_API_KEY" in source
+        assert "NVIDIA_API_KEY" in source
+        fields = _settings_fields()
+        assert "GEMINI_API_KEY" in fields
+        assert "NVIDIA_API_KEY" in fields
 
 
 class TestCriticalVariablesPresent:
