@@ -49,8 +49,13 @@ class SchedulerService:
             # constantly for barely any movement in the gates. Hourly keeps the
             # workspace-global thresholds current without churn.
             "refit_learned": 3600,  # hourly
+            # Self-evolution: architect proposes + retires strategies every 6h.
+            "strategy_evolve": 21600,  # 6 hours
+            # Whale pipeline fallback when no Helius webhook is configured.
+            "whale_fallback": 300,  # every 5 minutes
         }
         self._daily_summary_time = "19:00"  # 7 PM UTC = 8 PM WAT
+        self._last_runs: Dict[str, Any] = {}  # task -> {ts, ok, error, detail}
 
     async def start(self):
         """Start all scheduled tasks."""
@@ -101,6 +106,14 @@ class SchedulerService:
             self._run_periodic("cleanup", self._cleanup)
         )
 
+        self._tasks["strategy_evolve"] = asyncio.create_task(
+            self._run_periodic("strategy_evolve", self._strategy_evolve)
+        )
+
+        self._tasks["whale_fallback"] = asyncio.create_task(
+            self._run_periodic("whale_fallback", self._whale_fallback_dispatch)
+        )
+
         logger.info(f"Started {len(self._tasks)} scheduled tasks")
 
     async def stop(self):
@@ -134,7 +147,20 @@ class SchedulerService:
                     break
 
                 logger.debug(f"Running scheduled task: {name}")
-                await func()
+                from datetime import datetime, timezone
+
+                try:
+                    detail = await func()
+                    self._last_runs[name] = {
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                        "ok": True, "error": None, "detail": detail,
+                    }
+                except Exception as e:  # noqa: BLE001
+                    self._last_runs[name] = {
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                        "ok": False, "error": str(e)[:200], "detail": None,
+                    }
+                    raise
 
             except asyncio.CancelledError:
                 logger.debug(f"Task cancelled: {name}")
@@ -275,6 +301,76 @@ class SchedulerService:
             outcome.get("promoted_model") if outcome.get("promoted") else None,
             outcome.get("reason"),
         )
+
+    def status(self) -> Dict[str, Any]:
+        """Task registry + last-run outcome for the pipeline-status endpoint."""
+        return {
+            "running": self._running,
+            "tasks": {
+                name: {
+                    "interval_s": self._intervals.get(name),
+                    "active": name in self._tasks and not self._tasks[name].done(),
+                    "last_run": self._last_runs.get(name),
+                }
+                for name in self._tasks
+            },
+        }
+
+    async def _strategy_evolve(self) -> Dict[str, Any]:
+        """Periodic self-evolution: architect proposes a new strategy per started
+        device and retires active strategies whose live hit-rate has decayed."""
+        from app.services.strategy_suite import StrategySuiteService
+        from app.services.factor_trading import _is_agents_started
+
+        db = self.db_session_factory()
+        out: Dict[str, Any] = {"proposed": 0, "retired": 0, "devices": 0}
+        try:
+            from sqlalchemy import select as _select
+            from app.models import DeviceSettings, StrategyRecord
+
+            rows = (await db.execute(_select(DeviceSettings))).scalars().all()
+            for row in rows:
+                if not await _is_agents_started(db, row.device_id):
+                    continue
+                out["devices"] += 1
+                suite = StrategySuiteService(db)
+                try:
+                    proposal = await suite.propose_strategy(row.device_id)
+                    if proposal.get("success"):
+                        out["proposed"] += 1
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("evolve propose failed", device=row.device_id, error=str(e)[:120])
+                # Auto-retire active strategies with enough samples and a losing record.
+                for s in await suite.list_strategies(row.device_id):
+                    if (
+                        s["status"] == "active"
+                        and (s.get("sample_size") or 0) >= 30
+                        and (s.get("hit_rate") or 1.0) < 0.45
+                    ):
+                        await suite.set_status(row.device_id, s["id"], "retired")
+                        out["retired"] += 1
+            await db.commit()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("strategy_evolve failed: %s", e)
+            raise
+        finally:
+            await db.close()
+        logger.info("Strategy evolution pass", **out)
+        return out
+
+    async def _whale_fallback_dispatch(self) -> Dict[str, Any]:
+        """Whale pipeline fallback when no Helius webhook is configured: keep
+        exits managed and surface recent events. (Webhook is the primary feed;
+        DexScreener whale-bucket autotrade runs in the dexchain watcher.)"""
+        from app.config import settings
+        from app.services.solana_whale_service import last_events, manage_whale_exits
+
+        exits = await manage_whale_exits()
+        return {
+            "helius_webhook": bool(settings.HELIUS_API_KEY),
+            "exits": exits,
+            "recent_events": len(last_events(100)),
+        }
 
     async def _poll_signal_sources(self):
         """Poll all active signal sources for every device and ingest tips."""

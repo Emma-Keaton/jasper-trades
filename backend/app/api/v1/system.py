@@ -2,7 +2,7 @@
 System endpoints for memory monitoring and Kronos service stats.
 Optimized for 4GB RAM systems.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from typing import Dict, Any
 import psutil
 from datetime import datetime
@@ -124,6 +124,79 @@ async def system_status() -> Dict[str, Any]:
         "kronos": kronos_status,
         "is_safe_for_inference": is_safe,
         "kronos_remote_url": kronos_client.base_url if KRONOS_REMOTE_AVAILABLE else None,
+    }
+
+
+@router.get("/pipeline-status")
+async def pipeline_status(
+    device_id: str = Header(None, alias="X-Device-ID"),
+) -> Dict[str, Any]:
+    """One-screen view of the whole automated loop: research -> prediction ->
+    backtest -> strategy suite -> trading -> portfolio, across paper/demo/live."""
+    from app.services import get_scheduler
+    from app.services.auto_executor import get_auto_executor
+    from app.services.telegram_service import telegram_service
+    from app.brokers.registry import broker_registry
+    from app.config import settings
+
+    scheduler_status = get_scheduler().status() if get_scheduler() else {"running": False, "tasks": {}}
+    executor_status = get_auto_executor().status()
+
+    suite_info: Dict[str, Any] = {"total": 0, "active": 0}
+    whale_info: Dict[str, Any] = {}
+    if device_id:
+        try:
+            from app.database import async_session
+            from app.services.strategy_suite import StrategySuiteService
+            from app.services.solana_whale_service import last_events
+
+            async with async_session() as db:
+                suite_info = await StrategySuiteService(db).status(device_id)
+            whale_info = {"recent_events": len(last_events(20))}
+        except Exception:  # noqa: BLE001
+            pass
+
+    return {
+        "stages": {
+            "research": {
+                "signal_sources_task": scheduler_status.get("tasks", {}).get("poll_signal_sources"),
+                "dex_watcher_task": "dexchain-watcher (boot)",
+                "whale_task": scheduler_status.get("tasks", {}).get("whale_fallback"),
+            },
+            "prediction": {
+                "kronos": "score_kronos every 15m",
+                "score_task": scheduler_status.get("tasks", {}).get("score_kronos"),
+            },
+            "backtest_and_strategies": {
+                "evolve_task": scheduler_status.get("tasks", {}).get("strategy_evolve"),
+                "refit_task": scheduler_status.get("tasks", {}).get("refit_learned"),
+                "suite": suite_info,
+            },
+            "trading": {
+                "auto_executor": {
+                    "running": executor_status.get("running"),
+                    "mode": executor_status.get("mode"),
+                    "trades_opened": executor_status.get("trades_opened"),
+                    "trades_closed": executor_status.get("trades_closed"),
+                    "last_watchlist_rotation": executor_status.get("last_watchlist_rotation"),
+                    "whale_pipeline": executor_status.get("whale_pipeline"),
+                },
+                "factor_sweep_task": scheduler_status.get("tasks", {}).get("generate_signals"),
+                "brokers": broker_registry.get_stats(),
+            },
+            "portfolio": {
+                "pnl_task": scheduler_status.get("tasks", {}).get("calculate_pnl"),
+                "daily_summary_task": scheduler_status.get("tasks", {}).get("daily_summary"),
+            },
+        },
+        "scheduler": scheduler_status,
+        "environment": {
+            "telegram_enabled": telegram_service.enabled,
+            "groq_configured": settings.groq_configured,
+            "helius_configured": bool(settings.HELIUS_API_KEY),
+            "mt5_bridge_configured": bool(__import__("os").environ.get("MT5_BRIDGE_URL")),
+        },
+        "whale": whale_info,
     }
 
 
