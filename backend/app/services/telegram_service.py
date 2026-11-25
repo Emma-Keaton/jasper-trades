@@ -201,6 +201,40 @@ class TelegramService:
         )
         return await self.send_message(chat_id, message, title)
 
+    async def broadcast_error(self, title: str, message: str) -> int:
+        """Send an error/system alert to every verified Telegram user.
+
+        Returns how many chats were messaged. Used for boot failures, executor
+        tick errors, and scheduler failures so problems reach the user's phone.
+        """
+        if not self.enabled:
+            return 0
+        try:
+            from app.database import async_session
+            from app.models import TelegramUser
+            from sqlalchemy import select
+
+            async with async_session() as db:
+                rows = (
+                    await db.execute(
+                        select(TelegramUser.chat_id).where(
+                            TelegramUser.is_verified == True,  # noqa: E712
+                            TelegramUser.trade_notifications_enabled == True,  # noqa: E712
+                        )
+                    )
+                ).scalars().all()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("broadcast_error: user load failed", error=str(e))
+            return 0
+        sent = 0
+        for chat_id in rows:
+            try:
+                if await self.send_message(chat_id, f"🚨 {message}", title=f"⚠️ {title}"):
+                    sent += 1
+            except Exception:  # noqa: BLE001
+                pass
+        return sent
+
     async def test_connection(self, chat_id: str) -> bool:
         """Test Telegram connection with a test message"""
         test_message = (

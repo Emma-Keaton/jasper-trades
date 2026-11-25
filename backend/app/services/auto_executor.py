@@ -236,6 +236,15 @@ class AutoExecutor:
                 break
             except Exception as e:  # noqa: BLE001
                 logger.exception("Auto executor tick failed", error=str(e))
+                try:
+                    from app.services.telegram_service import telegram_service
+
+                    if telegram_service.enabled:
+                        asyncio.create_task(
+                            telegram_service.broadcast_error("Auto executor tick failed", str(e)[:300])
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
             if self._running:
                 await asyncio.sleep(interval)
 

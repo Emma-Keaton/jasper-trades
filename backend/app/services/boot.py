@@ -68,6 +68,21 @@ def log_boot(stage: str, detail: str, *, elapsed: Optional[float] = None) -> Non
     logger.info("boot.%s: %s%s", stage, detail, suffix)
 
 
+def _notify_boot_failure(name: str, detail: str) -> None:
+    """Fire-and-forget Telegram error alert for a failed boot step."""
+    try:
+        from app.services.telegram_service import telegram_service
+
+        if not telegram_service.enabled:
+            return
+        task = asyncio.create_task(
+            telegram_service.broadcast_error(f"Boot step '{name}' failed", detail)
+        )
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def run_boot_step(
     name: str,
     factory: Callable[[], Awaitable[Any]],
@@ -94,10 +109,12 @@ async def run_boot_step(
             logger.error(
                 "boot.%s: TIMED OUT after %.1fs (required)", name, elapsed
             )
+            _notify_boot_failure(name, f"timed out after {elapsed:.1f}s")
             raise
         logger.warning(
             "boot.%s: timed out after %.1fs; continuing without it", name, elapsed
         )
+        _notify_boot_failure(name, f"timed out after {elapsed:.1f}s (non-required)")
         return None
     except asyncio.CancelledError:
         # Shutdown. Not a failure, and must not be swallowed.
@@ -106,8 +123,10 @@ async def run_boot_step(
         elapsed = asyncio.get_running_loop().time() - started
         if required:
             logger.error("boot.%s: FAILED after %.1fs: %s", name, elapsed, exc)
+            _notify_boot_failure(name, f"failed after {elapsed:.1f}s: {exc}")
             raise
         logger.warning("boot.%s: failed after %.1fs: %s", name, elapsed, exc)
+        _notify_boot_failure(name, f"failed after {elapsed:.1f}s: {exc}")
         return None
 
     elapsed = asyncio.get_running_loop().time() - started

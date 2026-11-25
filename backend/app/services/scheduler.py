@@ -160,6 +160,15 @@ class SchedulerService:
                         "ts": datetime.now(timezone.utc).isoformat(),
                         "ok": False, "error": str(e)[:200], "detail": None,
                     }
+                    try:
+                        from app.services.telegram_service import telegram_service
+
+                        if telegram_service.enabled:
+                            asyncio.create_task(
+                                telegram_service.broadcast_error(f"Scheduled task '{name}' failed", str(e)[:300])
+                            )
+                    except Exception:  # noqa: BLE001
+                        pass
                     raise
 
             except asyncio.CancelledError:
