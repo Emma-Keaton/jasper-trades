@@ -124,7 +124,9 @@ class TelegramBotService:
     # ============ Command Handlers ============
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /start command"""
+        """Handle /start command — including the ?start=<device_id> deep link that
+        pins THIS chat to THIS device (one bot chat per device, enforced by the
+        unique device_id on telegram_users)."""
         chat_id = update.effective_chat.id
         username = update.effective_user.username or update.effective_user.first_name
 
@@ -135,6 +137,36 @@ class TelegramBotService:
             "started_at": datetime.utcnow(),
             "last_message": datetime.utcnow(),
         }
+
+        # Deep link: /start <device_id> binds this chat to that device.
+        deep_device = None
+        if context.args:
+            deep_device = str(context.args[0]).strip()
+        if deep_device:
+            self.chat_sessions[str(chat_id)]["pending_device"] = deep_device
+            try:
+                from app.database import async_session
+                from app.models import TelegramUser
+                from sqlalchemy import select
+
+                async with async_session() as db:
+                    res = await db.execute(
+                        select(TelegramUser).where(TelegramUser.device_id == deep_device)
+                    )
+                    row = res.scalar_one_or_none()
+                    if row is None:
+                        row = TelegramUser(
+                            device_id=deep_device,
+                            chat_id=str(chat_id),
+                            is_verified=False,
+                        )
+                        db.add(row)
+                    else:
+                        row.chat_id = str(chat_id)
+                        row.is_verified = False
+                    await db.commit()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("deep-link device pin failed", error=str(e))
 
         message = (
             f"👋 *Welcome to Jasper Trades, {username}!*\n\n"
@@ -153,6 +185,12 @@ class TelegramBotService:
             f"/verify - Verify your chat ID\n\n"
             f"Just type naturally to chat with me!"
         )
+        if deep_device:
+            message += (
+                f"\n\n🔗 *Linked to this Jasper device.*\n"
+                f"Finish in the app: Settings → Telegram → confirm the code to verify. "
+                f"Only this chat will receive this device's trade alerts."
+            )
 
         await update.message.reply_text(message, parse_mode="Markdown")
 

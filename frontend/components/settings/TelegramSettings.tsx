@@ -41,11 +41,19 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
   const [message, setMessage] = useState<{ success?: boolean; text?: string }>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [botLink, setBotLink] = useState<{ bot_username: string; url: string } | null>(null);
 
   const deviceId = () => getOrCreateDeviceId();
 
   useEffect(() => {
     (async () => {
+      try {
+        // Bot link comes from the backend env token — deep-links this device to the bot.
+        const linkRes = await apiFetch(`${API_URL}/api/v1/settings/telegram/bot-link`, { headers: { 'X-Device-ID': deviceId() } });
+        if (linkRes.ok) setBotLink(await linkRes.json());
+      } catch {
+        /* token may be unset */
+      }
       try {
         const res = await apiFetch(`${API_URL}/api/v1/settings/telegram/status`, { headers: { 'X-Device-ID': deviceId() } });
         const data = await res.json();
@@ -208,10 +216,20 @@ export default function TelegramSetup({ triggerToast }: TelegramSetupProps) {
           <div className="rounded-control border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
             <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Step 1 · Start the bot</p>
             <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
-              Open <strong>@jasper_trades_bot</strong> on Telegram — it will send you your Chat ID.
+              {botLink ? (
+                <>Tap to open <strong>@{botLink.bot_username}</strong> on this device and press <strong>Start</strong> — this links the chat to <em>this</em> device only.</>
+              ) : (
+                <>Set <code>TELEGRAM_BOT_TOKEN</code> in the backend env, then use the bot from Settings.</>
+              )}
             </p>
-            <Button variant="secondary" size="sm" className="mt-2" onClick={() => window.open('https://t.me/jasper_trades_bot', '_blank', 'noopener,noreferrer')}>
-              <ExternalLink className="h-4 w-4" /> Open on Telegram
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-2"
+              disabled={!botLink}
+              onClick={() => botLink && window.open(botLink.url, '_blank', 'noopener,noreferrer')}
+            >
+              <ExternalLink className="h-4 w-4" /> Start bot on Telegram
             </Button>
           </div>
 

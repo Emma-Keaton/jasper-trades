@@ -20,6 +20,18 @@ services:
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: WEB_CONCURRENCY
+        value: "1"                        # single uvicorn worker — no memory fork bombs
+      # Stay under the 512 MB free-tier ceiling: no boot-time pip installs, and
+      # the deferred optional-deps installer only runs with real headroom.
+      - key: OPTIONAL_DEPS_AUTO_INSTALL
+        value: "false"
+      - key: OPTIONAL_DEPS_CONTAINER_MEMORY_MB
+        value: "512"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
       # KRONOS_SERVICE_URL must be set in the dashboard to the kronos service URL
 
   - type: web
@@ -32,4 +44,10 @@ services:
       - key: KRONOS_MODEL
         value: "NeoQuasar/Kronos-mini"   # ~16 MB weights — fits 512 MB with torch CPU
       - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"                        # one BLAS thread — keeps RSS well under 512 MB
+      - key: MKL_NUM_THREADS
+        value: "1"
+      - key: PYTORCH_NUM_THREADS
         value: "1"

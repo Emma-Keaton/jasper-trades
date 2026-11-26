@@ -166,6 +166,48 @@ async def confirm_telegram_verification(
     }
 
 
+@router.get("/bot-link")
+async def get_bot_link(
+    device_id: str = Header(None, alias="X-Device-ID"),
+):
+    """Deep link that opens the env-configured bot on this device and pins the
+    chat to THIS device: https://t.me/<bot>?start=<device_id>.
+
+    The bot token comes from TELEGRAM_BOT_TOKEN in the backend env — users never
+    enter a token or phone number in the app.
+    """
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-ID header required")
+    from app.config import settings as app_settings
+
+    if not app_settings.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=400, detail="TELEGRAM_BOT_TOKEN not set in backend env")
+
+    bot_username = None
+    try:
+        from app.services.telegram_bot_service import get_telegram_bot_service
+
+        svc = get_telegram_bot_service(app_settings.TELEGRAM_BOT_TOKEN)
+        await svc.initialize()
+        me = await svc.bot.get_me()
+        bot_username = me.username
+        try:
+            await svc.application.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception as e:  # noqa: BLE001
+        logger.warning("bot get_me failed", error=str(e))
+
+    if not bot_username:
+        raise HTTPException(status_code=502, detail="could not reach Telegram bot API")
+
+    return {
+        "bot_username": bot_username,
+        "url": f"https://t.me/{bot_username}?start={device_id}",
+        "device_id": device_id,
+    }
+
+
 @router.get("/status")
 async def get_telegram_status(
     device_id: str = Header(None, alias="X-Device-ID"),
