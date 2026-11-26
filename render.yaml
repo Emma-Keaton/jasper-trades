@@ -1,0 +1,35 @@
+# Render Blueprint — two FREE web services (512 MB each), kept alive by an
+# external pinger (Render free services spin down after ~15 min without inbound
+# HTTP; its own health checks do NOT count). Point UptimeRobot / cron-job.org at
+# each service's /health every 5 minutes.
+#
+# Deploy: Render Dashboard → Blueprints → New → connect this repo.
+# Then set secrets in each service's Environment tab (from backend/.env.render):
+#   DATABASE_URL (Supabase pooler), SECRET_KEY, API_AUTH_KEY, encryption keys,
+#   TELEGRAM_BOT_TOKEN, GROQ_API_KEY, optional GEMINI_API_KEY / NVIDIA_API_KEY /
+#   HELIUS_API_KEY / BIRDEYE_API_KEY, MT5_OAUTH_*/MT5_BRIDGE_URL, etc.
+# Backend also needs: KRONOS_SERVICE_URL=https://<kronos-service-name>.onrender.com
+
+services:
+  - type: web
+    name: jasper-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # KRONOS_SERVICE_URL must be set in the dashboard to the kronos service URL
+
+  - type: web
+    name: jasper-kronos
+    runtime: docker
+    dockerfilePath: ./kronos/Dockerfile.kronos
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: KRONOS_MODEL
+        value: "NeoQuasar/Kronos-mini"   # ~16 MB weights — fits 512 MB with torch CPU
+      - key: PYTHONUNBUFFERED
+        value: "1"

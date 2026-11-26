@@ -41,7 +41,8 @@ from fastapi import Header, HTTPException, Query, Request, Response
 
 
 MODEL_VARIANT = os.getenv("KRONOS_MODEL", "NeoQuasar/Kronos-mini")
-LOCAL_PORT = int(os.getenv("KRONOS_LOCAL_PORT", "8001"))
+# Render injects PORT; locally we default to 8001.
+LOCAL_PORT = int(os.getenv("PORT") or os.getenv("KRONOS_LOCAL_PORT", "8001"))
 
 app = FastAPI(title="Jasper Kronos Forecast Service (Local)")
 
@@ -85,21 +86,57 @@ async def health() -> dict[str, Any]:
     }
 
 
+async def _run_forecast(
+    request: Request,
+    response: Response,
+    candles: Candles,
+    horizon: int,
+    sample_count: int,
+    x_api_key: str | None,
+) -> dict[str, Any]:
+    decision = _gate.admit(x_api_key, forecast_weight(sample_count, horizon))
+    try:
+        result = _engine.forecast(candles, horizon, sample_count=sample_count)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    ForecastGate.apply_headers(response, decision)
+    return result
+
+
+@app.get("/forecast")
+async def forecast_get(
+    request: Request,
+    response: Response,
+    x_api_key: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Server-side bar acquisition: ?symbol=...&interval=...&horizon=...&limit=...&sample_count=..."""
+    symbol = request.query_params.get("symbol")
+    if not symbol:
+        raise HTTPException(status_code=422, detail="symbol is required")
+    interval = request.query_params.get("interval", "1h")
+    try:
+        horizon = int(request.query_params.get("horizon", "24"))
+        limit = int(request.query_params.get("limit", "400"))
+        sample_count = int(request.query_params.get("sample_count", "1"))
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    try:
+        candles = fetch_candles(symbol, interval=interval, limit=limit)
+    except MarketDataError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return await _run_forecast(request, response, candles, horizon, sample_count, x_api_key)
+
+
 @app.post("/forecast")
-async def forecast(
+async def forecast_post(
     request: Request,
     response: Response,
     payload: RawForecastRequest,
     x_api_key: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    decision = _gate.admit(x_api_key, forecast_weight(payload.sample_count, payload.horizon))
-    try:
-        candles = build_candles(payload.candles, payload.timestamps)
-        result = _engine.forecast(candles, payload.horizon, sample_count=payload.sample_count)
-    except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-    ForecastGate.apply_headers(response, decision)
-    return result
+    """Caller-supplied OHLCV rows."""
+    candles = build_candles(payload.candles, payload.timestamps)
+    return await _run_forecast(request, response, candles, payload.horizon, payload.sample_count, x_api_key)
 
 
 @app.post("/forecast/closes")
