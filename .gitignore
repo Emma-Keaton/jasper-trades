@@ -97,3 +97,14 @@ backend/data/experiences.json
 
 # tracked-by-mistake env templates
 backend/.env.render
+
+# local run artifacts & temp files
+*.bak
+*.orig
+*.tmp
+test.db
+frontend_home*.html
+signal_fetch_result.json
+chat_ai_fix.txt
+chat_ai_fixed.txt
+server.log
